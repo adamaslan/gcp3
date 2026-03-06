@@ -46,7 +46,7 @@ async def morning_brief(request: Request) -> dict:
         return data
     except Exception as exc:
         logger.exception("GET /morning-brief failed: %s", exc)
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
 
 # ── Tool 2: Industry Tracker ─────────────────────────────────────────────────
@@ -59,7 +59,7 @@ async def industry_tracker(request: Request) -> dict:
         return data
     except Exception as exc:
         logger.exception("GET /industry-tracker failed: %s", exc)
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
 
 # ── Tool 3: Stock Screener ────────────────────────────────────────────────────
@@ -72,7 +72,7 @@ async def screener(request: Request) -> dict:
         return data
     except Exception as exc:
         logger.exception("GET /screener failed: %s", exc)
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
 
 # ── Tool 4: Sector Rotation ───────────────────────────────────────────────────
@@ -85,7 +85,7 @@ async def sector_rotation(request: Request) -> dict:
         return data
     except Exception as exc:
         logger.exception("GET /sector-rotation failed: %s", exc)
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
 
 # ── Tool 5: Earnings Radar ────────────────────────────────────────────────────
@@ -98,7 +98,7 @@ async def earnings_radar(request: Request) -> dict:
         return data
     except Exception as exc:
         logger.exception("GET /earnings-radar failed: %s", exc)
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
 
 # ── Tool 6: Macro Pulse ───────────────────────────────────────────────────────
@@ -111,7 +111,7 @@ async def macro_pulse(request: Request) -> dict:
         return data
     except Exception as exc:
         logger.exception("GET /macro-pulse failed: %s", exc)
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
 
 # ── Tool 7: News Sentiment ────────────────────────────────────────────────────
@@ -124,7 +124,7 @@ async def news_sentiment(request: Request) -> dict:
         return data
     except Exception as exc:
         logger.exception("GET /news-sentiment failed: %s", exc)
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
 
 # ── Tool 8: Portfolio Analyzer ────────────────────────────────────────────────
@@ -141,7 +141,7 @@ async def portfolio_analyzer(
         return data
     except Exception as exc:
         logger.exception("GET /portfolio-analyzer failed: %s", exc)
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
 
 # ── Tool 9: AI Market Summary ─────────────────────────────────────────────────
@@ -154,7 +154,7 @@ async def ai_summary(request: Request) -> dict:
         return data
     except Exception as exc:
         logger.exception("GET /ai-summary failed: %s", exc)
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
 
 # ── Tool 10: Technical Signals (from shared Firestore analysis collection) ────
@@ -170,7 +170,7 @@ async def technical_signals(
         return data
     except Exception as exc:
         logger.exception("GET /technical-signals failed: %s", exc)
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
 
 # ── Tool 11: Industry Returns (from shared Firestore industry_cache) ──────────
@@ -183,7 +183,7 @@ async def industry_returns(request: Request) -> dict:
         return data
     except Exception as exc:
         logger.exception("GET /industry-returns failed: %s", exc)
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
 
 # ── Tool 12: Market Summary (from shared Firestore summaries collection) ──────
@@ -199,4 +199,4 @@ async def market_summary(
         return data
     except Exception as exc:
         logger.exception("GET /market-summary failed: %s", exc)
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")

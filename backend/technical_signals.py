@@ -1,12 +1,9 @@
 """Technical Signals: reads per-ticker AI signals from shared Firestore analysis collection."""
 import logging
-import os
 import re
 from datetime import date, datetime
 
-from google.cloud import firestore
-
-from firestore import get_cache, set_cache
+from firestore import db as _db, get_cache, set_cache
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +19,6 @@ TRACKED_SYMBOLS = [
 
 _ACTION_ORDER = {"BUY": 0, "HOLD": 1, "SELL": 2}
 _SYMBOL_RE = re.compile(r"^[A-Z]{1,10}$")
-
-
-def _db() -> firestore.Client:
-    return firestore.Client(project=os.environ["GCP_PROJECT_ID"])
 
 
 def _serialize(doc: dict) -> dict:
