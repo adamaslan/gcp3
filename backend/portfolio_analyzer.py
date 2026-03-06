@@ -104,8 +104,20 @@ def _ai_allocation_analysis(holdings: list[dict]) -> dict:
     }
 
 
+import re
+
+_SYMBOL_RE = re.compile(r"^[A-Z]{1,10}$")
+
+
+def _sanitize_symbol(raw: str) -> str | None:
+    """Allow only uppercase alphanumeric ticker symbols (1–10 chars). Returns None if invalid."""
+    s = raw.upper().strip()
+    return s if _SYMBOL_RE.match(s) else None
+
+
 async def get_portfolio_analysis(tickers: Optional[list[str]] = None) -> dict:
-    symbols = [t.upper().strip() for t in (tickers or DEFAULT_PORTFOLIO) if t.strip()]
+    raw = [t.strip() for t in (tickers or DEFAULT_PORTFOLIO) if t.strip()]
+    symbols = [s for t in raw if (s := _sanitize_symbol(t)) is not None]
     cache_key = f"portfolio:{'_'.join(sorted(symbols))}:{date.today()}"
 
     if cached := get_cache(cache_key):

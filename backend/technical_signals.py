@@ -1,6 +1,7 @@
 """Technical Signals: reads per-ticker AI signals from shared Firestore analysis collection."""
 import logging
 import os
+import re
 from datetime import date, datetime
 
 from google.cloud import firestore
@@ -20,6 +21,7 @@ TRACKED_SYMBOLS = [
 ]
 
 _ACTION_ORDER = {"BUY": 0, "HOLD": 1, "SELL": 2}
+_SYMBOL_RE = re.compile(r"^[A-Z]{1,10}$")
 
 
 def _db() -> firestore.Client:
@@ -52,12 +54,15 @@ async def get_technical_signals(symbol: str | None = None) -> dict:
     col = db.collection("analysis")
 
     if symbol:
-        doc = col.document(symbol.upper()).get()
+        sym = symbol.upper().strip()
+        if not _SYMBOL_RE.match(sym):
+            return {"date": str(date.today()), "error": "invalid symbol"}
+        doc = col.document(sym).get()
         if not doc.exists:
-            return {"date": str(date.today()), "symbol": symbol.upper(), "error": "not found"}
+            return {"date": str(date.today()), "symbol": sym, "error": "not found"}
         data = _serialize(doc.to_dict())
-        data["symbol"] = symbol.upper()
-        result = {"date": str(date.today()), "symbols": {symbol.upper(): data}, "total": 1}
+        data["symbol"] = sym
+        result = {"date": str(date.today()), "symbols": {sym: data}, "total": 1}
     else:
         docs = list(col.stream())
         symbols_data = {}
