@@ -1,0 +1,121 @@
+"use client";
+import { useState } from "react";
+
+interface Quote {
+  symbol: string;
+  price: number;
+  change: number;
+  change_pct: number;
+  high: number;
+  low: number;
+  signal: string;
+  error?: string;
+}
+
+interface ScreenerData {
+  date: string;
+  total_screened: number;
+  gainers: Quote[];
+  losers: Quote[];
+  signal_counts: Record<string, number>;
+  breadth_pct: number;
+  ai_regime: string;
+  quotes: Record<string, Quote>;
+}
+
+const SIGNAL_BADGE: Record<string, string> = {
+  strong_buy: "bg-green-700 text-green-100",
+  buy: "bg-green-900 text-green-300",
+  hold: "bg-gray-800 text-gray-400",
+  sell: "bg-red-900 text-red-300",
+  strong_sell: "bg-red-700 text-red-100",
+};
+
+function Pct({ v }: { v?: number }) {
+  if (v === undefined) return <span className="text-gray-500">—</span>;
+  const cls = v > 0 ? "text-green-400" : v < 0 ? "text-red-400" : "text-gray-400";
+  return <span className={cls}>{v > 0 ? "+" : ""}{v.toFixed(2)}%</span>;
+}
+
+function QuoteRow({ q, rank }: { q: Quote; rank: number }) {
+  return (
+    <tr className="border-t border-gray-800/60 hover:bg-gray-900/40">
+      <td className="px-3 py-2 text-gray-600 text-xs">{rank}</td>
+      <td className="px-3 py-2 font-mono text-blue-400 font-semibold">{q.symbol}</td>
+      <td className="px-3 py-2 text-right text-gray-300">${q.price?.toFixed(2)}</td>
+      <td className="px-3 py-2 text-right"><Pct v={q.change_pct} /></td>
+      <td className="px-3 py-2 text-center">
+        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SIGNAL_BADGE[q.signal] ?? SIGNAL_BADGE.hold}`}>
+          {q.signal?.replace("_", " ")}
+        </span>
+      </td>
+    </tr>
+  );
+}
+
+export function Screener({ data }: { data: ScreenerData }) {
+  const [view, setView] = useState<"gainers" | "losers">("gainers");
+  const rows = view === "gainers" ? data.gainers : data.losers;
+  const breadthColor = data.breadth_pct > 0 ? "text-green-400" : data.breadth_pct < 0 ? "text-red-400" : "text-gray-400";
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Stock Screener</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{data.total_screened} symbols screened · {data.date}</p>
+        </div>
+        <div className="flex gap-1 bg-gray-900 rounded-lg p-1">
+          {(["gainers", "losers"] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors capitalize ${
+                view === v ? "bg-gray-700 text-white" : "text-gray-400 hover:text-white"
+              }`}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* AI Regime */}
+      <div className="p-4 rounded-xl border border-blue-800/40 bg-blue-950/10">
+        <div className="flex items-center gap-3 mb-1">
+          <span className="text-xs font-semibold text-blue-400 uppercase tracking-wide">AI Regime</span>
+          <span className={`text-sm font-semibold ${breadthColor}`}>Breadth {data.breadth_pct > 0 ? "+" : ""}{data.breadth_pct}%</span>
+        </div>
+        <p className="text-sm text-gray-300">{data.ai_regime}</p>
+      </div>
+
+      {/* Signal counts */}
+      <div className="grid grid-cols-5 gap-2">
+        {Object.entries(data.signal_counts).map(([sig, count]) => (
+          <div key={sig} className={`text-center p-2 rounded-lg border ${SIGNAL_BADGE[sig] ? "" : "border-gray-800"}`}>
+            <div className="text-lg font-bold">{count}</div>
+            <div className="text-xs text-gray-500 capitalize">{sig.replace("_", " ")}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Table */}
+      <div className="rounded-xl border border-gray-800 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-900 sticky top-0">
+            <tr>
+              <th className="text-left px-3 py-2 text-gray-500 font-medium w-8">#</th>
+              <th className="text-left px-3 py-2 text-gray-400 font-medium">Symbol</th>
+              <th className="text-right px-3 py-2 text-gray-400 font-medium">Price</th>
+              <th className="text-right px-3 py-2 text-gray-400 font-medium">Chg %</th>
+              <th className="text-center px-3 py-2 text-gray-400 font-medium">Signal</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((q, i) => <QuoteRow key={q.symbol} q={q} rank={i + 1} />)}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

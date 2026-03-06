@@ -1,0 +1,14 @@
+.env
+.env.local
+*.env
+__pycache__/
+*.pyc
+.next/
+node_modules/
+*.key
+*.pem
+service-account*.json
+credentials*.json
+*-key.json
+.DS_Store
+.claude/
