@@ -1,17 +1,10 @@
 """Market Summary: reads daily aggregated AI analysis from shared Firestore summaries collection."""
 import logging
-import os
 from datetime import date, datetime, timedelta
 
-from google.cloud import firestore
-
-from firestore import get_cache, set_cache
+from firestore import db as _db, get_cache, set_cache
 
 logger = logging.getLogger(__name__)
-
-
-def _db() -> firestore.Client:
-    return firestore.Client(project=os.environ["GCP_PROJECT_ID"])
 
 
 def _serialize(obj):

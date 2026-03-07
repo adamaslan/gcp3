@@ -6,6 +6,7 @@ from datetime import date
 
 import httpx
 
+import finnhub
 from firestore import get_cache, set_cache
 
 logger = logging.getLogger(__name__)
@@ -19,10 +20,7 @@ INDICES = {
 
 
 async def _fetch_quote(client: httpx.AsyncClient, symbol: str) -> dict:
-    url = "https://finnhub.io/api/v1/quote"
-    r = await client.get(url, params={"symbol": symbol, "token": os.environ["FINNHUB_API_KEY"]})
-    r.raise_for_status()
-    d = r.json()
+    d = await finnhub.get(client, "/quote", {"symbol": symbol})
     return {"price": d["c"], "change": round(d["d"], 2), "change_pct": round(d["dp"], 2)}
 
 

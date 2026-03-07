@@ -19,14 +19,18 @@ def get_cache(key: str) -> dict | None:
         return None
     data = doc.to_dict()
     expires_at = data.get("expires_at")
-    if expires_at and expires_at.replace(tzinfo=None) > datetime.utcnow():
-        return data.get("value")
+    if expires_at:
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at > datetime.now(timezone.utc):
+            return data.get("value")
     return None
 
 
 def set_cache(key: str, value: dict, ttl_hours: int = 1) -> None:
+    now = datetime.now(timezone.utc)
     db().collection("gcp3_cache").document(key).set({
         "value": value,
-        "expires_at": datetime.utcnow() + timedelta(hours=ttl_hours),
-        "updated_at": datetime.now(timezone.utc),
+        "expires_at": now + timedelta(hours=ttl_hours),
+        "updated_at": now,
     })

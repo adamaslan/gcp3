@@ -132,7 +132,7 @@ export default function Home() {
         <span>·</span>
         <span>Finnhub market data</span>
         <span>·</span>
-        <span>Claude claude-sonnet-4-6 AI</span>
+        <span>Gemini 2.0 Flash AI</span>
         <span>·</span>
         <span>Firestore cache</span>
         <span>·</span>

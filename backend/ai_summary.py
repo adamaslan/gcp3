@@ -1,10 +1,10 @@
-"""AI Market Summary: calls Claude to synthesize all 8 tools into one brief."""
+"""AI Market Summary: calls Gemini to synthesize all data sources into a daily brief."""
 import asyncio
 import logging
 import os
 from datetime import date
 
-import anthropic
+import httpx
 
 from firestore import get_cache, set_cache
 from morning import get_morning_brief
@@ -77,26 +77,28 @@ async def get_ai_summary() -> dict:
 
     prompt = _build_prompt(morning, rotation, macro, screener, news)
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        logger.error("ai_summary: ANTHROPIC_API_KEY not set")
+        logger.error("ai_summary: GEMINI_API_KEY not set")
         brief_text = (
-            "AI analysis unavailable — ANTHROPIC_API_KEY not configured. "
+            "AI analysis unavailable — GEMINI_API_KEY not configured. "
             "Falling back to data-only summary: "
             f"Markets are {morning.get('market_tone', 'unknown')} with avg move "
             f"{morning.get('avg_change_pct', 0):+.2f}%. "
             f"Macro regime: {macro.get('ai_regime', 'unknown')}."
         )
     else:
-        logger.info("ai_summary: calling Claude claude-sonnet-4-6")
-        client = anthropic.Anthropic(api_key=api_key)
-        message = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=600,
-            messages=[{"role": "user", "content": prompt}],
+        logger.info("ai_summary: calling Gemini gemini-2.0-flash")
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"gemini-2.0-flash:generateContent?key={api_key}"
         )
-        brief_text = message.content[0].text
-        logger.info("ai_summary: Claude response received (%d chars)", len(brief_text))
+        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(url, json=payload)
+            resp.raise_for_status()
+            brief_text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+        logger.info("ai_summary: Gemini response received (%d chars)", len(brief_text))
 
     result = {
         "date": str(date.today()),

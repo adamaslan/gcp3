@@ -6,6 +6,7 @@ from datetime import date, timedelta
 
 import httpx
 
+import finnhub
 from firestore import get_cache, set_cache
 
 logger = logging.getLogger(__name__)
@@ -24,12 +25,7 @@ TRACKED: list[str] = [
 async def _fetch_earnings_calendar(client: httpx.AsyncClient, symbol: str) -> dict | None:
     """Fetch next earnings date and EPS estimate from Finnhub."""
     try:
-        r = await client.get(
-            "https://finnhub.io/api/v1/stock/earnings",
-            params={"symbol": symbol, "token": os.environ["FINNHUB_API_KEY"]},
-        )
-        r.raise_for_status()
-        items = r.json()
+        items = await finnhub.get(client, "/stock/earnings", {"symbol": symbol})
         if not items:
             return None
         # Most recent / upcoming — sorted by date desc

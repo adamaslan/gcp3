@@ -6,6 +6,7 @@ from datetime import date
 
 import httpx
 
+import finnhub
 from firestore import get_cache, set_cache
 
 logger = logging.getLogger(__name__)
@@ -43,12 +44,7 @@ def _score_headline(headline: str) -> dict:
 
 async def _fetch_news(client: httpx.AsyncClient, category: str) -> list[dict]:
     try:
-        r = await client.get(
-            "https://finnhub.io/api/v1/news",
-            params={"category": category, "token": os.environ["FINNHUB_API_KEY"]},
-        )
-        r.raise_for_status()
-        items = r.json()
+        items = await finnhub.get(client, "/news", {"category": category})
         return items[:10] if isinstance(items, list) else []
     except Exception as exc:
         logger.error("news_sentiment fetch failed category=%s: %s", category, exc)

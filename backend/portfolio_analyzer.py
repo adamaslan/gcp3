@@ -7,6 +7,7 @@ from typing import Optional
 
 import httpx
 
+import finnhub
 from firestore import get_cache, set_cache
 
 logger = logging.getLogger(__name__)
@@ -19,22 +20,12 @@ DEFAULT_PORTFOLIO: list[str] = [
 
 
 async def _fetch_profile(client: httpx.AsyncClient, symbol: str) -> dict:
-    r = await client.get(
-        "https://finnhub.io/api/v1/stock/profile2",
-        params={"symbol": symbol, "token": os.environ["FINNHUB_API_KEY"]},
-    )
-    r.raise_for_status()
-    d = r.json()
+    d = await finnhub.get(client, "/stock/profile2", {"symbol": symbol})
     return {"name": d.get("name", symbol), "industry": d.get("finnhubIndustry", ""), "country": d.get("country", "")}
 
 
 async def _fetch_quote(client: httpx.AsyncClient, symbol: str) -> dict:
-    r = await client.get(
-        "https://finnhub.io/api/v1/quote",
-        params={"symbol": symbol, "token": os.environ["FINNHUB_API_KEY"]},
-    )
-    r.raise_for_status()
-    d = r.json()
+    d = await finnhub.get(client, "/quote", {"symbol": symbol})
     return {
         "price": round(d["c"], 2),
         "change_pct": round(d["dp"], 2),
@@ -104,8 +95,20 @@ def _ai_allocation_analysis(holdings: list[dict]) -> dict:
     }
 
 
+import re
+
+_SYMBOL_RE = re.compile(r"^[A-Z]{1,10}$")
+
+
+def _sanitize_symbol(raw: str) -> str | None:
+    """Allow only uppercase alphanumeric ticker symbols (1–10 chars). Returns None if invalid."""
+    s = raw.upper().strip()
+    return s if _SYMBOL_RE.match(s) else None
+
+
 async def get_portfolio_analysis(tickers: Optional[list[str]] = None) -> dict:
-    symbols = [t.upper().strip() for t in (tickers or DEFAULT_PORTFOLIO) if t.strip()]
+    raw = [t.strip() for t in (tickers or DEFAULT_PORTFOLIO) if t.strip()]
+    symbols = [s for t in raw if (s := _sanitize_symbol(t)) is not None]
     cache_key = f"portfolio:{'_'.join(sorted(symbols))}:{date.today()}"
 
     if cached := get_cache(cache_key):
