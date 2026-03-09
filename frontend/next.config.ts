@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "standalone",
+  // "standalone" is for Docker/Cloud Run only — omit for Vercel
 };
 
 export default nextConfig;
