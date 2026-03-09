@@ -1,6 +1,5 @@
 import { IndustryTracker } from "@/components/IndustryTracker";
 
-export const dynamic = "force-dynamic";
 
 async function getData() {
   const base = process.env.BACKEND_URL;
