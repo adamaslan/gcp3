@@ -18,7 +18,7 @@ TRACKED_SYMBOLS = [
 ]
 
 _ACTION_ORDER = {"BUY": 0, "HOLD": 1, "SELL": 2}
-_SYMBOL_RE = re.compile(r"^[A-Z0-9]{1,10}$")
+_SYMBOL_RE = re.compile(r"^[A-Z0-9][A-Z0-9.\-]{0,9}$")
 
 
 def _serialize(doc: dict) -> dict:

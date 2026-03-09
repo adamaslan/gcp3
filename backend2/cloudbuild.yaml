@@ -1,0 +1,24 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: [build, -t, us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/gcp3-backend2, .]
+
+  - name: gcr.io/cloud-builders/docker
+    args: [push, us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/gcp3-backend2]
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - gcp3-backend2
+      - --image=us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/gcp3-backend2
+      - --region=us-central1
+      - --platform=managed
+      - --allow-unauthenticated
+      - --memory=512Mi
+      - --cpu=1
+      - --max-instances=5
+      - --set-env-vars=GCP_PROJECT_ID=$PROJECT_ID
+
+images:
+  - us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/gcp3-backend2
