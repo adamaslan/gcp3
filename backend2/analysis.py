@@ -202,7 +202,7 @@ def ema(close: pd.Series, period: int) -> float | None:
 
 def obv_indicator(df: pd.DataFrame) -> dict:
     """On-Balance Volume. Positive slope = accumulation, negative = distribution."""
-    direction = df["Close"].diff().apply(lambda x: 1 if x > 0 else -1 if x < 0 else 0)
+    direction = np.sign(df["Close"].diff()).fillna(0).astype(int)
     series    = (df["Volume"] * direction).cumsum()
     lookback  = min(20, len(series))
     slope     = float(series.iloc[-1] - series.iloc[-lookback]) if lookback > 1 else 0.0
@@ -531,6 +531,15 @@ def full_analysis(df: pd.DataFrame) -> dict:
 def fetch_and_analyze(symbol: str, period: str) -> dict:
     """Fetch + full_analysis in one synchronous call (safe for asyncio.to_thread)."""
     return full_analysis(fetch(symbol, period))
+
+
+def count_signals(analysis: dict) -> int:
+    """Count non-None leaf values in a full_analysis result dict."""
+    def _count(val: Any) -> int:
+        if isinstance(val, dict):
+            return sum(_count(v) for v in val.values())
+        return 0 if val is None else 1
+    return _count(analysis)
 
 
 def consensus_signal(timeframes: dict[str, dict]) -> dict:

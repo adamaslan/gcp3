@@ -28,6 +28,7 @@ from analysis import (
     bollinger,
     bs_greeks,
     consensus_signal,
+    count_signals,
     fetch,
     fetch_and_analyze,
     fibonacci_levels,
@@ -57,8 +58,9 @@ def _503(detail: str = "Service temporarily unavailable") -> HTTPException:
     return HTTPException(status_code=503, detail=detail)
 
 
-# Allow uppercase letters and digits only; prevents Firestore document path traversal.
-_SYMBOL_RE = re.compile(r"^[A-Z0-9]{1,10}$")
+# Allow uppercase letters, digits, dots, and hyphens (e.g. BRK.B, BF-B).
+# Must start with a letter or digit; prevents Firestore document path traversal.
+_SYMBOL_RE = re.compile(r"^[A-Z0-9][A-Z0-9.\-]{0,9}$")
 
 
 def _sanitize_symbol(raw: str) -> str:
@@ -74,13 +76,13 @@ def _sanitize_symbol(raw: str) -> str:
         Uppercase, stripped, validated symbol.
 
     Raises:
-        HTTPException: 400 if the symbol does not match ``[A-Z0-9]{1,10}``.
+        HTTPException: 400 if the symbol does not match ``[A-Z0-9][A-Z0-9.-]{0,9}``.
     """
     clean = raw.upper().strip()
     if not _SYMBOL_RE.match(clean):
         raise HTTPException(
             status_code=400,
-            detail="Invalid symbol: use 1–10 alphanumeric characters (e.g. AAPL, BRK)",
+            detail="Invalid symbol: use 1–10 characters, letters/digits/dot/hyphen (e.g. AAPL, BRK.B)",
         )
     return clean
 
@@ -123,13 +125,6 @@ def health() -> dict:
 
 # ── Tool 1: Multi-Timeframe Analysis (~300 signals) ──────────────────────────
 
-# Approximate signal count per timeframe (non-None leaf values):
-_SIGNALS_PER_TF: dict[str, int] = {
-    "1mo": 62,   # SMA-50/100/200 unavailable (<50 bars)
-    "3mo": 74,   # SMA-100/200 unavailable (<100 bars)
-    "6mo": 77,   # SMA-200 unavailable (~126 bars; need ~200)
-    "1y":  79,   # All indicators available (~252 bars)
-}
 _DEFAULT_PERIODS = ["1mo", "3mo", "6mo", "1y"]
 
 
@@ -175,8 +170,9 @@ async def analyze(
         cs    = consensus_signal(timeframes)
         price = list(timeframes.values())[0]["price"]
 
-        # Signal count: sum of per-TF estimates for successfully fetched timeframes
-        total_signals = sum(_SIGNALS_PER_TF.get(p, 79) for p in timeframes)
+        # Signal count: dynamically counted from non-None leaf values per timeframe
+        signals_per_tf = {p: count_signals(tf) for p, tf in timeframes.items()}
+        total_signals  = sum(signals_per_tf.values())
 
         response = {
             "symbol":        symbol,
@@ -184,7 +180,7 @@ async def analyze(
             "consensus":     cs,
             "timeframes":    timeframes,
             "total_signals": total_signals,
-            "timeframe_key": {p: _SIGNALS_PER_TF.get(p, 79) for p in timeframes},
+            "timeframe_key": signals_per_tf,
         }
         set_cache(cache_key, response, ttl_hours=1)
         logger.info(
@@ -344,9 +340,18 @@ class PortfolioRequest(BaseModel):
     positions: list[Position]
 
 
+_MAX_PORTFOLIO_POSITIONS = 50
+
+
 @app.post("/portfolio-risk")
 async def portfolio_risk(request: Request, body: PortfolioRequest) -> dict:
     logger.info("POST /portfolio-risk positions=%d from %s", len(body.positions), request.client)
+
+    if len(body.positions) > _MAX_PORTFOLIO_POSITIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Too many positions: maximum is {_MAX_PORTFOLIO_POSITIONS}",
+        )
 
     # Validate all symbols up-front; raises HTTP 400 on invalid input
     for p in body.positions:
