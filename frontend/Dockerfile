@@ -5,6 +5,10 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
+# BUILD_STANDALONE=true enables next.config.ts output:"standalone" for Docker.
+# Vercel builds do not pass this arg, so they get the default Vercel-compatible output.
+ARG BUILD_STANDALONE=true
+ENV BUILD_STANDALONE=$BUILD_STANDALONE
 RUN npm run build
 
 # Production image

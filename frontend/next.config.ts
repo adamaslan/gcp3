@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // "standalone" is for Docker/Cloud Run only — omit for Vercel
+  // BUILD_STANDALONE=true is set in the Docker/Cloud Run build (cloudbuild.yaml).
+  // Vercel builds do not set this, so output defaults to undefined (standard Vercel mode).
+  output: process.env.BUILD_STANDALONE === "true" ? "standalone" : undefined,
 };
 
 export default nextConfig;
