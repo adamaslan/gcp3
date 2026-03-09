@@ -1,13 +1,5 @@
 {
   "framework": "nextjs",
-  "build": {
-    "env": {
-      "NODE_VERSION": "22"
-    }
-  },
-  "env": {
-    "BACKEND_URL": "@backend_url"
-  },
   "headers": [
     {
       "source": "/api/(.*)",
