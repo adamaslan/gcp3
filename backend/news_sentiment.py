@@ -1,13 +1,11 @@
 """News Sentiment: Finnhub market news + AI sentiment scoring."""
 import asyncio
 import logging
-import os
 from datetime import date
 
 import httpx
 
-import finnhub
-from firestore import get_cache, set_cache
+from data_client import finnhub_get, get_cache, set_cache
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +42,7 @@ def _score_headline(headline: str) -> dict:
 
 async def _fetch_news(client: httpx.AsyncClient, category: str) -> list[dict]:
     try:
-        items = await finnhub.get(client, "/news", {"category": category})
+        items = await finnhub_get(client, "/news", {"category": category})
         return items[:10] if isinstance(items, list) else []
     except Exception as exc:
         logger.error("news_sentiment fetch failed category=%s: %s", category, exc)

@@ -1,13 +1,11 @@
 """Sector Rotation: momentum scores across 11 GICS sectors + AI regime."""
 import asyncio
 import logging
-import os
 from datetime import date
 
 import httpx
 
-import finnhub
-from firestore import get_cache, set_cache
+from data_client import finnhub_get, get_cache, set_cache
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +37,7 @@ def _momentum_score(q: dict) -> float:
 
 
 async def _fetch_quote(client: httpx.AsyncClient, symbol: str) -> dict:
-    d = await finnhub.get(client, "/quote", {"symbol": symbol})
+    d = await finnhub_get(client, "/quote", {"symbol": symbol})
     return {
         "price": round(d["c"], 2),
         "change": round(d["d"], 2),
@@ -51,8 +49,53 @@ async def _fetch_quote(client: httpx.AsyncClient, symbol: str) -> dict:
     }
 
 
-def _ai_rotation_analysis(ranked: list[dict]) -> str:
-    """Generate a rotation narrative from the ranked sectors."""
+def _build_rotation_prompt(ranked: list[dict]) -> str:
+    rows = "\n".join(
+        f"  {i+1}. {r['sector']} ({r['etf']}): momentum={r['momentum_score']:+.3f}, "
+        f"chg={r.get('change_pct', 0):+.2f}%, price=${r.get('price', 0):.2f}"
+        for i, r in enumerate(ranked)
+    )
+    top_score = ranked[0]["momentum_score"] if ranked else 0
+    bot_score = ranked[-1]["momentum_score"] if ranked else 0
+    spread = round(top_score - bot_score, 2)
+    return f"""You are a senior market strategist. Analyze today's sector rotation data and write a concise 2-3 sentence insight (no bullet points, no headers):
+
+DATE: {date.today()}
+SPREAD (top vs bottom momentum): {spread:+.2f} pts
+
+SECTORS RANKED BY MOMENTUM (highest to lowest):
+{rows}
+
+Focus on: (1) what the rotation pattern signals about investor risk appetite, (2) which themes are driving leadership, (3) one tactical implication. Be specific and confident."""
+
+
+async def _gemini_rotation_analysis(ranked: list[dict]) -> str:
+    """Call Gemini for a real AI rotation narrative; fall back to rule-based if unavailable."""
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        logger.warning("sector_rotation: GEMINI_API_KEY not set, using rule-based analysis")
+        return _rule_based_rotation_analysis(ranked)
+
+    prompt = _build_rotation_prompt(ranked)
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"gemini-2.0-flash:generateContent?key={api_key}"
+    )
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.post(url, json=payload)
+            resp.raise_for_status()
+            text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+            logger.info("sector_rotation: Gemini response received (%d chars)", len(text))
+            return text.strip()
+    except Exception as exc:
+        logger.error("sector_rotation: Gemini call failed: %s", exc)
+        return _rule_based_rotation_analysis(ranked)
+
+
+def _rule_based_rotation_analysis(ranked: list[dict]) -> str:
+    """Fallback rule-based rotation narrative."""
     if not ranked:
         return "Insufficient data for rotation analysis."
 
@@ -105,13 +148,20 @@ async def get_sector_rotation() -> dict:
     valid = [v for v in sectors_raw.values() if "momentum_score" in v]
     ranked = sorted(valid, key=lambda x: x["momentum_score"], reverse=True)
 
+    n = len(ranked)
+    mid = n // 2
+    leaders = ranked[:min(3, mid)] if n >= 2 else ranked[:1]
+    laggards = ranked[max(n - 3, mid):] if n >= 2 else ranked[-1:]
+
+    ai_analysis = await _gemini_rotation_analysis(ranked)
+
     result = {
         "date": str(date.today()),
         "sectors": sectors_raw,
         "ranked": ranked,
-        "leaders": ranked[:3],
-        "laggards": ranked[-3:],
-        "ai_analysis": _ai_rotation_analysis(ranked),
+        "leaders": leaders,
+        "laggards": laggards,
+        "ai_analysis": ai_analysis,
     }
 
     set_cache(cache_key, result, ttl_hours=2)

@@ -26,6 +26,12 @@ function Pct({ v }: { v?: number }) {
   return <span className={cls}>{v > 0 ? "+" : ""}{v.toFixed(2)}%</span>;
 }
 
+function Dollar({ v }: { v?: number }) {
+  if (v === undefined) return <span className="text-gray-500">—</span>;
+  const cls = v > 0 ? "text-green-400" : v < 0 ? "text-red-400" : "text-gray-400";
+  return <span className={cls}>{v > 0 ? "+$" : v < 0 ? "-$" : "$"}{Math.abs(v).toFixed(2)}</span>;
+}
+
 function IndustryTable({ rows, startRank = 1 }: { rows: IndustryRow[]; startRank?: number }) {
   return (
     <table className="w-full text-sm">
@@ -48,7 +54,7 @@ function IndustryTable({ rows, startRank = 1 }: { rows: IndustryRow[]; startRank
             <td className="px-3 py-2 text-right text-gray-300">
               {r.error ? <span className="text-red-500 text-xs">err</span> : `$${r.price?.toFixed(2) ?? "—"}`}
             </td>
-            <td className="px-3 py-2 text-right"><Pct v={r.change} /></td>
+            <td className="px-3 py-2 text-right"><Dollar v={r.change} /></td>
             <td className="px-3 py-2 text-right"><Pct v={r.change_pct} /></td>
           </tr>
         ))}
