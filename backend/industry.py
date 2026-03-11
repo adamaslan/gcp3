@@ -139,5 +139,6 @@ async def get_industry_data() -> dict:
         "laggards": ranked[-5:],
     }
 
-    set_cache(cache_key, result, ttl_hours=24)
+    if ranked:
+        set_cache(cache_key, result, ttl_hours=24)
     return result
