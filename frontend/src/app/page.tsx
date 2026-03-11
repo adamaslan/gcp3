@@ -4,7 +4,7 @@ const TOOLS = [
   {
     href: "/ai-summary",
     title: "AI Market Summary",
-    description: "Claude-powered synthesis of all data sources into a daily market brief.",
+    description: "Gemini 2.0 Flash synthesis of 5 live data sources (morning brief, sector rotation, macro pulse, screener, news) into a daily narrative with regime, tone, and leading/lagging sectors.",
     badge: "AI",
     badgeColor: "bg-blue-600 text-white",
     accent: "hover:border-blue-500",
@@ -12,7 +12,7 @@ const TOOLS = [
   {
     href: "/morning-brief",
     title: "Morning Brief",
-    description: "Daily market tone, major index performance, and overall summary.",
+    description: "SPY, QQQ, IWM, DIA — intraday price, change, open, and prior close via Finnhub. Bullish/bearish/neutral tone derived from average index change across the 4 major ETFs.",
     badge: null,
     badgeColor: "",
     accent: "hover:border-indigo-500",
@@ -20,7 +20,7 @@ const TOOLS = [
   {
     href: "/industry-tracker",
     title: "Industry Tracker",
-    description: "50-industry ETF performance rankings. Leaders, laggards, and daily change.",
+    description: "50-industry ETF rankings via Finnhub (yfinance fallback). When Alpha Vantage quota allows, enriched with 1-month cumulative return, mean daily return, and volatility (stddev).",
     badge: null,
     badgeColor: "",
     accent: "hover:border-purple-500",
@@ -28,7 +28,7 @@ const TOOLS = [
   {
     href: "/screener",
     title: "Stock Screener",
-    description: "40+ large-cap movers ranked by signal strength: strong buy to strong sell.",
+    description: "40+ large-cap stocks screened via Finnhub concurrent fetch with yfinance bulk fallback. Signals (strong buy → strong sell) from price momentum. Shows breadth % and AI regime read.",
     badge: "AI",
     badgeColor: "bg-green-700 text-green-100",
     accent: "hover:border-green-500",
@@ -36,7 +36,7 @@ const TOOLS = [
   {
     href: "/sector-rotation",
     title: "Sector Rotation",
-    description: "11 GICS sector momentum scores + AI regime detection (offensive vs defensive).",
+    description: "11 GICS sectors ranked by momentum score (60% change %, 40% intraday position). Gemini 2.0 Flash detects offensive vs defensive rotation; falls back to rule-based when quota is saved.",
     badge: "AI",
     badgeColor: "bg-purple-700 text-purple-100",
     accent: "hover:border-purple-500",
@@ -44,7 +44,7 @@ const TOOLS = [
   {
     href: "/earnings-radar",
     title: "Earnings Radar",
-    description: "EPS beats and misses for 20+ tracked companies with AI earnings outlook.",
+    description: "EPS beats and misses for 20+ tracked companies from Finnhub earnings calendar. Beat rate %, top beats/misses, and AI earnings outlook. Cached 6 hours.",
     badge: "AI",
     badgeColor: "bg-yellow-700 text-yellow-100",
     accent: "hover:border-yellow-500",
@@ -52,7 +52,7 @@ const TOOLS = [
   {
     href: "/macro-pulse",
     title: "Macro Pulse",
-    description: "VIX, bonds, dollar, gold, oil, credit — cross-asset macro regime signal.",
+    description: "11 cross-asset indicators: VIX, TLT, IEF, DXY, GLD, USO, HYG, LQD, TIP, PDBC, SHY. Rule-based regime scoring (Risk-On / Risk-Off / Transitional) with per-signal reasoning.",
     badge: "AI",
     badgeColor: "bg-orange-700 text-orange-100",
     accent: "hover:border-orange-500",
@@ -60,7 +60,7 @@ const TOOLS = [
   {
     href: "/news-sentiment",
     title: "News Sentiment",
-    description: "Real-time market news scored for positive/negative sentiment by AI.",
+    description: "Finnhub news across 4 categories (general, forex, crypto, merger) scored by keyword frequency. Positive/negative/neutral per headline, plus top movers and overall narrative.",
     badge: "AI",
     badgeColor: "bg-pink-700 text-pink-100",
     accent: "hover:border-pink-500",
@@ -68,7 +68,7 @@ const TOOLS = [
   {
     href: "/portfolio-analyzer",
     title: "Portfolio Analyzer",
-    description: "Enter any tickers — get live data, diversification grade, and AI insights.",
+    description: "Enter any tickers — fetches live quotes, sector/country profile from Finnhub. AI grades diversification (A–D), highlights concentration risk, winners/losers, and industry breakdown.",
     badge: "AI",
     badgeColor: "bg-teal-700 text-teal-100",
     accent: "hover:border-teal-500",
@@ -76,7 +76,7 @@ const TOOLS = [
   {
     href: "/technical-signals",
     title: "Technical Signals",
-    description: "AI-ranked BUY/HOLD/SELL signals from MACD, RSI, ADX across tracked tickers.",
+    description: "BUY/HOLD/SELL signals written to Firestore by the external MCP analysis pipeline. Reads the latest snapshot: ranked by signal confidence, with aggregate bull/bear counts.",
     badge: "AI",
     badgeColor: "bg-cyan-700 text-cyan-100",
     accent: "hover:border-cyan-500",
@@ -84,7 +84,7 @@ const TOOLS = [
   {
     href: "/industry-returns",
     title: "Industry Returns",
-    description: "Multi-period ETF returns (1W–5Y) across 50 industries, sortable by timeframe.",
+    description: "Multi-period ETF returns (1W → 10Y) for 50 industries, sourced from the Firestore industry_cache collection populated by the MCP pipeline. Sortable by any timeframe.",
     badge: null,
     badgeColor: "",
     accent: "hover:border-violet-500",
@@ -92,7 +92,7 @@ const TOOLS = [
   {
     href: "/market-summary",
     title: "Market Summary",
-    description: "7-day trend from AI signal pipeline — regime, top bullish/bearish, high confidence.",
+    description: "7-day rolling trend from the AI signal pipeline stored in Firestore: daily bullish/bearish totals, average sentiment score, top conviction picks, and regime trend direction.",
     badge: "AI",
     badgeColor: "bg-rose-700 text-rose-100",
     accent: "hover:border-rose-500",
@@ -128,11 +128,11 @@ export default function Home() {
       </div>
 
       <div className="border-t border-gray-800 pt-6 flex flex-wrap items-center gap-4 text-xs text-gray-600">
-        <span>12 MCP tools</span>
+        <span>12 endpoints</span>
         <span>·</span>
-        <span>Finnhub market data</span>
+        <span>Finnhub + yfinance + Alpha Vantage</span>
         <span>·</span>
-        <span>Gemini 2.0 Flash AI</span>
+        <span>Gemini 2.0 Flash</span>
         <span>·</span>
         <span>Firestore cache</span>
         <span>·</span>

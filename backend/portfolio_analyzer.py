@@ -1,14 +1,12 @@
 """Portfolio Analyzer: fetch live data for a ticker list + AI allocation insights."""
 import asyncio
 import logging
-import os
 from datetime import date
 from typing import Optional
 
 import httpx
 
-import finnhub
-from firestore import get_cache, set_cache
+from data_client import finnhub_get, get_cache, set_cache
 
 logger = logging.getLogger(__name__)
 
@@ -20,12 +18,12 @@ DEFAULT_PORTFOLIO: list[str] = [
 
 
 async def _fetch_profile(client: httpx.AsyncClient, symbol: str) -> dict:
-    d = await finnhub.get(client, "/stock/profile2", {"symbol": symbol})
+    d = await finnhub_get(client, "/stock/profile2", {"symbol": symbol})
     return {"name": d.get("name", symbol), "industry": d.get("finnhubIndustry", ""), "country": d.get("country", "")}
 
 
 async def _fetch_quote(client: httpx.AsyncClient, symbol: str) -> dict:
-    d = await finnhub.get(client, "/quote", {"symbol": symbol})
+    d = await finnhub_get(client, "/quote", {"symbol": symbol})
     return {
         "price": round(d["c"], 2),
         "change_pct": round(d["dp"], 2),

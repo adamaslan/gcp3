@@ -1,13 +1,14 @@
-"""Stock Screener: top movers from major indices + AI momentum signal."""
-import asyncio
+"""Stock Screener: top movers from major indices + AI momentum signal.
+
+Data resolution chain:
+  1. Finnhub — real-time intraday quotes (primary)
+  2. yfinance bulk download — free fallback for any symbols Finnhub fails
+     (single yf.download() call covers all failed symbols at once)
+"""
 import logging
-import os
 from datetime import date
 
-import httpx
-
-import finnhub
-from firestore import get_cache, set_cache
+from data_client import get_cache, get_quotes, set_cache
 
 logger = logging.getLogger(__name__)
 
@@ -24,18 +25,6 @@ WATCHLIST: list[str] = [
 ]
 
 
-async def _fetch_quote(client: httpx.AsyncClient, symbol: str) -> dict:
-    d = await finnhub.get(client, "/quote", {"symbol": symbol})
-    return {
-        "symbol": symbol,
-        "price": round(d["c"], 2),
-        "change": round(d["d"], 2),
-        "change_pct": round(d["dp"], 2),
-        "high": round(d["h"], 2),
-        "low": round(d["l"], 2),
-        "open": round(d["o"], 2),
-        "prev_close": round(d["pc"], 2),
-    }
 
 
 def _ai_signal(quote: dict) -> str:
@@ -66,31 +55,20 @@ async def get_screener_data() -> dict:
 
     logger.info("screener cache miss — fetching %d symbols", len(WATCHLIST))
 
-    async def fetch_one(symbol: str):
-        try:
-            q = await _fetch_quote(client, symbol)
-            q["signal"] = _ai_signal(q)
-            return symbol, q
-        except Exception as exc:
-            logger.error("screener failed %s: %s", symbol, exc)
-            return symbol, {"symbol": symbol, "error": str(exc)}
-
-    async with httpx.AsyncClient(timeout=15) as client:
-        pairs = await asyncio.gather(*[fetch_one(s) for s in WATCHLIST])
-
-    quotes = {k: v for k, v in pairs if "error" not in v}
+    # get_quotes handles Finnhub concurrent + yfinance bulk fallback internally
+    raw_quotes = await get_quotes(WATCHLIST)
+    quotes = {sym: {**q, "symbol": sym, "signal": _ai_signal(q)} for sym, q in raw_quotes.items()}
     valid = list(quotes.values())
 
     ranked = sorted(valid, key=lambda x: x.get("change_pct", 0), reverse=True)
     gainers = ranked[:10]
     losers = ranked[-10:][::-1]
 
-    signal_counts = {}
+    signal_counts: dict[str, int] = {}
     for q in valid:
         sig = q.get("signal", "hold")
         signal_counts[sig] = signal_counts.get(sig, 0) + 1
 
-    # AI summary: breadth-based regime
     total = len(valid)
     buys = signal_counts.get("buy", 0) + signal_counts.get("strong_buy", 0)
     sells = signal_counts.get("sell", 0) + signal_counts.get("strong_sell", 0)
@@ -111,6 +89,10 @@ async def get_screener_data() -> dict:
         "breadth_pct": breadth_pct,
         "ai_regime": regime,
         "quotes": quotes,
+        "sources": {
+            "finnhub": sum(1 for q in quotes.values() if q.get("source") == "finnhub"),
+            "yfinance": sum(1 for q in quotes.values() if q.get("source") == "yfinance"),
+        },
     }
 
     set_cache(cache_key, result, ttl_hours=1)

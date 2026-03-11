@@ -8,6 +8,10 @@ interface IndustryRow {
   price?: number;
   change?: number;
   change_pct?: number;
+  // Alpha Vantage enrichment — present only when AV quota allows
+  return_1m?: number;
+  mean_daily_return?: number;
+  stddev_daily?: number;
   error?: string;
 }
 
@@ -26,7 +30,19 @@ function Pct({ v }: { v?: number }) {
   return <span className={cls}>{v > 0 ? "+" : ""}{v.toFixed(2)}%</span>;
 }
 
+function Dollar({ v }: { v?: number }) {
+  if (v === undefined) return <span className="text-gray-500">—</span>;
+  const cls = v > 0 ? "text-green-400" : v < 0 ? "text-red-400" : "text-gray-400";
+  return <span className={cls}>{v > 0 ? "+$" : v < 0 ? "-$" : "$"}{Math.abs(v).toFixed(2)}</span>;
+}
+
+// Check if any row has AV enrichment data
+function hasEnrichment(rows: IndustryRow[]): boolean {
+  return rows.some((r) => r.return_1m !== undefined);
+}
+
 function IndustryTable({ rows, startRank = 1 }: { rows: IndustryRow[]; startRank?: number }) {
+  const enriched = hasEnrichment(rows);
   return (
     <table className="w-full text-sm">
       <thead className="bg-gray-900 sticky top-0">
@@ -37,6 +53,9 @@ function IndustryTable({ rows, startRank = 1 }: { rows: IndustryRow[]; startRank
           <th className="text-right px-3 py-2 text-gray-400 font-medium">Price</th>
           <th className="text-right px-3 py-2 text-gray-400 font-medium">Chg $</th>
           <th className="text-right px-3 py-2 text-gray-400 font-medium">Chg %</th>
+          {enriched && <th className="text-right px-3 py-2 text-gray-400 font-medium" title="1-month cumulative return (Alpha Vantage)">1M Return</th>}
+          {enriched && <th className="text-right px-3 py-2 text-gray-400 font-medium" title="Mean daily return (Alpha Vantage)">Avg/Day</th>}
+          {enriched && <th className="text-right px-3 py-2 text-gray-400 font-medium" title="Daily return standard deviation — higher = more volatile (Alpha Vantage)">Volatility</th>}
         </tr>
       </thead>
       <tbody>
@@ -48,8 +67,27 @@ function IndustryTable({ rows, startRank = 1 }: { rows: IndustryRow[]; startRank
             <td className="px-3 py-2 text-right text-gray-300">
               {r.error ? <span className="text-red-500 text-xs">err</span> : `$${r.price?.toFixed(2) ?? "—"}`}
             </td>
-            <td className="px-3 py-2 text-right"><Pct v={r.change} /></td>
+            <td className="px-3 py-2 text-right"><Dollar v={r.change} /></td>
             <td className="px-3 py-2 text-right"><Pct v={r.change_pct} /></td>
+            {enriched && (
+              <td className="px-3 py-2 text-right">
+                {r.return_1m !== undefined
+                  ? <Pct v={r.return_1m * 100} />
+                  : <span className="text-gray-600 text-xs">—</span>}
+              </td>
+            )}
+            {enriched && (
+              <td className="px-3 py-2 text-right">
+                {r.mean_daily_return !== undefined
+                  ? <Pct v={r.mean_daily_return * 100} />
+                  : <span className="text-gray-600 text-xs">—</span>}
+              </td>
+            )}
+            {enriched && (
+              <td className="px-3 py-2 text-right text-gray-400 text-xs font-mono">
+                {r.stddev_daily !== undefined ? (r.stddev_daily * 100).toFixed(3) + "%" : <span className="text-gray-600">—</span>}
+              </td>
+            )}
           </tr>
         ))}
       </tbody>
@@ -59,6 +97,7 @@ function IndustryTable({ rows, startRank = 1 }: { rows: IndustryRow[]; startRank
 
 export function IndustryTracker({ data }: { data: IndustryData }) {
   const [view, setView] = useState<"ranked" | "sector">("ranked");
+  const enriched = hasEnrichment(data.rankings);
 
   return (
     <div className="space-y-5">
@@ -66,7 +105,9 @@ export function IndustryTracker({ data }: { data: IndustryData }) {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Industry Tracker</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{data.total} industries · {data.date}</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {data.total} industries · Finnhub{enriched ? " + Alpha Vantage" : " (yfinance fallback available)"} · {data.date}
+          </p>
         </div>
         <div className="flex gap-1 bg-gray-900 rounded-lg p-1">
           {(["ranked", "sector"] as const).map((v) => (
@@ -82,6 +123,13 @@ export function IndustryTracker({ data }: { data: IndustryData }) {
           ))}
         </div>
       </div>
+
+      {/* AV enrichment notice */}
+      {enriched && (
+        <div className="px-4 py-2 rounded-lg border border-violet-800/40 bg-violet-950/10 text-xs text-violet-300">
+          Alpha Vantage enrichment active — 1-month return, mean daily return, and volatility shown in the table (soft limit: 20 calls/day).
+        </div>
+      )}
 
       {/* Top 5 Leaders & Laggards */}
       <div className="grid grid-cols-2 gap-4">

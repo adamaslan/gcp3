@@ -40,7 +40,7 @@ export function AiSummary({ data }: { data: AiSummaryData }) {
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-white">AI Market Summary</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Claude-powered synthesis of all 8 data sources · {data.date}</p>
+        <p className="text-sm text-gray-500 mt-0.5">Gemini 2.0 Flash synthesis of 5 data sources (morning brief · sector rotation · macro pulse · screener · news) · {data.date}</p>
       </div>
 
       {/* Meta badges */}

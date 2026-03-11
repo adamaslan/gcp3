@@ -2,11 +2,11 @@
 import asyncio
 import logging
 import os
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 
-from firestore import get_cache, set_cache
+from firestore import get_cache, set_cache, delete_cache
 from morning import get_morning_brief
 from sector_rotation import get_sector_rotation
 from macro_pulse import get_macro_pulse
@@ -57,6 +57,14 @@ NEWS SENTIMENT:
 - {news_narrative}
 
 Write a professional, confident market brief. Include: (1) overall market character today, (2) what sectors/themes are working, (3) key risks or macro headwinds, (4) a one-sentence tactical takeaway for investors. Do not mention data sources or repeat raw numbers excessively — focus on narrative and insight."""
+
+
+async def refresh_ai_summary() -> dict:
+    """Delete today's cache entry and regenerate. Called by Cloud Scheduler."""
+    cache_key = f"ai_summary:{date.today()}"
+    delete_cache(cache_key)
+    logger.info("ai_summary cache cleared for scheduled refresh key=%s", cache_key)
+    return await get_ai_summary()
 
 
 async def get_ai_summary() -> dict:
@@ -112,5 +120,9 @@ async def get_ai_summary() -> dict:
         "sources": ["morning_brief", "sector_rotation", "macro_pulse", "screener", "news_sentiment"],
     }
 
-    set_cache(cache_key, result, ttl_hours=4)
+    # Cache until midnight UTC — one Gemini call per trading day, free tier friendly.
+    now = datetime.now(timezone.utc)
+    tomorrow_midnight = datetime(now.year, now.month, now.day, tzinfo=timezone.utc) + timedelta(days=1)
+    ttl_hours = max(1, int((tomorrow_midnight - now).total_seconds() / 3600))
+    set_cache(cache_key, result, ttl_hours=ttl_hours)
     return result

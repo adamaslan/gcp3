@@ -1,13 +1,11 @@
 """Morning Brief: daily market tone from major index ETFs."""
 import asyncio
 import logging
-import os
 from datetime import date
 
 import httpx
 
-import finnhub
-from firestore import get_cache, set_cache
+from data_client import finnhub_get, get_cache, set_cache
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +18,7 @@ INDICES = {
 
 
 async def _fetch_quote(client: httpx.AsyncClient, symbol: str) -> dict:
-    d = await finnhub.get(client, "/quote", {"symbol": symbol})
+    d = await finnhub_get(client, "/quote", {"symbol": symbol})
     return {"price": d["c"], "change": round(d["d"], 2), "change_pct": round(d["dp"], 2)}
 
 
