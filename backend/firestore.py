@@ -27,6 +27,10 @@ def get_cache(key: str) -> dict | None:
     return None
 
 
+def delete_cache(key: str) -> None:
+    db().collection("gcp3_cache").document(key).delete()
+
+
 def set_cache(key: str, value: dict, ttl_hours: int = 1) -> None:
     now = datetime.now(timezone.utc)
     db().collection("gcp3_cache").document(key).set({

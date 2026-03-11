@@ -1,19 +1,23 @@
 """GCP3 Finance API - 12 MCP tools (9 Finnhub + 3 shared Firestore)."""
+import asyncio
 import logging
+import os
+import time
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query, Request
+import httpx
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from industry import get_industry_data
 from morning import get_morning_brief
 from screener import get_screener_data
-from sector_rotation import get_sector_rotation
+from sector_rotation import get_sector_rotation  # force_rule_based param added
 from earnings_radar import get_earnings_radar
 from macro_pulse import get_macro_pulse
 from news_sentiment import get_news_sentiment
 from portfolio_analyzer import get_portfolio_analysis
-from ai_summary import get_ai_summary
+from ai_summary import get_ai_summary, refresh_ai_summary
 from technical_signals import get_technical_signals
 from industry_returns import get_industry_returns
 from market_summary import get_market_summary
@@ -26,7 +30,7 @@ app = FastAPI(title="GCP3 Finance API", version="2.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -155,6 +159,210 @@ async def ai_summary(request: Request) -> dict:
     except Exception as exc:
         logger.exception("GET /ai-summary failed: %s", exc)
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+
+
+# ── Scheduler auth helper ─────────────────────────────────────────────────────
+def _verify_scheduler(token: Optional[str]) -> None:
+    """Raise 401 if token does not match SCHEDULER_SECRET env var."""
+    expected = os.environ.get("SCHEDULER_SECRET")
+    if not expected or token != expected:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+async def _warm_backend2(client: httpx.AsyncClient, path: str) -> dict:
+    """Call a backend2 endpoint for cache warming. Swallows failures gracefully."""
+    backend2_url = os.environ.get("BACKEND2_URL", "").rstrip("/")
+    if not backend2_url:
+        logger.warning("refresh: BACKEND2_URL not set — skipping %s", path)
+        return {"status": "skipped", "reason": "BACKEND2_URL not configured"}
+    try:
+        r = await client.get(f"{backend2_url}{path}", timeout=30)
+        r.raise_for_status()
+        return {"status": "ok"}
+    except Exception as exc:
+        logger.warning("refresh: backend2 %s failed: %s", path, exc)
+        return {"status": "error", "detail": str(exc)}
+
+
+# ── POST /refresh/all — Morning full warm-up (Cloud Scheduler, 9:35 AM ET) ───
+@app.post("/refresh/all")
+async def refresh_all(
+    request: Request,
+    x_scheduler_token: Optional[str] = Header(default=None),
+) -> dict:
+    """Full cache warm-up in dependency order. Called by Cloud Scheduler at 9:35 AM ET Mon-Fri.
+
+    Stages:
+        0  Firestore readers — validate pipeline data is present (zero API cost)
+        1  Independent market data — concurrent Finnhub calls
+        2  Sector + screener — concurrent (Finnhub + Gemini)
+        3  Industry — isolated to stay under Alpha Vantage 25-call/day limit
+        4  Backend2 fan-out — scan + key Fibonacci levels via yfinance (no Finnhub quota)
+        5  AI synthesis — must run last; aggregates all prior warm caches
+    """
+    _verify_scheduler(x_scheduler_token)
+    logger.info("POST /refresh/all started")
+    stages: dict[str, dict] = {}
+    overall_start = time.perf_counter()
+
+    # Stage 0 — Firestore readers
+    t0 = time.perf_counter()
+    try:
+        await asyncio.gather(
+            get_technical_signals(),
+            get_market_summary(),
+            get_industry_returns(),
+        )
+        stages["firestore_readers"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
+    except Exception as exc:
+        logger.warning("refresh/all stage 0 error: %s", exc)
+        stages["firestore_readers"] = {"status": "error", "detail": str(exc)}
+
+    # Stage 1 — Independent market data (concurrent)
+    t0 = time.perf_counter()
+    try:
+        await asyncio.gather(
+            get_morning_brief(),
+            get_macro_pulse(),
+            get_earnings_radar(),
+            get_news_sentiment(),
+        )
+        stages["market_data"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
+    except Exception as exc:
+        logger.warning("refresh/all stage 1 error: %s", exc)
+        stages["market_data"] = {"status": "error", "detail": str(exc)}
+
+    # Stage 2 — Sector rotation + screener (concurrent)
+    t0 = time.perf_counter()
+    try:
+        await asyncio.gather(
+            get_sector_rotation(),
+            get_screener_data(),
+        )
+        stages["sector_screener"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
+    except Exception as exc:
+        logger.warning("refresh/all stage 2 error: %s", exc)
+        stages["sector_screener"] = {"status": "error", "detail": str(exc)}
+
+    # Stage 3 — Industry (isolated: 50 Finnhub + 10 Alpha Vantage batches)
+    t0 = time.perf_counter()
+    try:
+        await get_industry_data()
+        stages["industry"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
+    except Exception as exc:
+        logger.warning("refresh/all stage 3 error: %s", exc)
+        stages["industry"] = {"status": "error", "detail": str(exc)}
+
+    # Stage 4 — Backend2 HTTP fan-out (yfinance, no Finnhub quota consumed)
+    t0 = time.perf_counter()
+    async with httpx.AsyncClient(timeout=35) as b2_client:
+        fib_symbols = ["SPY", "QQQ", "NVDA", "AAPL", "GLD"]
+        b2_results = await asyncio.gather(
+            _warm_backend2(b2_client, "/scan"),
+            *[_warm_backend2(b2_client, f"/fibonacci/{sym}") for sym in fib_symbols],
+        )
+    b2_statuses = [r["status"] for r in b2_results]
+    stages["backend2"] = {
+        "status": "ok" if all(s in ("ok", "skipped") for s in b2_statuses) else "partial",
+        "ms": round((time.perf_counter() - t0) * 1000),
+        "endpoints": b2_statuses,
+    }
+
+    # Stage 5 — AI synthesis (must be last: reads all prior caches)
+    t0 = time.perf_counter()
+    try:
+        summary = await refresh_ai_summary()
+        stages["ai_summary"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
+    except Exception as exc:
+        logger.warning("refresh/all stage 5 error: %s", exc)
+        stages["ai_summary"] = {"status": "error", "detail": str(exc)}
+        summary = {}
+
+    total_ms = round((time.perf_counter() - overall_start) * 1000)
+    logger.info("POST /refresh/all complete total_ms=%d", total_ms)
+    return {
+        "status": "refreshed",
+        "date": summary.get("date"),
+        "stages": stages,
+        "total_ms": total_ms,
+    }
+
+
+# ── POST /refresh/intraday — Short-TTL refresh (noon + EOD, Mon-Fri) ─────────
+@app.post("/refresh/intraday")
+async def refresh_intraday(
+    request: Request,
+    skip_gemini: bool = Query(default=False, description="Skip Gemini sector analysis (EOD run)"),
+    x_scheduler_token: Optional[str] = Header(default=None),
+) -> dict:
+    """Refresh short-TTL endpoints only. Called at 12:00 PM ET and 4:15 PM ET Mon-Fri.
+
+    Skips industry (24h TTL), earnings (6h TTL), and ai_summary (to-midnight TTL).
+    Pass skip_gemini=true for the EOD run to avoid a 3rd daily Gemini call.
+    """
+    _verify_scheduler(x_scheduler_token)
+    logger.info("POST /refresh/intraday skip_gemini=%s", skip_gemini)
+    stages: dict[str, dict] = {}
+    overall_start = time.perf_counter()
+
+    # Stage 1 — Concurrent: macro + news + morning (morning likely cache hit, 8h TTL)
+    t0 = time.perf_counter()
+    try:
+        await asyncio.gather(
+            get_morning_brief(),
+            get_macro_pulse(),
+            get_news_sentiment(),
+        )
+        stages["market_data"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
+    except Exception as exc:
+        logger.warning("refresh/intraday stage 1 error: %s", exc)
+        stages["market_data"] = {"status": "error", "detail": str(exc)}
+
+    # Stage 2 — Concurrent: sector rotation + screener
+    t0 = time.perf_counter()
+    try:
+        await asyncio.gather(
+            get_sector_rotation(force_rule_based=skip_gemini),
+            get_screener_data(),
+        )
+        stages["sector_screener"] = {
+            "status": "ok",
+            "ms": round((time.perf_counter() - t0) * 1000),
+            "gemini_used": not skip_gemini,
+        }
+    except Exception as exc:
+        logger.warning("refresh/intraday stage 2 error: %s", exc)
+        stages["sector_screener"] = {"status": "error", "detail": str(exc)}
+
+    # Stage 3 — Backend2 scan only (fibonacci 4h TTL still valid from morning)
+    t0 = time.perf_counter()
+    async with httpx.AsyncClient(timeout=35) as b2_client:
+        scan_result = await _warm_backend2(b2_client, "/scan")
+    stages["backend2_scan"] = {
+        "status": scan_result["status"],
+        "ms": round((time.perf_counter() - t0) * 1000),
+    }
+
+    total_ms = round((time.perf_counter() - overall_start) * 1000)
+    logger.info("POST /refresh/intraday complete total_ms=%d", total_ms)
+    return {"status": "refreshed", "stages": stages, "total_ms": total_ms}
+
+
+# ── POST /refresh/ai-summary — Legacy endpoint (kept for backwards compat) ───
+@app.post("/refresh/ai-summary")
+async def refresh_ai_summary_endpoint(
+    request: Request,
+    x_scheduler_token: Optional[str] = Header(default=None),
+) -> dict:
+    """Legacy single-endpoint refresh. Prefer /refresh/all for full warm-up."""
+    _verify_scheduler(x_scheduler_token)
+    logger.info("POST /refresh/ai-summary (legacy) triggered")
+    try:
+        data = await refresh_ai_summary()
+        return {"status": "refreshed", "date": data.get("date")}
+    except Exception as exc:
+        logger.exception("POST /refresh/ai-summary failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Refresh failed")
 
 
 # ── Tool 10: Technical Signals (from shared Firestore analysis collection) ────

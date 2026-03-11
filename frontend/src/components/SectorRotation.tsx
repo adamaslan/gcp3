@@ -7,6 +7,8 @@ interface SectorRow {
   price: number;
   change_pct: number;
   change: number;
+  open?: number;
+  prev_close?: number;
   error?: string;
 }
 
@@ -44,7 +46,12 @@ export function SectorRotation({ data }: { data: SectorRotationData }) {
 
       {/* AI Analysis */}
       <div className="p-4 rounded-xl border border-purple-800/40 bg-purple-950/10">
-        <div className="text-xs font-semibold text-purple-400 uppercase tracking-wide mb-1">AI Rotation Analysis</div>
+        <div className="text-xs font-semibold text-purple-400 uppercase tracking-wide mb-1">
+          AI Rotation Analysis
+          <span className="ml-2 text-gray-600 font-normal normal-case" title="Momentum = 60% × change% + 40% × intraday position factor. Gemini 2.0 Flash when quota allows; rule-based offensive/defensive fallback otherwise.">
+            · score: 0.6×Δ% + 0.4×intraday position
+          </span>
+        </div>
         <p className="text-sm text-gray-300">{data.ai_analysis}</p>
       </div>
 
@@ -85,8 +92,10 @@ export function SectorRotation({ data }: { data: SectorRotationData }) {
               <th className="text-left px-3 py-2 text-gray-400">Sector</th>
               <th className="text-left px-3 py-2 text-gray-400">ETF</th>
               <th className="text-right px-3 py-2 text-gray-400">Price</th>
+              <th className="text-right px-3 py-2 text-gray-400" title="Today's open price">Open</th>
+              <th className="text-right px-3 py-2 text-gray-400" title="Previous session close">Prev</th>
               <th className="text-right px-3 py-2 text-gray-400">Chg %</th>
-              <th className="text-left px-3 py-2 text-gray-400">Momentum</th>
+              <th className="text-left px-3 py-2 text-gray-400" title="0.6 × change% + 0.4 × intraday position factor">Momentum</th>
             </tr>
           </thead>
           <tbody>
@@ -96,6 +105,12 @@ export function SectorRotation({ data }: { data: SectorRotationData }) {
                 <td className="px-3 py-2 text-gray-200">{r.sector}</td>
                 <td className="px-3 py-2 text-blue-400 font-mono text-xs">{r.etf}</td>
                 <td className="px-3 py-2 text-right text-gray-300">${r.price?.toFixed(2)}</td>
+                <td className="px-3 py-2 text-right text-gray-500 text-xs">
+                  {r.open !== undefined ? `$${r.open.toFixed(2)}` : "—"}
+                </td>
+                <td className="px-3 py-2 text-right text-gray-500 text-xs">
+                  {r.prev_close !== undefined ? `$${r.prev_close.toFixed(2)}` : "—"}
+                </td>
                 <td className={`px-3 py-2 text-right ${r.change_pct > 0 ? "text-green-400" : r.change_pct < 0 ? "text-red-400" : "text-gray-400"}`}>
                   {r.change_pct > 0 ? "+" : ""}{r.change_pct?.toFixed(2)}%
                 </td>

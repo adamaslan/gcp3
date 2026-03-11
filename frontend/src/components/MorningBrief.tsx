@@ -5,6 +5,8 @@ interface IndexData {
   price?: number;
   change?: number;
   change_pct?: number;
+  open?: number;
+  prev_close?: number;
   error?: string;
 }
 
@@ -55,7 +57,9 @@ export function MorningBrief({ data }: { data: BriefData }) {
               <th className="text-left px-4 py-3 text-gray-400 font-medium">Index</th>
               <th className="text-left px-4 py-3 text-gray-400 font-medium">Symbol</th>
               <th className="text-right px-4 py-3 text-gray-400 font-medium">Price</th>
-              <th className="text-right px-4 py-3 text-gray-400 font-medium">Change</th>
+              <th className="text-right px-4 py-3 text-gray-400 font-medium" title="Today's open price">Open</th>
+              <th className="text-right px-4 py-3 text-gray-400 font-medium" title="Previous session close">Prev Close</th>
+              <th className="text-right px-4 py-3 text-gray-400 font-medium">Change $</th>
               <th className="text-right px-4 py-3 text-gray-400 font-medium">Change %</th>
             </tr>
           </thead>
@@ -66,6 +70,12 @@ export function MorningBrief({ data }: { data: BriefData }) {
                 <td className="px-4 py-3 text-blue-400 font-mono">{idx.symbol}</td>
                 <td className="px-4 py-3 text-right text-gray-300">
                   {idx.price !== undefined ? `$${idx.price.toFixed(2)}` : <span className="text-red-400 text-xs">{idx.error}</span>}
+                </td>
+                <td className="px-4 py-3 text-right text-gray-500 text-xs">
+                  {idx.open !== undefined ? `$${idx.open.toFixed(2)}` : "—"}
+                </td>
+                <td className="px-4 py-3 text-right text-gray-500 text-xs">
+                  {idx.prev_close !== undefined ? `$${idx.prev_close.toFixed(2)}` : "—"}
                 </td>
                 <td className="px-4 py-3 text-right"><ChangeCell pct={idx.change} /></td>
                 <td className="px-4 py-3 text-right"><ChangeCell pct={idx.change_pct} /></td>

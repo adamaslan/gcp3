@@ -7,6 +7,8 @@ interface Indicator {
   price?: number;
   change_pct?: number;
   change?: number;
+  high?: number;
+  low?: number;
   error?: string;
 }
 
@@ -56,6 +58,12 @@ function IndicatorCard({ ind }: { ind: Indicator }) {
           )}
         </div>
       </div>
+      {/* Intraday range — only shown when both high and low are present */}
+      {ind.high !== undefined && ind.low !== undefined && !ind.error && (
+        <div className="mt-2 text-xs text-gray-600 font-mono" title="Intraday low–high range">
+          {ind.low.toFixed(2)} – {ind.high.toFixed(2)}
+        </div>
+      )}
     </div>
   );
 }

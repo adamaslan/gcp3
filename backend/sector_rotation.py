@@ -1,6 +1,7 @@
 """Sector Rotation: momentum scores across 11 GICS sectors + AI regime."""
 import asyncio
 import logging
+import os
 from datetime import date
 
 import httpx
@@ -124,7 +125,14 @@ def _rule_based_rotation_analysis(ranked: list[dict]) -> str:
     )
 
 
-async def get_sector_rotation() -> dict:
+async def get_sector_rotation(force_rule_based: bool = False) -> dict:
+    """Fetch and rank 11 GICS sector ETFs by momentum score.
+
+    Args:
+        force_rule_based: If True, skip the Gemini API call and use rule-based
+            analysis. Used by the EOD scheduler refresh to avoid a 3rd daily
+            Gemini call when the midday cache has already expired.
+    """
     cache_key = f"sector_rotation:{date.today()}"
     if cached := get_cache(cache_key):
         logger.info("sector_rotation cache hit key=%s", cache_key)
@@ -153,7 +161,11 @@ async def get_sector_rotation() -> dict:
     leaders = ranked[:min(3, mid)] if n >= 2 else ranked[:1]
     laggards = ranked[max(n - 3, mid):] if n >= 2 else ranked[-1:]
 
-    ai_analysis = await _gemini_rotation_analysis(ranked)
+    if force_rule_based:
+        logger.info("sector_rotation: skipping Gemini (force_rule_based=True)")
+        ai_analysis = _rule_based_rotation_analysis(ranked)
+    else:
+        ai_analysis = await _gemini_rotation_analysis(ranked)
 
     result = {
         "date": str(date.today()),

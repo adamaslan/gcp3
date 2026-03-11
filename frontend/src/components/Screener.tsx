@@ -9,6 +9,8 @@ interface Quote {
   high: number;
   low: number;
   signal: string;
+  // "finnhub" = real-time intraday; "yfinance" = prior-close fallback
+  source?: string;
   error?: string;
 }
 
@@ -21,6 +23,8 @@ interface ScreenerData {
   breadth_pct: number;
   ai_regime: string;
   quotes: Record<string, Quote>;
+  // How many quotes came from each source
+  sources?: Record<string, number>;
 }
 
 const SIGNAL_BADGE: Record<string, string> = {
@@ -37,16 +41,29 @@ function Pct({ v }: { v?: number }) {
   return <span className={cls}>{v > 0 ? "+" : ""}{v.toFixed(2)}%</span>;
 }
 
+const SOURCE_BADGE: Record<string, string> = {
+  finnhub: "text-blue-400",
+  yfinance: "text-yellow-500",
+};
+
 function QuoteRow({ q, rank }: { q: Quote; rank: number }) {
   return (
     <tr className="border-t border-gray-800/60 hover:bg-gray-900/40">
       <td className="px-3 py-2 text-gray-600 text-xs">{rank}</td>
       <td className="px-3 py-2 font-mono text-blue-400 font-semibold">{q.symbol}</td>
       <td className="px-3 py-2 text-right text-gray-300">${q.price?.toFixed(2)}</td>
+      <td className="px-3 py-2 text-right text-gray-500 text-xs font-mono">
+        {q.high !== undefined && q.low !== undefined ? `${q.low.toFixed(2)}–${q.high.toFixed(2)}` : "—"}
+      </td>
       <td className="px-3 py-2 text-right"><Pct v={q.change_pct} /></td>
       <td className="px-3 py-2 text-center">
         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SIGNAL_BADGE[q.signal] ?? SIGNAL_BADGE.hold}`}>
           {q.signal?.replace("_", " ")}
+        </span>
+      </td>
+      <td className="px-3 py-2 text-center">
+        <span className={`text-xs font-mono ${SOURCE_BADGE[q.source ?? ""] ?? "text-gray-600"}`} title={q.source === "yfinance" ? "Prior-close fallback — Finnhub unavailable for this symbol" : "Real-time intraday quote"}>
+          {q.source ?? "—"}
         </span>
       </td>
     </tr>
@@ -99,6 +116,21 @@ export function Screener({ data }: { data: ScreenerData }) {
         ))}
       </div>
 
+      {/* Source breakdown */}
+      {data.sources && Object.keys(data.sources).length > 0 && (
+        <div className="flex gap-3 text-xs text-gray-500">
+          <span>Data sources:</span>
+          {Object.entries(data.sources).map(([src, count]) => (
+            <span key={src} className={`font-mono ${SOURCE_BADGE[src] ?? "text-gray-500"}`}>
+              {src} ({count})
+            </span>
+          ))}
+          {data.sources.yfinance ? (
+            <span className="text-yellow-600">· yfinance = prior-close fallback (Finnhub rate limit)</span>
+          ) : null}
+        </div>
+      )}
+
       {/* Table */}
       <div className="rounded-xl border border-gray-800 overflow-hidden">
         <table className="w-full text-sm">
@@ -107,8 +139,10 @@ export function Screener({ data }: { data: ScreenerData }) {
               <th className="text-left px-3 py-2 text-gray-500 font-medium w-8">#</th>
               <th className="text-left px-3 py-2 text-gray-400 font-medium">Symbol</th>
               <th className="text-right px-3 py-2 text-gray-400 font-medium">Price</th>
+              <th className="text-right px-3 py-2 text-gray-400 font-medium">Low–High</th>
               <th className="text-right px-3 py-2 text-gray-400 font-medium">Chg %</th>
               <th className="text-center px-3 py-2 text-gray-400 font-medium">Signal</th>
+              <th className="text-center px-3 py-2 text-gray-400 font-medium">Source</th>
             </tr>
           </thead>
           <tbody>
