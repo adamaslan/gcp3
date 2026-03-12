@@ -13,3 +13,4 @@ credentials*.json
 .DS_Store
 .claude/
 nudocs3/
+.vercel
