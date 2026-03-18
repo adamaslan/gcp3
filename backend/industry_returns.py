@@ -72,7 +72,7 @@ async def get_industry_returns() -> dict:
         "date": str(date.today()),
         "updated": updated,
         "total": len(industries),
-        "industries": {i["industry"]: i for i in industries},
+        "industries": industries,
         "rankings": rankings,
         "leaders_1m": leaders_1m,
         "laggards_1m": laggards_1m,

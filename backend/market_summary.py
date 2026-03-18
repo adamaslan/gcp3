@@ -1,7 +1,8 @@
 """Market Summary: reads daily aggregated AI analysis from shared Firestore summaries collection."""
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date
 
+from google.cloud import firestore
 from firestore import db as _db, get_cache, set_cache
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,8 @@ async def get_market_summary(days: int = 7) -> dict:
 
     result = {
         "date": str(date.today()),
+        "days": days,
+        "summaries": summaries,
         "latest": latest,
         "history": summaries,
         "daily_scores": daily_scores,
