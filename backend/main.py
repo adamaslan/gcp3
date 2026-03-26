@@ -9,7 +9,7 @@ import httpx
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from industry import get_industry_data
+from industry import get_industry_data, seed_etf_history
 from morning import get_morning_brief
 from screener import get_screener_data
 from sector_rotation import get_sector_rotation  # force_rule_based param added
@@ -392,6 +392,32 @@ async def industry_returns(request: Request) -> dict:
     except Exception as exc:
         logger.exception("GET /industry-returns failed: %s", exc)
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+
+
+# ── Admin: Seed / delta-update permanent ETF price history ───────────────────
+@app.post("/admin/seed-etf-history")
+async def seed_etf_history_endpoint(
+    request: Request,
+    x_scheduler_token: Optional[str] = Header(default=None),
+) -> dict:
+    """Seed or delta-update permanent ETF history for all 50 industries.
+
+    - First run: fetches full yfinance history (max), stores in etf_history/*.
+    - Subsequent runs: appends only new trading days (3mo fetch, delta filter).
+    - Returns per-ETF row counts.
+
+    Trigger manually once after deploy, then optionally add to /refresh/all.
+    """
+    _verify_scheduler(x_scheduler_token)
+    logger.info("POST /admin/seed-etf-history triggered")
+    try:
+        results = await seed_etf_history()
+        total = sum(results.values())
+        logger.info("seed-etf-history complete: %d ETFs, %d total rows", len(results), total)
+        return {"status": "ok", "etfs": len(results), "total_rows": total, "detail": results}
+    except Exception as exc:
+        logger.exception("POST /admin/seed-etf-history failed: %s", exc)
+        raise HTTPException(status_code=503, detail=str(exc))
 
 
 # ── Tool 12: Market Summary (from shared Firestore summaries collection) ──────

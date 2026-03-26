@@ -6,6 +6,12 @@ Data resolution chain per ETF:
   3. Alpha Vantage ANALYTICS_FIXED_WINDOW — batched (5 symbols/call),
      enriches valid quotes with multi-period returns (1m, 3m, 1y)
      when AV quota allows; pure bonus data, never blocks quotes
+
+Permanent storage (etf_store):
+  - On first run, seeds full price history for all 50 ETFs via yfinance
+  - Daily refresh appends only new trading days (delta fetch)
+  - Multi-period returns calculated from stored history (zero API calls)
+  - Populates industry_cache collection consumed by industry_returns.py
 """
 import asyncio
 import logging
@@ -14,6 +20,7 @@ from datetime import date
 import httpx
 
 from data_client import av_analytics_batch, av_remaining_calls, finnhub_get, get_cache, get_quote, set_cache
+import etf_store
 
 logger = logging.getLogger(__name__)
 
@@ -188,6 +195,9 @@ async def get_industry_data() -> dict:
     for row in ranked:
         by_sector.setdefault(row["sector"], []).append(row)
 
+    # Step 3: attach multi-period returns from permanent ETF store + persist to industry_cache
+    _attach_stored_returns(industries)
+
     result = {
         "date": str(date.today()),
         "total": len(industries),
@@ -201,3 +211,95 @@ async def get_industry_data() -> dict:
     if ranked:
         set_cache(cache_key, result, ttl_hours=24)
     return result
+
+
+def _attach_stored_returns(industries: dict) -> None:
+    """Attach multi-period returns from etf_store and persist to industry_cache.
+
+    For each ETF: compute returns from stored history, attach to the industry
+    dict, and write to the industry_cache Firestore collection so
+    industry_returns.py can read them without extra API calls.
+    """
+    from firestore import db as _db
+    now_str = datetime.utcnow().isoformat()
+    db = _db()
+    batch = db.batch()
+    ops = 0
+
+    # Deduplicate ETFs (multiple industries may share one ETF)
+    etf_returns: dict[str, dict | None] = {}
+    for data in industries.values():
+        etf = data.get("etf")
+        if etf and etf not in etf_returns:
+            etf_returns[etf] = etf_store.compute_returns(etf)
+
+    for industry, data in industries.items():
+        etf = data.get("etf")
+        returns = etf_returns.get(etf) if etf else None
+        if returns:
+            data["returns"] = {k: v for k, v in returns.items()
+                               if not k.endswith("_high") and not k.endswith("_low")}
+            data["52w_high"] = returns.get("52w_high")
+            data["52w_low"] = returns.get("52w_low")
+
+        # Persist to industry_cache for industry_returns.py
+        doc_ref = db.collection("industry_cache").document(industry)
+        batch.set(doc_ref, {
+            "industry": industry,
+            "sector": data.get("sector"),
+            "etf": etf,
+            "returns": data.get("returns", {}),
+            "52w_high": data.get("52w_high"),
+            "52w_low": data.get("52w_low"),
+            "updated": now_str,
+        })
+        ops += 1
+        if ops >= 450:
+            batch.commit()
+            batch = db.batch()
+            ops = 0
+
+    if ops:
+        batch.commit()
+    logger.info("industry: persisted %d industries to industry_cache", len(industries))
+
+
+async def seed_etf_history() -> dict[str, int]:
+    """Seed or delta-update permanent ETF history for all 50 industries.
+
+    Call once at startup or via a scheduled endpoint. Uses yfinance for
+    full history on first run; appends only new days on subsequent runs.
+
+    Returns:
+        Dict mapping ETF symbol → rows stored/appended.
+    """
+    import yfinance as yf
+
+    unique_etfs = list({etf for _, etf in _FLAT.values()})
+    results: dict[str, int] = {}
+
+    for etf in unique_etfs:
+        meta = etf_store.get_metadata(etf)
+        try:
+            ticker = yf.Ticker(etf)
+            period = "max" if meta is None else "3mo"
+            hist = ticker.history(period=period)
+            if hist.empty:
+                logger.warning("seed_etf_history: no data for %s", etf)
+                continue
+            hist = hist.rename(columns={"Close": "adjusted_close", "Volume": "volume"})
+            if meta is None:
+                rows = etf_store.store_history(etf, hist, source="yfinance_seed")
+            else:
+                rows = etf_store.append_daily(etf, hist, source="yfinance_delta")
+            results[etf] = rows
+        except Exception as exc:
+            logger.error("seed_etf_history: failed for %s: %s", etf, exc)
+            results[etf] = 0
+
+    logger.info("seed_etf_history complete: %d ETFs, %d total rows", len(results), sum(results.values()))
+    return results
+
+
+# Deferred import to avoid circular at module level
+from datetime import datetime  # noqa: E402 (used in _attach_stored_returns)

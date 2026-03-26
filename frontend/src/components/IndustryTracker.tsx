@@ -12,6 +12,10 @@ interface IndustryRow {
   return_1m?: number;
   mean_daily_return?: number;
   stddev_daily?: number;
+  // Permanent ETF store — populated after seed-etf-history runs
+  returns?: Record<string, number | null>;
+  "52w_high"?: number;
+  "52w_low"?: number;
   error?: string;
 }
 
@@ -56,6 +60,8 @@ function IndustryTable({ rows, startRank = 1 }: { rows: IndustryRow[]; startRank
           {enriched && <th className="text-right px-3 py-2 text-gray-400 font-medium" title="1-month cumulative return (Alpha Vantage)">1M Return</th>}
           {enriched && <th className="text-right px-3 py-2 text-gray-400 font-medium" title="Mean daily return (Alpha Vantage)">Avg/Day</th>}
           {enriched && <th className="text-right px-3 py-2 text-gray-400 font-medium" title="Daily return standard deviation — higher = more volatile (Alpha Vantage)">Volatility</th>}
+          <th className="text-right px-3 py-2 text-amber-500 font-medium text-xs" title="52-week high price (from stored history)">52W Hi</th>
+          <th className="text-right px-3 py-2 text-amber-500 font-medium text-xs" title="52-week low price (from stored history)">52W Lo</th>
         </tr>
       </thead>
       <tbody>
@@ -88,6 +94,13 @@ function IndustryTable({ rows, startRank = 1 }: { rows: IndustryRow[]; startRank
                 {r.stddev_daily !== undefined ? (r.stddev_daily * 100).toFixed(3) + "%" : <span className="text-gray-600">—</span>}
               </td>
             )}
+            {/* 52-week range from permanent ETF store */}
+            <td className="px-3 py-2 text-right text-xs font-mono text-amber-400">
+              {r["52w_high"] != null ? `$${r["52w_high"].toFixed(2)}` : <span className="text-gray-700">—</span>}
+            </td>
+            <td className="px-3 py-2 text-right text-xs font-mono text-amber-600">
+              {r["52w_low"] != null ? `$${r["52w_low"].toFixed(2)}` : <span className="text-gray-700">—</span>}
+            </td>
           </tr>
         ))}
       </tbody>

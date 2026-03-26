@@ -1,4 +1,8 @@
-"""Industry Returns: reads multi-period ETF return data from shared Firestore industry_cache."""
+"""Industry Returns: multi-period ETF returns from Firestore industry_cache.
+
+Reads data populated by industry.py._attach_stored_returns (via etf_store).
+No API calls — pure Firestore read + in-process ranking.
+"""
 import logging
 from datetime import date
 
@@ -6,7 +10,7 @@ from firestore import db as _db, get_cache, set_cache
 
 logger = logging.getLogger(__name__)
 
-RETURN_PERIODS = ["1w", "2w", "1m", "2m", "3m", "6m", "52w", "2y", "3y", "5y", "10y"]
+RETURN_PERIODS = ["1d", "3d", "1w", "2w", "3w", "1m", "3m", "6m", "ytd", "1y", "2y", "5y", "10y"]
 
 
 def _serialize(doc: dict) -> dict:
@@ -21,64 +25,66 @@ def _serialize(doc: dict) -> dict:
     return out
 
 
-def _rank_by_period(industries: list[dict], period: str) -> list[dict]:
-    valid = [i for i in industries if i.get("returns", {}).get(period) is not None]
+def _rank(industries: list[dict], period: str) -> list[dict]:
+    valid = [i for i in industries if (i.get("returns") or {}).get(period) is not None]
     return sorted(valid, key=lambda x: x["returns"][period], reverse=True)
 
 
 async def get_industry_returns() -> dict:
     cache_key = f"industry_returns:{date.today()}"
     if cached := get_cache(cache_key):
-        logger.info("industry_returns cache hit key=%s", cache_key)
+        logger.info("industry_returns cache hit")
         return cached
 
-    logger.info("industry_returns reading from Firestore industry_cache collection")
-    db = _db()
-    docs = list(db.collection("industry_cache").stream())
-
-    industries = []
+    docs = list(_db().collection("industry_cache").stream())
+    industries: list[dict] = []
     for d in docs:
-        data = _serialize(d.to_dict())
-        data.setdefault("industry", d.id)
-        industries.append(data)
+        row = _serialize(d.to_dict())
+        row.setdefault("industry", d.id)
+        row.setdefault("returns", {})
+        industries.append(row)
 
-    # Build rankings for key periods
-    rankings: dict[str, list] = {}
+    # Per-period ranked lists (top 5 leaders / laggards each)
+    leaders: dict[str, list] = {}
+    laggards: dict[str, list] = {}
     for period in RETURN_PERIODS:
-        ranked = _rank_by_period(industries, period)
+        ranked = _rank(industries, period)
         if ranked:
-            rankings[period] = [
+            leaders[period] = [
                 {"industry": r["industry"], "etf": r.get("etf"), "return": r["returns"][period]}
-                for r in ranked
+                for r in ranked[:5]
+            ]
+            laggards[period] = [
+                {"industry": r["industry"], "etf": r.get("etf"), "return": r["returns"][period]}
+                for r in ranked[-5:]
             ]
 
-    # Best/worst for 1m (most actionable)
-    month_ranked = _rank_by_period(industries, "1m")
-    leaders_1m = month_ranked[:5]
-    laggards_1m = month_ranked[-5:]
-
-    # Best/worst for 1w
-    week_ranked = _rank_by_period(industries, "1w")
-    leaders_1w = week_ranked[:5]
-    laggards_1w = week_ranked[-5:]
-
-    # Updated timestamp from most recent doc
     updated = max(
         (i.get("updated", "") for i in industries if i.get("updated")),
         default=str(date.today()),
     )
 
+    # Flatten to list shape the frontend IndustryReturns component expects
+    industries_list = [
+        {
+            "industry": i["industry"],
+            "etf": i.get("etf"),
+            "returns": i.get("returns", {}),
+            "52w_high": i.get("52w_high"),
+            "52w_low": i.get("52w_low"),
+            "updated": i.get("updated"),
+        }
+        for i in industries
+    ]
+
     result = {
         "date": str(date.today()),
         "updated": updated,
         "total": len(industries),
-        "industries": {i["industry"]: i for i in industries},
-        "rankings": rankings,
-        "leaders_1m": leaders_1m,
-        "laggards_1m": laggards_1m,
-        "leaders_1w": leaders_1w,
-        "laggards_1w": laggards_1w,
-        "periods_available": [p for p in RETURN_PERIODS if p in rankings],
+        "industries": industries_list,
+        "leaders": leaders,
+        "laggards": laggards,
+        "periods_available": [p for p in RETURN_PERIODS if p in leaders],
     }
 
     set_cache(cache_key, result, ttl_hours=6)
