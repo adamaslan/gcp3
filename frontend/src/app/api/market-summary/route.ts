@@ -1,16 +1,18 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND = process.env.BACKEND_URL!;
 
-export async function GET(): Promise<NextResponse> {
+export async function GET(request: NextRequest): Promise<NextResponse> {
   if (!BACKEND) {
     console.error("[market-summary] BACKEND_URL not set");
     return NextResponse.json({ error: "BACKEND_URL not configured" }, { status: 500 });
   }
 
+  const days = request.nextUrl.searchParams.get("days") ?? "7";
+
   let res: Response;
   try {
-    res = await fetch(`${BACKEND}/market-summary?days=7`, { next: { revalidate: 7200 } });
+    res = await fetch(`${BACKEND}/market-summary?days=${days}`, { cache: "no-store" });
   } catch (err) {
     console.error("[market-summary] Network error:", err);
     return NextResponse.json({ error: "Network error", detail: String(err) }, { status: 503 });
