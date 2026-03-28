@@ -60,7 +60,7 @@ function hasStoredReturns(rows: IndustryRow[]): boolean {
 }
 
 function ReturnCell({ v }: { v?: number | null }) {
-  if (v == null || v === undefined) return <span className="text-gray-700">—</span>;
+  if (v == null) return <span className="text-gray-700">—</span>;
   const cls = v >= 5 ? "text-green-300" : v >= 0 ? "text-green-500" : v >= -5 ? "text-red-500" : "text-red-300";
   return <span className={cls}>{v >= 0 ? "+" : ""}{v.toFixed(2)}%</span>;
 }
@@ -189,15 +189,15 @@ function IndustryTable({ rows, startRank = 1, showReturns }: { rows: IndustryRow
 export function IndustryTracker({ data }: { data: IndustryData }) {
   const [view, setView] = useState<"ranked" | "sector">("ranked");
   const [showReturns, setShowReturns] = useState(false);
-  const [leaderPeriod, setLeaderPeriod] = useState<"1d" | ReturnPeriod>("1d");
+  const [leaderPeriod, setLeaderPeriod] = useState<ReturnPeriod>("1d");
   const enriched = hasEnrichment(data.rankings);
   const hasReturns = hasStoredReturns(data.rankings);
 
   const periodRanked = useMemo(() => {
     if (leaderPeriod === "1d") return data.rankings;
     return [...data.rankings].sort((a, b) => {
-      const av = a.returns?.[leaderPeriod as ReturnPeriod] ?? null;
-      const bv = b.returns?.[leaderPeriod as ReturnPeriod] ?? null;
+      const av = a.returns?.[leaderPeriod] ?? null;
+      const bv = b.returns?.[leaderPeriod] ?? null;
       if (av == null && bv == null) return 0;
       if (av == null) return 1;
       if (bv == null) return -1;
@@ -206,29 +206,26 @@ export function IndustryTracker({ data }: { data: IndustryData }) {
   }, [data.rankings, leaderPeriod]);
 
   const leaders = periodRanked.slice(0, 5);
-  const laggards = [...periodRanked].reverse().slice(0, 5);
+  const laggards = periodRanked.slice(-5).reverse();
 
   const periodVal = (r: IndustryRow): number | undefined => {
     if (leaderPeriod === "1d") return r.change_pct;
-    return r.returns?.[leaderPeriod as ReturnPeriod] ?? undefined;
+    return r.returns?.[leaderPeriod] ?? undefined;
   };
 
-  const allPeriods: Array<{ key: "1d" | ReturnPeriod; label: string }> = [
-    { key: "1d", label: "1D" },
-    ...RETURN_PERIODS.map((p) => ({ key: p, label: RETURN_PERIOD_LABELS[p] })),
-  ];
+  const allPeriods = RETURN_PERIODS.map((p) => ({ key: p, label: RETURN_PERIOD_LABELS[p] }));
 
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Industry Tracker</h1>
           <p className="text-sm text-gray-500 mt-0.5">
             {data.total} industries · Finnhub{enriched ? " + Alpha Vantage" : " (yfinance fallback available)"} · {data.date}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {hasReturns && (
             <button
               onClick={() => setShowReturns(!showReturns)}
@@ -296,7 +293,7 @@ export function IndustryTracker({ data }: { data: IndustryData }) {
             );
           })}
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="p-4 rounded-xl border border-green-800/60 bg-green-950/10">
             <h3 className="text-xs font-semibold text-green-400 uppercase tracking-wide mb-3">Top Leaders</h3>
             {leaders.map((r) => (
@@ -325,7 +322,7 @@ export function IndustryTracker({ data }: { data: IndustryData }) {
       </div>
 
       {/* Main table */}
-      <div className="rounded-xl border border-gray-800 overflow-hidden">
+      <div className="rounded-xl border border-gray-800 overflow-x-auto">
         {view === "ranked" ? (
           <IndustryTable rows={data.rankings} startRank={1} showReturns={showReturns} />
         ) : (
