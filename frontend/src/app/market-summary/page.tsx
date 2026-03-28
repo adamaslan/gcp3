@@ -1,16 +1,49 @@
+"use client";
+import { useState, useEffect } from "react";
 import { MarketSummary } from "@/components/MarketSummary";
 
-export const dynamic = "force-dynamic";
+const DAY_OPTIONS = [7, 14, 30] as const;
+type Days = typeof DAY_OPTIONS[number];
 
-async function getData() {
-  const base = process.env.BACKEND_URL;
-  if (!base) throw new Error("BACKEND_URL is not configured");
-  const res = await fetch(`${base}/market-summary?days=7`, { next: { revalidate: 3600 } });
-  if (!res.ok) throw new Error(`Backend error ${res.status}`);
-  return res.json();
-}
+export default function MarketSummaryPage() {
+  const [days, setDays] = useState<Days>(7);
+  const [data, setData] = useState<object | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-export default async function MarketSummaryPage() {
-  const data = await getData();
-  return <MarketSummary data={data} />;
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    fetch(`/api/market-summary?days=${days}`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`Error ${r.status}`);
+        return r.json();
+      })
+      .then((d) => { setData(d); setLoading(false); })
+      .catch((e) => { setError(String(e)); setLoading(false); });
+  }, [days]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-gray-500">Window:</span>
+        <div className="flex gap-1 bg-gray-900 rounded-lg p-1">
+          {DAY_OPTIONS.map((d) => (
+            <button
+              key={d}
+              onClick={() => setDays(d)}
+              className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+                days === d ? "bg-gray-700 text-white" : "text-gray-400 hover:text-white"
+              }`}
+            >
+              {d}d
+            </button>
+          ))}
+        </div>
+      </div>
+      {loading && <div className="text-gray-500 text-sm py-10 text-center">Loading…</div>}
+      {error && <div className="text-red-400 text-sm">{error}</div>}
+      {data && !loading && <MarketSummary data={data as Parameters<typeof MarketSummary>[0]["data"]} />}
+    </div>
+  );
 }

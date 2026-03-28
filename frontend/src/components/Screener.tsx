@@ -70,9 +70,33 @@ function QuoteRow({ q, rank }: { q: Quote; rank: number }) {
   );
 }
 
+type ScreenerSortKey = "symbol" | "price" | "change_pct" | "high" | "low" | "signal";
+const SIGNAL_ORDER = ["strong_buy", "buy", "hold", "sell", "strong_sell"];
+
 export function Screener({ data }: { data: ScreenerData }) {
-  const [view, setView] = useState<"gainers" | "losers">("gainers");
-  const rows = view === "gainers" ? data.gainers : data.losers;
+  const [view, setView] = useState<"gainers" | "losers" | "all">("gainers");
+  const [sortKey, setSortKey] = useState<ScreenerSortKey>("change_pct");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  function handleSort(k: ScreenerSortKey) {
+    if (k === sortKey) setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    else { setSortKey(k); setSortDir("desc"); }
+  }
+
+  const allRows = Object.values(data.quotes).filter((q) => !q.error);
+  const sortedAll = [...allRows].sort((a, b) => {
+    if (sortKey === "symbol") return sortDir === "desc" ? b.symbol.localeCompare(a.symbol) : a.symbol.localeCompare(b.symbol);
+    if (sortKey === "signal") {
+      const ai = SIGNAL_ORDER.indexOf(a.signal);
+      const bi = SIGNAL_ORDER.indexOf(b.signal);
+      return sortDir === "desc" ? ai - bi : bi - ai;
+    }
+    const av = a[sortKey] ?? 0;
+    const bv = b[sortKey] ?? 0;
+    return sortDir === "desc" ? (bv as number) - (av as number) : (av as number) - (bv as number);
+  });
+
+  const rows = view === "gainers" ? data.gainers : view === "losers" ? data.losers : sortedAll;
   const breadthColor = data.breadth_pct > 0 ? "text-green-400" : data.breadth_pct < 0 ? "text-red-400" : "text-gray-400";
 
   return (
@@ -83,7 +107,7 @@ export function Screener({ data }: { data: ScreenerData }) {
           <p className="text-sm text-gray-500 mt-0.5">{data.total_screened} symbols screened · {data.date}</p>
         </div>
         <div className="flex gap-1 bg-gray-900 rounded-lg p-1">
-          {(["gainers", "losers"] as const).map((v) => (
+          {(["gainers", "losers", "all"] as const).map((v) => (
             <button
               key={v}
               onClick={() => setView(v)}
@@ -137,12 +161,25 @@ export function Screener({ data }: { data: ScreenerData }) {
           <thead className="bg-gray-900 sticky top-0">
             <tr>
               <th className="text-left px-3 py-2 text-gray-500 font-medium w-8">#</th>
-              <th className="text-left px-3 py-2 text-gray-400 font-medium">Symbol</th>
-              <th className="text-right px-3 py-2 text-gray-400 font-medium">Price</th>
-              <th className="text-right px-3 py-2 text-gray-400 font-medium">Low–High</th>
-              <th className="text-right px-3 py-2 text-gray-400 font-medium">Chg %</th>
-              <th className="text-center px-3 py-2 text-gray-400 font-medium">Signal</th>
-              <th className="text-center px-3 py-2 text-gray-400 font-medium">Source</th>
+              {view === "all" ? (
+                <>
+                  <th className={`text-left px-3 py-2 font-medium cursor-pointer select-none hover:text-white ${sortKey === "symbol" ? "text-white" : "text-gray-400"}`} onClick={() => handleSort("symbol")}>Symbol{sortKey === "symbol" ? (sortDir === "desc" ? " ▼" : " ▲") : ""}</th>
+                  <th className={`text-right px-3 py-2 font-medium cursor-pointer select-none hover:text-white ${sortKey === "price" ? "text-white" : "text-gray-400"}`} onClick={() => handleSort("price")}>Price{sortKey === "price" ? (sortDir === "desc" ? " ▼" : " ▲") : ""}</th>
+                  <th className="text-right px-3 py-2 text-gray-400 font-medium">Low–High</th>
+                  <th className={`text-right px-3 py-2 font-medium cursor-pointer select-none hover:text-white ${sortKey === "change_pct" ? "text-white" : "text-gray-400"}`} onClick={() => handleSort("change_pct")}>Chg %{sortKey === "change_pct" ? (sortDir === "desc" ? " ▼" : " ▲") : ""}</th>
+                  <th className={`text-center px-3 py-2 font-medium cursor-pointer select-none hover:text-white ${sortKey === "signal" ? "text-white" : "text-gray-400"}`} onClick={() => handleSort("signal")}>Signal{sortKey === "signal" ? (sortDir === "desc" ? " ▼" : " ▲") : ""}</th>
+                  <th className="text-center px-3 py-2 text-gray-400 font-medium">Source</th>
+                </>
+              ) : (
+                <>
+                  <th className="text-left px-3 py-2 text-gray-400 font-medium">Symbol</th>
+                  <th className="text-right px-3 py-2 text-gray-400 font-medium">Price</th>
+                  <th className="text-right px-3 py-2 text-gray-400 font-medium">Low–High</th>
+                  <th className="text-right px-3 py-2 text-gray-400 font-medium">Chg %</th>
+                  <th className="text-center px-3 py-2 text-gray-400 font-medium">Signal</th>
+                  <th className="text-center px-3 py-2 text-gray-400 font-medium">Source</th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
