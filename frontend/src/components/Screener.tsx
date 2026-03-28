@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 
 interface Quote {
   symbol: string;
@@ -73,6 +73,23 @@ function QuoteRow({ q, rank }: { q: Quote; rank: number }) {
 type ScreenerSortKey = "symbol" | "price" | "change_pct" | "high" | "low" | "signal";
 const SIGNAL_ORDER = ["strong_buy", "buy", "hold", "sell", "strong_sell"];
 
+function SortHeader({
+  label, sortKey, current, dir, onClick, align = "right",
+}: {
+  label: string; sortKey: ScreenerSortKey; current: ScreenerSortKey; dir: "asc" | "desc";
+  onClick: (k: ScreenerSortKey) => void; align?: "left" | "right" | "center";
+}) {
+  const active = current === sortKey;
+  return (
+    <th
+      className={`text-${align} px-3 py-2 font-medium cursor-pointer select-none hover:text-white ${active ? "text-white" : "text-gray-400"}`}
+      onClick={() => onClick(sortKey)}
+    >
+      {label}{active ? (dir === "desc" ? " ▼" : " ▲") : ""}
+    </th>
+  );
+}
+
 export function Screener({ data }: { data: ScreenerData }) {
   const [view, setView] = useState<"gainers" | "losers" | "all">("gainers");
   const [sortKey, setSortKey] = useState<ScreenerSortKey>("change_pct");
@@ -84,17 +101,20 @@ export function Screener({ data }: { data: ScreenerData }) {
   }
 
   const allRows = Object.values(data.quotes).filter((q) => !q.error);
-  const sortedAll = [...allRows].sort((a, b) => {
+  const sortedAll = useMemo(() => [...allRows].sort((a, b) => {
     if (sortKey === "symbol") return sortDir === "desc" ? b.symbol.localeCompare(a.symbol) : a.symbol.localeCompare(b.symbol);
     if (sortKey === "signal") {
       const ai = SIGNAL_ORDER.indexOf(a.signal);
       const bi = SIGNAL_ORDER.indexOf(b.signal);
-      return sortDir === "desc" ? ai - bi : bi - ai;
+      return sortDir === "desc" ? bi - ai : ai - bi;
     }
-    const av = a[sortKey] ?? 0;
-    const bv = b[sortKey] ?? 0;
+    const av = a[sortKey];
+    const bv = b[sortKey];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
     return sortDir === "desc" ? (bv as number) - (av as number) : (av as number) - (bv as number);
-  });
+  }), [allRows, sortKey, sortDir]);
 
   const rows = view === "gainers" ? data.gainers : view === "losers" ? data.losers : sortedAll;
   const breadthColor = data.breadth_pct > 0 ? "text-green-400" : data.breadth_pct < 0 ? "text-red-400" : "text-gray-400";
@@ -163,11 +183,11 @@ export function Screener({ data }: { data: ScreenerData }) {
               <th className="text-left px-3 py-2 text-gray-500 font-medium w-8">#</th>
               {view === "all" ? (
                 <>
-                  <th className={`text-left px-3 py-2 font-medium cursor-pointer select-none hover:text-white ${sortKey === "symbol" ? "text-white" : "text-gray-400"}`} onClick={() => handleSort("symbol")}>Symbol{sortKey === "symbol" ? (sortDir === "desc" ? " ▼" : " ▲") : ""}</th>
-                  <th className={`text-right px-3 py-2 font-medium cursor-pointer select-none hover:text-white ${sortKey === "price" ? "text-white" : "text-gray-400"}`} onClick={() => handleSort("price")}>Price{sortKey === "price" ? (sortDir === "desc" ? " ▼" : " ▲") : ""}</th>
+                  <SortHeader label="Symbol" sortKey="symbol" current={sortKey} dir={sortDir} onClick={handleSort} align="left" />
+                  <SortHeader label="Price" sortKey="price" current={sortKey} dir={sortDir} onClick={handleSort} />
                   <th className="text-right px-3 py-2 text-gray-400 font-medium">Low–High</th>
-                  <th className={`text-right px-3 py-2 font-medium cursor-pointer select-none hover:text-white ${sortKey === "change_pct" ? "text-white" : "text-gray-400"}`} onClick={() => handleSort("change_pct")}>Chg %{sortKey === "change_pct" ? (sortDir === "desc" ? " ▼" : " ▲") : ""}</th>
-                  <th className={`text-center px-3 py-2 font-medium cursor-pointer select-none hover:text-white ${sortKey === "signal" ? "text-white" : "text-gray-400"}`} onClick={() => handleSort("signal")}>Signal{sortKey === "signal" ? (sortDir === "desc" ? " ▼" : " ▲") : ""}</th>
+                  <SortHeader label="Chg %" sortKey="change_pct" current={sortKey} dir={sortDir} onClick={handleSort} />
+                  <SortHeader label="Signal" sortKey="signal" current={sortKey} dir={sortDir} onClick={handleSort} align="center" />
                   <th className="text-center px-3 py-2 text-gray-400 font-medium">Source</th>
                 </>
               ) : (

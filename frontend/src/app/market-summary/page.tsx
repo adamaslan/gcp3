@@ -12,15 +12,19 @@ export default function MarketSummaryPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
     setLoading(true);
     setError(null);
-    fetch(`/api/market-summary?days=${days}`)
+    fetch(`/api/market-summary?days=${days}`, { signal: controller.signal })
       .then((r) => {
         if (!r.ok) throw new Error(`Error ${r.status}`);
         return r.json();
       })
       .then((d) => { setData(d); setLoading(false); })
-      .catch((e) => { setError(String(e)); setLoading(false); });
+      .catch((e) => {
+        if (e.name !== "AbortError") { setError(String(e)); setLoading(false); }
+      });
+    return () => { controller.abort(); };
   }, [days]);
 
   return (
