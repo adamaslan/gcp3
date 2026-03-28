@@ -8,7 +8,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "BACKEND_URL not configured" }, { status: 500 });
   }
 
-  const days = request.nextUrl.searchParams.get("days") ?? "7";
+  const daysParam = request.nextUrl.searchParams.get("days");
+  if (daysParam && !["7", "14", "30"].includes(daysParam)) {
+    return NextResponse.json({ error: "Invalid 'days' parameter. Must be one of 7, 14, 30." }, { status: 400 });
+  }
+  const days = daysParam ?? "7";
 
   let res: Response;
   try {

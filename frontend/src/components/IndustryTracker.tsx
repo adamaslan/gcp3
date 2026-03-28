@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 
 interface IndustryRow {
   industry: string;
@@ -45,9 +45,15 @@ function hasEnrichment(rows: IndustryRow[]): boolean {
   return rows.some((r) => r.return_1m !== undefined);
 }
 
-const RETURN_PERIODS = ["1m", "3m", "ytd", "1y"] as const;
+const RETURN_PERIODS = ["1d", "3d", "1w", "2w", "3w", "1m", "3m", "6m", "ytd", "1y", "2y", "5y", "10y"] as const;
 type ReturnPeriod = typeof RETURN_PERIODS[number];
-const RETURN_PERIOD_LABELS: Record<ReturnPeriod, string> = { "1m": "1M", "3m": "3M", ytd: "YTD", "1y": "1Y" };
+const RETURN_PERIOD_LABELS: Record<ReturnPeriod, string> = {
+  "1d": "1D", "3d": "3D",
+  "1w": "1W", "2w": "2W", "3w": "3W",
+  "1m": "1M", "3m": "3M", "6m": "6M",
+  "ytd": "YTD",
+  "1y": "1Y", "2y": "2Y", "5y": "5Y", "10y": "10Y",
+};
 
 function hasStoredReturns(rows: IndustryRow[]): boolean {
   return rows.some((r) => r.returns && Object.keys(r.returns).length > 0);
@@ -93,7 +99,7 @@ function IndustryTable({ rows, startRank = 1, showReturns }: { rows: IndustryRow
     }
   }
 
-  const sorted = [...rows].sort((a, b) => {
+  const sorted = useMemo(() => [...rows].sort((a, b) => {
     let av: number | string | undefined;
     let bv: number | string | undefined;
     if (sortKey === "industry") { av = a.industry; bv = b.industry; }
@@ -110,7 +116,7 @@ function IndustryTable({ rows, startRank = 1, showReturns }: { rows: IndustryRow
       return sortDir === "desc" ? bv.localeCompare(av) : av.localeCompare(bv);
     }
     return sortDir === "desc" ? (bv as number) - (av as number) : (av as number) - (bv as number);
-  });
+  }), [rows, sortKey, sortDir]);
   return (
     <table className="w-full text-sm">
       <thead className="bg-gray-900 sticky top-0">
