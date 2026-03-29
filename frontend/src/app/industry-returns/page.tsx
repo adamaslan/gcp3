@@ -1,6 +1,6 @@
 import { IndustryReturns } from "@/components/IndustryReturns";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300;
 
 async function getData() {
   const base = process.env.BACKEND_URL;

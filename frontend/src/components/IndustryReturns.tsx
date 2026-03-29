@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState, useMemo } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 interface IndustryReturn {
   etf: string;
@@ -56,11 +57,14 @@ export function IndustryReturns({ data }: { data: IndustryReturnsData }) {
   const [view, setView] = useState<"top" | "bottom" | "all">("all");
   const [show52w, setShow52w] = useState(false);
 
-  const sorted = [...data.industries].sort((a, b) => {
-    const av = a.returns[sortPeriod] ?? -Infinity;
-    const bv = b.returns[sortPeriod] ?? -Infinity;
-    return bv - av;
-  });
+  const sorted = useMemo(
+    () => [...data.industries].sort((a, b) => {
+      const av = a.returns[sortPeriod] ?? -Infinity;
+      const bv = b.returns[sortPeriod] ?? -Infinity;
+      return bv - av;
+    }),
+    [data.industries, sortPeriod]
+  );
 
   const displayed =
     view === "top" ? sorted.slice(0, 10) :
@@ -151,30 +155,68 @@ export function IndustryReturns({ data }: { data: IndustryReturnsData }) {
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto rounded-xl border border-gray-800">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-800 text-gray-500 text-xs">
-              <th className="text-left p-3 font-medium">ETF</th>
-              <th className="text-left p-3 font-medium max-w-[200px]">Industry</th>
-              {PERIODS.map((p) => (
-                <th
-                  key={p}
-                  className={`text-right p-3 font-medium ${sortPeriod === p ? "text-blue-400" : ""}`}
-                >
-                  {PERIOD_LABELS[p]}
-                </th>
-              ))}
-              {show52w && <th className="text-right p-3 font-medium text-amber-500">52W Hi</th>}
-              {show52w && <th className="text-right p-3 font-medium text-amber-500">52W Lo</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {displayed.map((ind, i) => (
+      <div className="rounded-xl border border-gray-800 overflow-x-auto">
+        <VirtualReturnsTable
+          rows={displayed}
+          sortPeriod={sortPeriod}
+          show52w={show52w}
+        />
+      </div>
+    </div>
+  );
+}
+
+function VirtualReturnsTable({
+  rows,
+  sortPeriod,
+  show52w,
+}: {
+  rows: IndustryReturn[];
+  sortPeriod: Period;
+  show52w: boolean;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => containerRef.current,
+    estimateSize: () => 40,
+    overscan: 5,
+  });
+
+  const virtualRows = virtualizer.getVirtualItems();
+  const paddingTop = virtualRows.length > 0 ? virtualRows[0].start : 0;
+  const paddingBottom = virtualRows.length > 0
+    ? virtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end
+    : 0;
+
+  return (
+    <div ref={containerRef} className="overflow-y-auto max-h-[560px]">
+      <table className="w-full text-sm">
+        <thead className="sticky top-0 z-10 bg-gray-950">
+          <tr className="border-b border-gray-800 text-gray-500 text-xs">
+            <th className="text-left p-3 font-medium">ETF</th>
+            <th className="text-left p-3 font-medium max-w-[200px]">Industry</th>
+            {PERIODS.map((p) => (
+              <th
+                key={p}
+                className={`text-right p-3 font-medium ${sortPeriod === p ? "text-blue-400" : ""}`}
+              >
+                {PERIOD_LABELS[p]}
+              </th>
+            ))}
+            {show52w && <th className="text-right p-3 font-medium text-amber-500">52W Hi</th>}
+            {show52w && <th className="text-right p-3 font-medium text-amber-500">52W Lo</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {paddingTop > 0 && <tr><td style={{ height: paddingTop }} /></tr>}
+          {virtualRows.map((vr) => {
+            const ind = rows[vr.index];
+            return (
               <tr
-                key={ind.etf}
+                key={ind.etf + ind.industry}
                 className={`border-b border-gray-800/50 hover:bg-gray-900/50 transition-colors ${
-                  i % 2 === 0 ? "" : "bg-gray-900/20"
+                  vr.index % 2 === 0 ? "" : "bg-gray-900/20"
                 }`}
               >
                 <td className="p-3 font-mono font-bold text-blue-400">{ind.etf}</td>
@@ -200,10 +242,11 @@ export function IndustryReturns({ data }: { data: IndustryReturnsData }) {
                   </td>
                 )}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            );
+          })}
+          {paddingBottom > 0 && <tr><td style={{ height: paddingBottom }} /></tr>}
+        </tbody>
+      </table>
     </div>
   );
 }

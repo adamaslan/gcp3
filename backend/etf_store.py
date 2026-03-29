@@ -19,8 +19,9 @@ from firestore import db as _db
 logger = logging.getLogger(__name__)
 
 _COLLECTION = "etf_history"
-_CHUNK_AT = 2000  # switch to yearly sub-docs above this row count
-_PERIODS = {
+_MAX_EMBEDDED_RECORDS = 2000  # switch to yearly sub-docs above this row count
+_FIRESTORE_BATCH_MAX_OPS = 450  # stay under Firestore's 500-op batch limit
+_PERIOD_DAYS_MAP = {
     "1d":  1,  "3d":  3,
     "1w":  7,  "2w": 14,  "3w": 21,
     "1m": 30,  "3m": 90,  "6m": 180,
@@ -60,7 +61,7 @@ def store_history(symbol: str, df: pd.DataFrame, source: str = "yfinance") -> in
 
     doc = _db().collection(_COLLECTION).document(symbol)
 
-    if len(records) <= _CHUNK_AT:
+    if len(records) <= _MAX_EMBEDDED_RECORDS:
         doc.set({**meta, "storage_mode": "embedded", "prices": records})
     else:
         doc.set({**meta, "storage_mode": "chunked"})
@@ -70,7 +71,7 @@ def store_history(symbol: str, df: pd.DataFrame, source: str = "yfinance") -> in
             yr_ref = doc.collection("years").document(year)
             batch.set(yr_ref, {"year": year, "prices": recs})
             ops += 1
-            if ops >= 450:
+            if ops >= _FIRESTORE_BATCH_MAX_OPS:
                 batch.commit()
                 batch = _db().batch()
                 ops = 0
@@ -191,7 +192,7 @@ def compute_returns(symbol: str) -> Optional[dict]:
     today = closes.index[0]
     returns: dict[str, Optional[float]] = {}
 
-    for period, days in _PERIODS.items():
+    for period, days in _PERIOD_DAYS_MAP.items():
         if days is None:
             continue  # ytd handled below
         cutoff = today - pd.Timedelta(days=days)

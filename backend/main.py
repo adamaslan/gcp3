@@ -8,8 +8,9 @@ from typing import Optional
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
-from industry import get_industry_data, seed_etf_history
+from industry import compute_returns, get_industry_data, get_industry_quotes, seed_etf_history
 from morning import get_morning_brief
 from screener import get_screener_data
 from sector_rotation import get_sector_rotation  # force_rule_based param added
@@ -33,6 +34,7 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 @app.get("/health")
@@ -64,6 +66,71 @@ async def industry_tracker(request: Request) -> dict:
     except Exception as exc:
         logger.exception("GET /industry-tracker failed: %s", exc)
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+
+
+# ── Industry Quotes (live prices only, short cache) ──────────────────────────
+@app.get("/industry-quotes")
+async def industry_quotes(
+    request: Request,
+    view: str = Query(default="full", description="'compact' returns only sector/etf/price/change_pct"),
+) -> dict:
+    logger.info("GET /industry-quotes view=%s from %s", view, request.client)
+    try:
+        data = await get_industry_quotes()
+        if view == "compact":
+            data = _compact_quotes(data)
+        logger.info("GET /industry-quotes success")
+        return data
+    except Exception as exc:
+        logger.exception("GET /industry-quotes failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+
+
+def _compact_quotes(data: dict) -> dict:
+    """Strip full quote payload to essential fields only (~70% smaller)."""
+    compact_industries = {
+        name: {
+            "sector": v.get("sector"),
+            "etf": v.get("etf"),
+            "price": v.get("price"),
+            "change_pct": v.get("change_pct"),
+        }
+        for name, v in data.get("industries", {}).items()
+    }
+    compact_row = lambda r: {
+        "industry": r["industry"],
+        "sector": r.get("sector"),
+        "etf": r.get("etf"),
+        "change_pct": r.get("change_pct"),
+    }
+    return {
+        "date": data.get("date"),
+        "total": data.get("total"),
+        "industries": compact_industries,
+        "leaders": [compact_row(r) for r in data.get("leaders", [])],
+        "laggards": [compact_row(r) for r in data.get("laggards", [])],
+    }
+
+
+# ── Admin: Precompute returns from etf_store → industry_cache ────────────────
+@app.post("/admin/compute-returns")
+async def compute_returns_endpoint(
+    request: Request,
+    x_scheduler_token: Optional[str] = Header(default=None),
+) -> dict:
+    """Precompute multi-period returns from stored ETF history into industry_cache.
+
+    Zero Finnhub or Alpha Vantage calls. Safe to run hourly or daily via
+    Cloud Scheduler. Must run after seed-etf-history has populated etf_store.
+    """
+    _verify_scheduler(x_scheduler_token)
+    logger.info("POST /admin/compute-returns triggered")
+    try:
+        result = await compute_returns()
+        return result
+    except Exception as exc:
+        logger.exception("POST /admin/compute-returns failed: %s", exc)
+        raise HTTPException(status_code=503, detail=str(exc))
 
 
 # ── Tool 3: Stock Screener ────────────────────────────────────────────────────
@@ -247,7 +314,7 @@ async def refresh_all(
     # Stage 3 — Industry (isolated: 50 Finnhub + 10 Alpha Vantage batches)
     t0 = time.perf_counter()
     try:
-        await get_industry_data()
+        await get_industry_data(enrich_av=True)
         stages["industry"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
     except Exception as exc:
         logger.warning("refresh/all stage 3 error: %s", exc)

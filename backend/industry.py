@@ -14,8 +14,11 @@ Permanent storage (etf_store):
   - Populates industry_cache collection consumed by industry_returns.py
 """
 import asyncio
+from asyncio import Semaphore
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
+from math import floor
+import time
 
 import httpx
 
@@ -23,6 +26,11 @@ from data_client import av_analytics_batch, av_remaining_calls, finnhub_get, get
 import etf_store
 
 logger = logging.getLogger(__name__)
+
+_FIRESTORE_BATCH_MAX_OPS = 450  # stay under Firestore's 500-op batch limit
+_INDUSTRY_LOCK = Semaphore(1)  # serialize concurrent cache-miss rebuilds
+_QUOTES_LOCK = Semaphore(1)    # single-flight for quote rebuilds
+_QUOTE_CACHE_TTL_SECONDS = 60  # re-fetch Finnhub at most once per minute
 
 # 50 industries → ETF, organized by sector group
 INDUSTRIES: dict[str, dict[str, str]] = {
@@ -124,93 +132,173 @@ async def _fetch_quote_with_fallback(client: httpx.AsyncClient, etf: str) -> dic
             ) from yf_exc
 
 
-async def get_industry_data() -> dict:
+async def get_industry_quotes() -> dict:
+    """Fetch live quotes only — no returns computation.
+
+    Cache key is bucketed by minute so Finnhub is called at most once per
+    _QUOTE_CACHE_TTL_SECONDS across all concurrent requests (single-flight).
+    """
+    minute_bucket = floor(time.time() / _QUOTE_CACHE_TTL_SECONDS)
+    cache_key = f"industry_quotes:{minute_bucket}"
+    if cached := get_cache(cache_key):
+        return cached
+
+    async with _QUOTES_LOCK:
+        # Re-check after lock — another coroutine may have already built it
+        if cached := get_cache(cache_key):
+            return cached
+
+        async def fetch_one(industry: str, sector: str, etf: str):
+            try:
+                quote = await _fetch_quote_with_fallback(client, etf)
+                return industry, {"sector": sector, "etf": etf, **quote}
+            except Exception as exc:
+                logger.error("industry_quotes: all sources failed for %s (%s): %s", industry, etf, exc)
+                return industry, {"sector": sector, "etf": etf, "error": str(exc)}
+
+        async with httpx.AsyncClient(timeout=15) as client:
+            tasks = [
+                fetch_one(industry, sector, etf)
+                for industry, (sector, etf) in _FLAT.items()
+            ]
+            pairs = await asyncio.gather(*tasks)
+
+        industries = dict(pairs)
+        ranked = sorted(
+            [{"industry": k, **v} for k, v in industries.items() if "change_pct" in v],
+            key=lambda x: x["change_pct"],
+            reverse=True,
+        )
+        by_sector: dict[str, list] = {}
+        for row in ranked:
+            by_sector.setdefault(row["sector"], []).append(row)
+
+        result = {
+            "date": str(date.today()),
+            "total": len(industries),
+            "industries": industries,
+            "rankings": ranked,
+            "by_sector": by_sector,
+            "leaders": ranked[:5],
+            "laggards": ranked[-5:],
+        }
+        if ranked:
+            # TTL longer than the bucket interval; key rotation enforces freshness
+            set_cache(cache_key, result, ttl_hours=1)
+        return result
+
+
+async def compute_returns() -> dict:
+    """Compute and persist multi-period returns from etf_store to industry_cache.
+
+    Called by the scheduler via POST /admin/compute-returns. Reads from
+    permanent ETF price history — zero Finnhub or AV API calls.
+    """
+    from firestore import db as _db
+
+    # Build a minimal industries dict from FLAT (no live quotes needed)
+    industries = {
+        industry: {"sector": sector, "etf": etf}
+        for industry, (sector, etf) in _FLAT.items()
+    }
+    _attach_stored_returns(industries)
+    logger.info("compute_returns: completed for %d industries", len(industries))
+    return {"status": "ok", "industries": len(industries)}
+
+
+async def get_industry_data(enrich_av: bool = False) -> dict:
     cache_key = f"industry50:{date.today()}"
     if cached := get_cache(cache_key):
         return cached
 
-    all_etfs = list({etf for _, etf in _FLAT.values()})
+    async with _INDUSTRY_LOCK:
+        # Re-check cache after acquiring lock (another coroutine may have built it)
+        if cached := get_cache(cache_key):
+            return cached
 
-    # Step 1: fetch all quotes (Finnhub → yfinance per symbol)
-    async def fetch_one(industry: str, sector: str, etf: str):
-        try:
-            quote = await _fetch_quote_with_fallback(client, etf)
-            return industry, {"sector": sector, "etf": etf, **quote}
-        except Exception as exc:
-            logger.error("industry: all sources failed for %s (%s): %s", industry, etf, exc)
-            return industry, {"sector": sector, "etf": etf, "error": str(exc)}
+        all_etfs = list({etf for _, etf in _FLAT.values()})
 
-    async with httpx.AsyncClient(timeout=15) as client:
-        tasks = [
-            fetch_one(industry, sector, etf)
-            for industry, (sector, etf) in _FLAT.items()
-        ]
-        pairs = await asyncio.gather(*tasks)
+        # Step 1: fetch all quotes (Finnhub → yfinance per symbol)
+        async def fetch_one(industry: str, sector: str, etf: str):
+            try:
+                quote = await _fetch_quote_with_fallback(client, etf)
+                return industry, {"sector": sector, "etf": etf, **quote}
+            except Exception as exc:
+                logger.error("industry: all sources failed for %s (%s): %s", industry, etf, exc)
+                return industry, {"sector": sector, "etf": etf, "error": str(exc)}
 
-    industries = dict(pairs)
+        async with httpx.AsyncClient(timeout=15) as client:
+            tasks = [
+                fetch_one(industry, sector, etf)
+                for industry, (sector, etf) in _FLAT.items()
+            ]
+            pairs = await asyncio.gather(*tasks)
 
-    # Step 2: enrich with AV multi-period analytics if quota allows
-    # 50 ETFs → 10 AV calls (5 symbols/call) — only runs if quota available
-    valid_etfs = [
-        etf for etf in all_etfs
-        if not any(
-            v.get("etf") == etf and "error" in v
-            for v in industries.values()
+        industries = dict(pairs)
+
+        # Step 2: enrich with AV multi-period analytics (scheduler-only path)
+        # 50 ETFs → 10 AV calls (5 symbols/call)
+        if enrich_av:
+            valid_etfs = [
+                etf for etf in all_etfs
+                if not any(
+                    v.get("etf") == etf and "error" in v
+                    for v in industries.values()
+                )
+            ]
+            av_quota_needed = (len(valid_etfs) + 4) // 5  # ceil div
+            if av_remaining_calls() >= av_quota_needed:
+                logger.info(
+                    "industry: enriching %d ETFs with AV analytics (%d calls needed)",
+                    len(valid_etfs),
+                    av_quota_needed,
+                )
+                try:
+                    av_data = await av_analytics_batch(valid_etfs, range_="1month")
+                    for industry, data in industries.items():
+                        etf = data.get("etf")
+                        if etf and etf in av_data and "error" not in data:
+                            av = av_data[etf]
+                            data["return_1m"] = av.get("cumulative_return")
+                            data["mean_daily_return"] = av.get("mean")
+                            data["stddev_daily"] = av.get("stddev")
+                except Exception as exc:
+                    logger.error("industry: AV analytics enrichment failed: %s", exc)
+            else:
+                logger.info(
+                    "industry: skipping AV analytics — only %d calls remain (need %d)",
+                    av_remaining_calls(),
+                    av_quota_needed,
+                )
+
+        # Rankings (only entries with valid quote data)
+        ranked = sorted(
+            [{"industry": k, **v} for k, v in industries.items() if "change_pct" in v],
+            key=lambda x: x["change_pct"],
+            reverse=True,
         )
-    ]
-    av_quota_needed = (len(valid_etfs) + 4) // 5  # ceil div
-    if av_remaining_calls() >= av_quota_needed:
-        logger.info(
-            "industry: enriching %d ETFs with AV analytics (%d calls needed)",
-            len(valid_etfs),
-            av_quota_needed,
-        )
-        try:
-            av_data = await av_analytics_batch(valid_etfs, range_="1month")
-            for industry, data in industries.items():
-                etf = data.get("etf")
-                if etf and etf in av_data and "error" not in data:
-                    av = av_data[etf]
-                    data["return_1m"] = av.get("cumulative_return")
-                    data["mean_daily_return"] = av.get("mean")
-                    data["stddev_daily"] = av.get("stddev")
-        except Exception as exc:
-            logger.error("industry: AV analytics enrichment failed: %s", exc)
-    else:
-        logger.info(
-            "industry: skipping AV analytics — only %d calls remain (need %d)",
-            av_remaining_calls(),
-            av_quota_needed,
-        )
 
-    # Rankings (only entries with valid quote data)
-    ranked = sorted(
-        [{"industry": k, **v} for k, v in industries.items() if "change_pct" in v],
-        key=lambda x: x["change_pct"],
-        reverse=True,
-    )
+        # Group by sector, maintaining rank order within each sector
+        by_sector: dict[str, list] = {}
+        for row in ranked:
+            by_sector.setdefault(row["sector"], []).append(row)
 
-    # Group by sector, maintaining rank order within each sector
-    by_sector: dict[str, list] = {}
-    for row in ranked:
-        by_sector.setdefault(row["sector"], []).append(row)
+        # Step 3: attach multi-period returns from permanent ETF store + persist to industry_cache
+        _attach_stored_returns(industries)
 
-    # Step 3: attach multi-period returns from permanent ETF store + persist to industry_cache
-    _attach_stored_returns(industries)
+        result = {
+            "date": str(date.today()),
+            "total": len(industries),
+            "industries": industries,
+            "rankings": ranked,
+            "by_sector": by_sector,
+            "leaders": ranked[:5],
+            "laggards": ranked[-5:],
+        }
 
-    result = {
-        "date": str(date.today()),
-        "total": len(industries),
-        "industries": industries,
-        "rankings": ranked,
-        "by_sector": by_sector,
-        "leaders": ranked[:5],
-        "laggards": ranked[-5:],
-    }
-
-    if ranked:
-        set_cache(cache_key, result, ttl_hours=24)
-    return result
+        if ranked:
+            set_cache(cache_key, result, ttl_hours=24)
+        return result
 
 
 def _attach_stored_returns(industries: dict) -> None:
@@ -221,7 +309,7 @@ def _attach_stored_returns(industries: dict) -> None:
     industry_returns.py can read them without extra API calls.
     """
     from firestore import db as _db
-    now_str = datetime.utcnow().isoformat()
+    now_str = datetime.now(timezone.utc).isoformat()
     db = _db()
     batch = db.batch()
     ops = 0
@@ -254,7 +342,7 @@ def _attach_stored_returns(industries: dict) -> None:
             "updated": now_str,
         })
         ops += 1
-        if ops >= 450:
+        if ops >= _FIRESTORE_BATCH_MAX_OPS:
             batch.commit()
             batch = db.batch()
             ops = 0
@@ -299,7 +387,3 @@ async def seed_etf_history() -> dict[str, int]:
 
     logger.info("seed_etf_history complete: %d ETFs, %d total rows", len(results), sum(results.values()))
     return results
-
-
-# Deferred import to avoid circular at module level
-from datetime import datetime  # noqa: E402 (used in _attach_stored_returns)
