@@ -74,12 +74,15 @@ INDUSTRIES: dict[str, dict[str, str]] = {
     "Energy & Materials": {
         "Oil & Gas": "XLE",
         "Renewable Energy": "ICLN",
+        "Nuclear Energy": "URA",
+        "Lithium & Battery": "LIT",
         "Mining": "XME",
         "Steel": "SLX",
         "Chemicals": "XLB",
     },
     "Industrials": {
         "Aerospace & Defense": "ITA",
+        "Space": "UFO",
         "Transportation": "XTN",
         "Construction": "ITB",
         "Logistics": "FTXR",
