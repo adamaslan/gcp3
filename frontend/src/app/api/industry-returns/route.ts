@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 import { NextResponse } from "next/server";
 
 const BACKEND = process.env.BACKEND_URL!;
@@ -22,5 +24,9 @@ export async function GET(): Promise<NextResponse> {
     return NextResponse.json({ error: "Backend unavailable", status: res.status, detail: body }, { status: 503 });
   }
 
-  return NextResponse.json(await res.json());
+  return NextResponse.json(await res.json(), {
+    headers: {
+      "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
+    },
+  });
 }
