@@ -80,9 +80,10 @@ function SortHeader({
   onClick: (k: ScreenerSortKey) => void; align?: "left" | "right" | "center";
 }) {
   const active = current === sortKey;
+  const alignClass = { left: "text-left", right: "text-right", center: "text-center" }[align];
   return (
     <th
-      className={`text-${align} px-3 py-2 font-medium cursor-pointer select-none hover:text-white ${active ? "text-white" : "text-gray-400"}`}
+      className={`${alignClass} px-3 py-2 font-medium cursor-pointer select-none hover:text-white ${active ? "text-white" : "text-gray-400"}`}
       onClick={() => onClick(sortKey)}
     >
       {label}{active ? (dir === "desc" ? " ▼" : " ▲") : ""}
@@ -106,7 +107,7 @@ export function Screener({ data }: { data: ScreenerData }) {
     if (sortKey === "signal") {
       const ai = SIGNAL_ORDER.indexOf(a.signal);
       const bi = SIGNAL_ORDER.indexOf(b.signal);
-      return sortDir === "desc" ? bi - ai : ai - bi;
+      return sortDir === "desc" ? ai - bi : bi - ai;
     }
     const av = a[sortKey];
     const bv = b[sortKey];
