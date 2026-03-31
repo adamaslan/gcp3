@@ -30,6 +30,34 @@ def _rank(industries: list[dict], period: str) -> list[dict]:
     return sorted(valid, key=lambda x: x["returns"][period], reverse=True)
 
 
+def _find_most_recent_returns_cache() -> tuple[dict, str] | None:
+    """Scan gcp3_cache for the most recent industry_returns doc from a prior day.
+
+    Used as a last-resort fallback when today's cache key doesn't exist yet
+    (e.g. Firestore outage at the start of a new day before first calculation).
+    Returns (value, stale_as_of) or None if no prior entry exists.
+    """
+    docs = _db().collection("gcp3_cache").list_documents()
+    candidates = []
+    prefix = "industry_returns:"
+    for ref in docs:
+        if ref.id.startswith(prefix) and ref.id != f"{prefix}{date.today()}":
+            candidates.append(ref.id)
+    if not candidates:
+        return None
+    most_recent_key = max(candidates)  # lexicographic sort works for YYYY-MM-DD
+    snap = _db().collection("gcp3_cache").document(most_recent_key).get()
+    if not snap.exists:
+        return None
+    data = snap.to_dict()
+    value = data.get("value")
+    if not value:
+        return None
+    updated_at = data.get("updated_at")
+    stale_as_of = updated_at.isoformat() if updated_at else most_recent_key.replace(prefix, "")
+    return value, stale_as_of
+
+
 async def get_industry_returns() -> dict:
     cache_key = f"industry_returns:{date.today()}"
     if cached := get_cache(cache_key):
@@ -41,6 +69,10 @@ async def get_industry_returns() -> dict:
     except Exception as exc:
         logger.warning("industry_returns: industry_cache unreadable (%s) — trying stale cache", exc)
         stale_value, stale_as_of = get_cache_stale(cache_key)
+        if stale_value is None:
+            prior = _find_most_recent_returns_cache()
+            if prior:
+                stale_value, stale_as_of = prior
         if stale_value:
             logger.info("industry_returns: serving stale data as_of=%s", stale_as_of)
             return {**stale_value, "stale": True, "stale_as_of": stale_as_of}
