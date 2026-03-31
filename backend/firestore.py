@@ -27,6 +27,32 @@ def get_cache(key: str) -> dict | None:
     return None
 
 
+def get_cache_stale(key: str) -> tuple[dict | None, str | None]:
+    """Like get_cache but returns stale data instead of None when expired.
+
+    Returns:
+        (value, stale_as_of) where stale_as_of is an ISO timestamp if the
+        value is stale, None if it is fresh. Both are None if no doc exists.
+    """
+    doc = db().collection("gcp3_cache").document(key).get()
+    if not doc.exists:
+        return None, None
+    data = doc.to_dict()
+    value = data.get("value")
+    if value is None:
+        return None, None
+    expires_at = data.get("expires_at")
+    updated_at = data.get("updated_at")
+    if expires_at:
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at > datetime.now(timezone.utc):
+            return value, None  # fresh
+    # Stale — return value with the timestamp it was last written
+    stale_as_of = updated_at.isoformat() if updated_at else None
+    return value, stale_as_of
+
+
 def delete_cache(key: str) -> None:
     db().collection("gcp3_cache").document(key).delete()
 

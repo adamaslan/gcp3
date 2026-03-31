@@ -6,7 +6,7 @@ No API calls — pure Firestore read + in-process ranking.
 import logging
 from datetime import date
 
-from firestore import db as _db, get_cache, set_cache
+from firestore import db as _db, get_cache, get_cache_stale, set_cache
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,16 @@ async def get_industry_returns() -> dict:
         logger.info("industry_returns cache hit")
         return cached
 
-    docs = list(_db().collection("industry_cache").stream())
+    try:
+        docs = list(_db().collection("industry_cache").stream())
+    except Exception as exc:
+        logger.warning("industry_returns: industry_cache unreadable (%s) — trying stale cache", exc)
+        stale_value, stale_as_of = get_cache_stale(cache_key)
+        if stale_value:
+            logger.info("industry_returns: serving stale data as_of=%s", stale_as_of)
+            return {**stale_value, "stale": True, "stale_as_of": stale_as_of}
+        raise
+
     industries: list[dict] = []
     for d in docs:
         row = _serialize(d.to_dict())

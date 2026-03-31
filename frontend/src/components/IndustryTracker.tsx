@@ -27,6 +27,7 @@ interface IndustryData {
   by_sector: Record<string, IndustryRow[]>;
   leaders: IndustryRow[];
   laggards: IndustryRow[];
+  returns_stale_as_of?: string;
 }
 
 function Pct({ v }: { v?: number }) {
@@ -275,6 +276,13 @@ export function IndustryTracker({ data }: { data: IndustryData }) {
           </div>
         </div>
       </div>
+
+      {/* Stale returns notice */}
+      {data.returns_stale_as_of && (
+        <div className="px-4 py-2 rounded-lg border border-gray-700/40 bg-gray-900/40 text-xs text-gray-500">
+          Returns &amp; 52W data as of {new Date(data.returns_stale_as_of).toLocaleString()} — live update unavailable
+        </div>
+      )}
 
       {/* AV enrichment notice */}
       {enriched && (

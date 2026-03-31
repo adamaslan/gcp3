@@ -30,14 +30,18 @@ async function IndustryTrackerContent() {
         (returns.industries as Array<{ industry: string; returns?: Record<string, number>; "52w_high"?: number; "52w_low"?: number }>)
           .map((r) => [r.industry, r])
       );
-    for (const row of Object.values(quotes.industries) as Array<{ industry?: string; returns?: Record<string, number>; "52w_high"?: number; "52w_low"?: number }>) {
-      const r = returnsMap[row.industry ?? ""];
+    for (const [name, row] of Object.entries(quotes.industries) as Array<[string, { returns?: Record<string, number>; "52w_high"?: number; "52w_low"?: number }]>) {
+      const r = returnsMap[name];
       if (r) {
         row.returns = r.returns;
         row["52w_high"] = r["52w_high"];
         row["52w_low"] = r["52w_low"];
       }
     }
+  }
+
+  if (returns?.stale_as_of) {
+    quotes.returns_stale_as_of = returns.stale_as_of;
   }
 
   return (
