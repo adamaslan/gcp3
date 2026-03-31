@@ -53,6 +53,32 @@ def get_cache_stale(key: str) -> tuple[dict | None, str | None]:
     return value, stale_as_of
 
 
+def get_cache_stale_prev(prefix: str, exclude_key: str) -> tuple[dict | None, str | None]:
+    """Find the most recent previous-day cache entry for a given prefix.
+
+    Uses a document-ID range query instead of list_documents() to avoid a
+    full collection scan.  Returns (value, stale_as_of) or (None, None).
+    """
+    query = (
+        db().collection("gcp3_cache")
+        .where("__name__", ">=", prefix)
+        .where("__name__", "<", prefix + "\uf8ff")
+        .order_by("__name__", direction="DESCENDING")
+        .limit(2)
+    )
+    for snap in query.stream():
+        if snap.id == exclude_key:
+            continue
+        data = snap.to_dict()
+        value = data.get("value")
+        if not value:
+            continue
+        updated_at = data.get("updated_at")
+        stale_as_of = updated_at.isoformat() if updated_at else snap.id.replace(prefix, "")
+        return value, stale_as_of
+    return None, None
+
+
 def delete_cache(key: str) -> None:
     db().collection("gcp3_cache").document(key).delete()
 

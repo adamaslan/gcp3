@@ -1,4 +1,4 @@
-"""Industry Tracker: 50-industry ETF performance.
+"""Industry Tracker: ETF performance across industries.
 
 Data resolution chain per ETF:
   1. Finnhub — real-time intraday quote (primary)
@@ -8,7 +8,7 @@ Data resolution chain per ETF:
      when AV quota allows; pure bonus data, never blocks quotes
 
 Permanent storage (etf_store):
-  - On first run, seeds full price history for all 50 ETFs via yfinance
+  - On first run, seeds full price history for all ETFs via yfinance
   - Daily refresh appends only new trading days (delta fetch)
   - Multi-period returns calculated from stored history (zero API calls)
   - Populates industry_cache collection consumed by industry_returns.py
@@ -32,7 +32,7 @@ _INDUSTRY_LOCK = Semaphore(1)  # serialize concurrent cache-miss rebuilds
 _QUOTES_LOCK = Semaphore(1)    # single-flight for quote rebuilds
 _QUOTE_CACHE_TTL_SECONDS = 60  # re-fetch Finnhub at most once per minute
 
-# 50 industries → ETF, organized by sector group
+# Industries → ETF, organized by sector group
 INDUSTRIES: dict[str, dict[str, str]] = {
     "Technology": {
         "Software": "IGV",
@@ -57,7 +57,7 @@ INDUSTRIES: dict[str, dict[str, str]] = {
         "Insurance": "KIE",
         "Asset Management": "PFM",
         "Fintech": "FINX",
-        "REITs": "VNQ",
+        "Mortgage REITs": "REM",
         "Payments": "IPAY",
         "Regional Banks": "KRE",
     },
@@ -65,14 +65,14 @@ INDUSTRIES: dict[str, dict[str, str]] = {
         "Retail": "XRT",
         "E-Commerce": "IBUY",
         "Consumer Staples": "XLP",
-        "Consumer Discretionary": "XLY",
-        "Restaurants": "BITE",
-        "Apparel": "PEJ",
+        "Video Gaming": "ESPO",
+        "Pet Care": "PAWZ",
+        "Restaurants": "PBJ",
         "Automotive": "CARZ",
         "Luxury Goods": "LUXE",
     },
     "Energy & Materials": {
-        "Chemicals": "XLB",
+        "Materials": "XLB",
         "Lithium & Battery": "LIT",
         "Mining": "XME",
         "Nuclear Energy": "URA",
@@ -83,10 +83,11 @@ INDUSTRIES: dict[str, dict[str, str]] = {
     "Industrials": {
         "Aerospace & Defense": "ITA",
         "Construction": "ITB",
-        "Industrials": "XLI",
+        "Robotics & Automation": "ROBO",
         "Logistics": "FTXR",
         "Space": "UFO",
-        "Transportation": "XTN",
+        "Airlines": "JETS",
+        "Shipping": "BOAT",
     },
     "Real Estate & Infrastructure": {
         "Real Estate": "IYR",
@@ -210,7 +211,7 @@ async def compute_returns() -> dict:
 
 
 async def get_industry_data(enrich_av: bool = False) -> dict:
-    cache_key = f"industry50:{date.today()}"
+    cache_key = f"industry_data:{date.today()}"
     if cached := get_cache(cache_key):
         return cached
 
@@ -240,7 +241,6 @@ async def get_industry_data(enrich_av: bool = False) -> dict:
         industries = dict(pairs)
 
         # Step 2: enrich with AV multi-period analytics (scheduler-only path)
-        # 50 ETFs → 10 AV calls (5 symbols/call)
         if enrich_av:
             valid_etfs = [
                 etf for etf in all_etfs
@@ -310,12 +310,28 @@ def _attach_stored_returns(industries: dict) -> None:
     For each ETF: compute returns from stored history, attach to the industry
     dict, and write to the industry_cache Firestore collection so
     industry_returns.py can read them without extra API calls.
+
+    Also removes any orphaned industry_cache documents whose industry key is no
+    longer present in the current INDUSTRIES dict (e.g. renamed or removed
+    industries from prior runs).
     """
     from firestore import db as _db
     now_str = datetime.now(timezone.utc).isoformat()
     db = _db()
     batch = db.batch()
     ops = 0
+
+    # Delete orphaned documents from previous industry sets
+    current_keys = set(industries.keys())
+    for ref in db.collection("industry_cache").list_documents():
+        if ref.id not in current_keys:
+            batch.delete(ref)
+            ops += 1
+            logger.info("industry: removing orphaned industry_cache doc '%s'", ref.id)
+            if ops >= _FIRESTORE_BATCH_MAX_OPS:
+                batch.commit()
+                batch = db.batch()
+                ops = 0
 
     # Deduplicate ETFs (multiple industries may share one ETF)
     etf_returns: dict[str, dict | None] = {}
@@ -356,7 +372,7 @@ def _attach_stored_returns(industries: dict) -> None:
 
 
 async def seed_etf_history() -> dict[str, int]:
-    """Seed or delta-update permanent ETF history for all 50 industries.
+    """Seed or delta-update permanent ETF history for all tracked industries.
 
     Call once at startup or via a scheduled endpoint. Uses yfinance for
     full history on first run; appends only new days on subsequent runs.
