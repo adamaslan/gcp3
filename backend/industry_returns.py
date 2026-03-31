@@ -6,7 +6,7 @@ No API calls — pure Firestore read + in-process ranking.
 import logging
 from datetime import date
 
-from firestore import db as _db, get_cache, get_cache_stale, set_cache
+from firestore import db as _db, get_cache, get_cache_stale, get_cache_stale_prev, set_cache
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +44,11 @@ async def get_industry_returns() -> dict:
         if stale_value:
             logger.info("industry_returns: serving stale data as_of=%s", stale_as_of)
             return {**stale_value, "stale": True, "stale_as_of": stale_as_of}
+        # Today's key doesn't exist yet — fall back to most recent previous day
+        prev_value, prev_as_of = get_cache_stale_prev("industry_returns:", cache_key)
+        if prev_value:
+            logger.info("industry_returns: serving previous-day data as_of=%s", prev_as_of)
+            return {**prev_value, "stale": True, "stale_as_of": prev_as_of}
         raise
 
     industries: list[dict] = []
