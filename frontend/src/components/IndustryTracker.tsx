@@ -279,7 +279,7 @@ export function IndustryTracker({ data }: { data: IndustryData }) {
 
       {/* Stale returns notice */}
       {data.returns_stale_as_of && (
-        <div className="px-4 py-2 rounded-lg border border-gray-700/40 bg-gray-900/40 text-xs text-gray-500">
+        <div className="px-4 py-2 rounded-lg border border-gray-700/40 bg-gray-900/40 text-xs text-gray-500" suppressHydrationWarning>
           Returns &amp; 52W data as of {new Date(data.returns_stale_as_of).toLocaleString()} — live update unavailable
         </div>
       )}
