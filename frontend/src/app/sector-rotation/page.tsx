@@ -3,7 +3,9 @@ import { SectorRotation } from "@/components/SectorRotation";
 export const dynamic = "force-dynamic";
 
 async function getData() {
-  const res = await fetch(`/api/sector-rotation`, { next: { revalidate: 7200 } });
+  const base = process.env.BACKEND_URL;
+  if (!base) throw new Error("BACKEND_URL is not configured");
+  const res = await fetch(`${base}/sector-rotation`, { next: { revalidate: 7200 } });
   if (!res.ok) throw new Error(`Backend error ${res.status}`);
   return res.json();
 }

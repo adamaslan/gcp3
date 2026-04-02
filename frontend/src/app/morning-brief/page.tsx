@@ -3,7 +3,9 @@ import { MorningBrief } from "@/components/MorningBrief";
 export const dynamic = "force-dynamic";
 
 async function getData() {
-  const res = await fetch(`/api/morning-brief`, { next: { revalidate: 1800 } });
+  const base = process.env.BACKEND_URL;
+  if (!base) throw new Error("BACKEND_URL is not configured");
+  const res = await fetch(`${base}/morning-brief`, { next: { revalidate: 1800 } });
   if (!res.ok) throw new Error(`Backend error ${res.status}`);
   return res.json();
 }
