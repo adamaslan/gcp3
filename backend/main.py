@@ -24,6 +24,7 @@ from industry_returns import get_industry_returns
 from market_summary import get_market_summary
 from daily_blog import get_daily_blog, refresh_daily_blog
 from blog_reviewer import get_blog_review, refresh_blog_review
+from correlation_article import get_correlation_article, refresh_correlation_article
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -250,6 +251,16 @@ async def blog_review(request: Request) -> dict:
         raise HTTPException(status_code=503, detail=str(exc))
 
 
+# ── Tool 12: Correlation Article ──────────────────────────────────────────────
+@app.get("/correlation-article")
+async def correlation_article(request: Request) -> dict:
+    logger.info("GET /correlation-article from %s", request.client)
+    try:
+        return await get_correlation_article()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
 # ── Scheduler auth helper ─────────────────────────────────────────────────────
 def _verify_scheduler(token: Optional[str]) -> None:
     """Raise 401 if token does not match SCHEDULER_SECRET env var."""
@@ -389,6 +400,15 @@ async def refresh_all(
             stages["blog_review"] = {"status": "error", "detail": str(exc)}
     else:
         stages["blog_review"] = {"status": "skipped", "detail": "Stage 6 did not produce a blog"}
+
+    # Stage 8 — Correlation article (Gemini — reads all caches, generates article)
+    t0 = time.perf_counter()
+    try:
+        await refresh_correlation_article()
+        stages["correlation_article"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
+    except Exception as exc:
+        logger.warning("refresh/all stage 8 error: %s", exc)
+        stages["correlation_article"] = {"status": "error", "detail": str(exc)}
 
     total_ms = round((time.perf_counter() - overall_start) * 1000)
     logger.info("POST /refresh/all complete total_ms=%d", total_ms)

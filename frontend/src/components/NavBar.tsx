@@ -17,6 +17,7 @@ const NAV_LINKS = [
   { href: "/market-summary", label: "Mkt Summary" },
   { href: "/daily-blog", label: "Daily Blog" },
   { href: "/blog-review", label: "Blog Review" },
+  { href: "/correlation-article", label: "Correlations" },
 ];
 
 export function NavBar() {
