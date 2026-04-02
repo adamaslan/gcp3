@@ -3,19 +3,16 @@ import { IndustryTracker } from "@/components/IndustryTracker";
 import { IndustryTrackerLocalFallback, LocalStorageSaver } from "./IndustryTrackerClient";
 
 export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 const getQuotes = cache(async () => {
-  const base = process.env.BACKEND_URL;
-  if (!base) throw new Error("BACKEND_URL is not configured");
-  const res = await fetch(`${base}/industry-quotes`, { next: { revalidate: 60 } });
+  const res = await fetch(`/api/industry-quotes`, { next: { revalidate: 60 } });
   if (!res.ok) throw new Error(`Backend error ${res.status}`);
   return res.json();
 });
 
 const getReturns = cache(async () => {
-  const base = process.env.BACKEND_URL;
-  if (!base) throw new Error("BACKEND_URL is not configured");
-  const res = await fetch(`${base}/industry-returns`, { next: { revalidate: 21600 } });
+  const res = await fetch(`/api/industry-returns`, { next: { revalidate: 21600 } });
   if (!res.ok) return null;
   return res.json();
 });
