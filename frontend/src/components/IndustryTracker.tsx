@@ -219,10 +219,10 @@ function IndustryTable({
                 ))}
                 {!hasReturns && (
                   <>
-                    <td className="px-3 py-2 text-right text-xs font-mono text-amber-400">
+                    <td className="px-4 py-2 text-right text-xs font-mono text-amber-400">
                       {r["52w_high"] != null ? `$${r["52w_high"].toFixed(2)}` : <span className="text-gray-700">—</span>}
                     </td>
-                    <td className="px-3 py-2 text-right text-xs font-mono text-amber-600">
+                    <td className="px-4 py-2 text-right text-xs font-mono text-amber-600">
                       {r["52w_low"] != null ? `$${r["52w_low"].toFixed(2)}` : <span className="text-gray-700">—</span>}
                     </td>
                   </>

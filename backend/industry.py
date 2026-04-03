@@ -292,6 +292,7 @@ async def get_industry_data(enrich_av: bool = False) -> dict:
 
         result = {
             "date": str(date.today()),
+            "quotes_as_of": datetime.now(timezone.utc).isoformat(),
             "total": len(industries),
             "industries": industries,
             "rankings": ranked,
