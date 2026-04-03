@@ -22,6 +22,7 @@ interface IndustryRow {
 
 interface IndustryData {
   date: string;
+  quotes_as_of?: string;
   total: number;
   rankings: IndustryRow[];
   by_sector: Record<string, IndustryRow[]>;
@@ -216,6 +217,16 @@ function IndustryTable({
                     <ReturnCell v={r.returns?.[p]} />
                   </td>
                 ))}
+                {!hasReturns && (
+                  <>
+                    <td className="px-4 py-2 text-right text-xs font-mono text-amber-400">
+                      {r["52w_high"] != null ? `$${r["52w_high"].toFixed(2)}` : <span className="text-gray-700">—</span>}
+                    </td>
+                    <td className="px-4 py-2 text-right text-xs font-mono text-amber-600">
+                      {r["52w_low"] != null ? `$${r["52w_low"].toFixed(2)}` : <span className="text-gray-700">—</span>}
+                    </td>
+                  </>
+                )}
               </tr>
             );
           })}
@@ -265,6 +276,13 @@ export function IndustryTracker({ data }: { data: IndustryData }) {
           <p className="text-sm text-gray-500 mt-0.5">
             {data.total} industries · Finnhub{enriched ? " + Alpha Vantage" : " (yfinance fallback available)"} · {data.date}
           </p>
+          {data.quotes_as_of && (
+            <p className="text-xs text-gray-600 mt-0.5" suppressHydrationWarning>
+              Quotes fetched {new Date(data.quotes_as_of).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
+              {" · "}
+              <span className="text-gray-700">change % = vs prior close (may reflect last trading day if market is closed)</span>
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {hasReturns && (
@@ -397,6 +415,7 @@ export function IndustryTracker({ data }: { data: IndustryData }) {
       <div className="rounded-xl border border-gray-800 overflow-x-auto">
         {view === "ranked" ? (
           <IndustryTable
+            key={showReturns ? "returns" : "quotes"}
             rows={data.rankings}
             startRank={1}
             showReturns={showReturns}
@@ -409,6 +428,7 @@ export function IndustryTracker({ data }: { data: IndustryData }) {
                 {sector}
               </div>
               <IndustryTable
+                key={`${sector}-${showReturns ? "returns" : "quotes"}`}
                 rows={rows}
                 startRank={1}
                 showReturns={showReturns}
