@@ -216,6 +216,16 @@ function IndustryTable({
                     <ReturnCell v={r.returns?.[p]} />
                   </td>
                 ))}
+                {!hasReturns && (
+                  <>
+                    <td className="px-3 py-2 text-right text-xs font-mono text-amber-400">
+                      {r["52w_high"] != null ? `$${r["52w_high"].toFixed(2)}` : <span className="text-gray-700">—</span>}
+                    </td>
+                    <td className="px-3 py-2 text-right text-xs font-mono text-amber-600">
+                      {r["52w_low"] != null ? `$${r["52w_low"].toFixed(2)}` : <span className="text-gray-700">—</span>}
+                    </td>
+                  </>
+                )}
               </tr>
             );
           })}
@@ -397,6 +407,7 @@ export function IndustryTracker({ data }: { data: IndustryData }) {
       <div className="rounded-xl border border-gray-800 overflow-x-auto">
         {view === "ranked" ? (
           <IndustryTable
+            key={showReturns ? "returns" : "quotes"}
             rows={data.rankings}
             startRank={1}
             showReturns={showReturns}
@@ -409,6 +420,7 @@ export function IndustryTracker({ data }: { data: IndustryData }) {
                 {sector}
               </div>
               <IndustryTable
+                key={`${sector}-${showReturns ? "returns" : "quotes"}`}
                 rows={rows}
                 startRank={1}
                 showReturns={showReturns}
