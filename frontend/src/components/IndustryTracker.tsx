@@ -22,6 +22,7 @@ interface IndustryRow {
 
 interface IndustryData {
   date: string;
+  quotes_as_of?: string;
   total: number;
   rankings: IndustryRow[];
   by_sector: Record<string, IndustryRow[]>;
@@ -275,6 +276,13 @@ export function IndustryTracker({ data }: { data: IndustryData }) {
           <p className="text-sm text-gray-500 mt-0.5">
             {data.total} industries · Finnhub{enriched ? " + Alpha Vantage" : " (yfinance fallback available)"} · {data.date}
           </p>
+          {data.quotes_as_of && (
+            <p className="text-xs text-gray-600 mt-0.5" suppressHydrationWarning>
+              Quotes fetched {new Date(data.quotes_as_of).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
+              {" · "}
+              <span className="text-gray-700">change % = vs prior close (may reflect last trading day if market is closed)</span>
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {hasReturns && (
