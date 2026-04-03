@@ -15,8 +15,6 @@ const NAV_LINKS = [
   { href: "/technical-signals", label: "Signals" },
   { href: "/industry-returns", label: "Returns" },
   { href: "/market-summary", label: "Mkt Summary" },
-  { href: "/daily-blog", label: "Daily Blog" },
-  { href: "/blog-review", label: "Blog Review" },
   { href: "/correlation-article", label: "Correlations" },
 ];
 
