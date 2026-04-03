@@ -22,6 +22,8 @@ from ai_summary import get_ai_summary, refresh_ai_summary
 from technical_signals import get_technical_signals
 from industry_returns import get_industry_returns
 from market_summary import get_market_summary
+from daily_blog import get_daily_blog, refresh_daily_blog
+from blog_reviewer import get_blog_review, refresh_blog_review
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -228,6 +230,26 @@ async def ai_summary(request: Request) -> dict:
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
 
+# ── Tool 10: Daily Blog ───────────────────────────────────────────────────────
+@app.get("/daily-blog")
+async def daily_blog(request: Request) -> dict:
+    logger.info("GET /daily-blog from %s", request.client)
+    try:
+        return await get_daily_blog()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
+# ── Tool 11: Blog Review ──────────────────────────────────────────────────────
+@app.get("/blog-review")
+async def blog_review(request: Request) -> dict:
+    logger.info("GET /blog-review from %s", request.client)
+    try:
+        return await get_blog_review()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
 # ── Scheduler auth helper ─────────────────────────────────────────────────────
 def _verify_scheduler(token: Optional[str]) -> None:
     """Raise 401 if token does not match SCHEDULER_SECRET env var."""
@@ -344,6 +366,29 @@ async def refresh_all(
         logger.warning("refresh/all stage 5 error: %s", exc)
         stages["ai_summary"] = {"status": "error", "detail": str(exc)}
         summary = {}
+
+    # Stage 6 — Daily blog (Gemini — reads cached data from stages 1-2)
+    t0 = time.perf_counter()
+    blog_generated = False
+    try:
+        await refresh_daily_blog()
+        stages["daily_blog"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
+        blog_generated = True
+    except Exception as exc:
+        logger.warning("refresh/all stage 6 error: %s", exc)
+        stages["daily_blog"] = {"status": "error", "detail": str(exc)}
+
+    # Stage 7 — Blog review (Gemini — depends on Stage 6)
+    if blog_generated:
+        t0 = time.perf_counter()
+        try:
+            await refresh_blog_review()
+            stages["blog_review"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
+        except Exception as exc:
+            logger.warning("refresh/all stage 7 error: %s", exc)
+            stages["blog_review"] = {"status": "error", "detail": str(exc)}
+    else:
+        stages["blog_review"] = {"status": "skipped", "detail": "Stage 6 did not produce a blog"}
 
     total_ms = round((time.perf_counter() - overall_start) * 1000)
     logger.info("POST /refresh/all complete total_ms=%d", total_ms)
