@@ -78,7 +78,7 @@ function SortHeader({
   const active = current === sortKey;
   return (
     <th
-      className={`px-3 py-2 font-medium cursor-pointer select-none hover:text-white ${className ?? ""} ${active ? "text-white" : "text-gray-400"}`}
+      className={`px-4 py-2 font-medium cursor-pointer select-none hover:text-white ${className ?? ""} ${active ? "text-white" : "text-gray-400"}`}
       onClick={() => onClick(sortKey)}
     >
       {label}{active ? (dir === "desc" ? " ▼" : " ▲") : ""}
@@ -86,10 +86,21 @@ function SortHeader({
   );
 }
 
-function IndustryTable({ rows, startRank = 1, showReturns }: { rows: IndustryRow[]; startRank?: number; showReturns: boolean }) {
+function IndustryTable({
+  rows,
+  startRank = 1,
+  showReturns,
+  selectedPeriods,
+}: {
+  rows: IndustryRow[];
+  startRank?: number;
+  showReturns: boolean;
+  selectedPeriods?: ReturnPeriod[];
+}) {
   const enriched = hasEnrichment(rows);
   const hasReturns = showReturns && hasStoredReturns(rows);
-  const [sortKey, setSortKey] = useState<SortKey>("change_pct");
+  const periodsToShow = selectedPeriods && selectedPeriods.length > 0 ? selectedPeriods : RETURN_PERIODS;
+  const [sortKey, setSortKey] = useState<SortKey>(hasReturns ? "1d" : "change_pct");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   function handleSort(k: SortKey) {
@@ -139,20 +150,28 @@ function IndustryTable({ rows, startRank = 1, showReturns }: { rows: IndustryRow
       <table className="w-full text-sm">
         <thead className="bg-gray-900 sticky top-0 z-10">
           <tr>
-            <th className="text-left px-3 py-2 text-gray-500 font-medium w-8">#</th>
+            <th className="text-left px-4 py-2 text-gray-500 font-medium w-8">#</th>
             <SortHeader label="Industry" sortKey="industry" current={sortKey} dir={sortDir} onClick={handleSort} className="text-left" />
-            <th className="text-left px-3 py-2 text-gray-400 font-medium">ETF</th>
-            <SortHeader label="Price" sortKey="price" current={sortKey} dir={sortDir} onClick={handleSort} className="text-right" />
-            <SortHeader label="Chg $" sortKey="change" current={sortKey} dir={sortDir} onClick={handleSort} className="text-right" />
-            <SortHeader label="Chg %" sortKey="change_pct" current={sortKey} dir={sortDir} onClick={handleSort} className="text-right" />
-            {enriched && <th className="text-right px-3 py-2 text-gray-400 font-medium" title="1-month cumulative return (Alpha Vantage)">1M Return</th>}
-            {enriched && <th className="text-right px-3 py-2 text-gray-400 font-medium" title="Mean daily return (Alpha Vantage)">Avg/Day</th>}
-            {enriched && <th className="text-right px-3 py-2 text-gray-400 font-medium" title="Daily return standard deviation — higher = more volatile (Alpha Vantage)">Volatility</th>}
-            {hasReturns && RETURN_PERIODS.map((p) => (
-              <SortHeader key={p} label={RETURN_PERIOD_LABELS[p]} sortKey={p} current={sortKey} dir={sortDir} onClick={handleSort} className="text-right text-blue-400 text-xs" />
+            <th className="text-left px-4 py-2 text-gray-400 font-medium">ETF</th>
+            {!hasReturns && (
+              <>
+                <SortHeader label="Price" sortKey="price" current={sortKey} dir={sortDir} onClick={handleSort} className="text-right" />
+                <SortHeader label="Chg $" sortKey="change" current={sortKey} dir={sortDir} onClick={handleSort} className="text-right" />
+                <SortHeader label="Chg %" sortKey="change_pct" current={sortKey} dir={sortDir} onClick={handleSort} className="text-right" />
+              </>
+            )}
+            {enriched && <th className="text-right px-4 py-2 text-gray-400 font-medium text-xs" title="1-month cumulative return (Alpha Vantage)">1M Return</th>}
+            {enriched && <th className="text-right px-4 py-2 text-gray-400 font-medium text-xs" title="Mean daily return (Alpha Vantage)">Avg/Day</th>}
+            {enriched && <th className="text-right px-4 py-2 text-gray-400 font-medium text-xs" title="Daily return standard deviation — higher = more volatile (Alpha Vantage)">Vol</th>}
+            {hasReturns && periodsToShow.map((p) => (
+              <SortHeader key={p} label={RETURN_PERIOD_LABELS[p]} sortKey={p} current={sortKey} dir={sortDir} onClick={handleSort} className="text-right text-blue-300 text-sm font-semibold" />
             ))}
-            <SortHeader label="52W Hi" sortKey="52w_high" current={sortKey} dir={sortDir} onClick={handleSort} className="text-right text-amber-500 text-xs" />
-            <SortHeader label="52W Lo" sortKey="52w_low" current={sortKey} dir={sortDir} onClick={handleSort} className="text-right text-amber-500 text-xs" />
+            {!hasReturns && (
+              <>
+                <SortHeader label="52W Hi" sortKey="52w_high" current={sortKey} dir={sortDir} onClick={handleSort} className="text-right text-amber-500 text-xs" />
+                <SortHeader label="52W Lo" sortKey="52w_low" current={sortKey} dir={sortDir} onClick={handleSort} className="text-right text-amber-500 text-xs" />
+              </>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -161,44 +180,42 @@ function IndustryTable({ rows, startRank = 1, showReturns }: { rows: IndustryRow
             const r = sorted[vr.index];
             return (
               <tr key={r.industry} className="border-t border-gray-800/60 hover:bg-gray-900/40">
-                <td className="px-3 py-2 text-gray-600 text-xs">{startRank + vr.index}</td>
-                <td className="px-3 py-2 text-gray-200">{r.industry}</td>
-                <td className="px-3 py-2 text-blue-400 font-mono text-xs">{r.etf}</td>
-                <td className="px-3 py-2 text-right text-gray-300">
-                  {r.error ? <span className="text-red-500 text-xs">err</span> : `$${r.price?.toFixed(2) ?? "—"}`}
-                </td>
-                <td className="px-3 py-2 text-right"><Dollar v={r.change} /></td>
-                <td className="px-3 py-2 text-right"><Pct v={r.change_pct} /></td>
+                <td className="px-4 py-2 text-gray-600 text-xs">{startRank + vr.index}</td>
+                <td className="px-4 py-2 text-gray-200 font-medium">{r.industry}</td>
+                <td className="px-4 py-2 text-blue-400 font-mono text-xs">{r.etf}</td>
+                {!hasReturns && (
+                  <>
+                    <td className="px-4 py-2 text-right text-gray-300">
+                      {r.error ? <span className="text-red-500 text-xs">err</span> : `$${r.price?.toFixed(2) ?? "—"}`}
+                    </td>
+                    <td className="px-4 py-2 text-right"><Dollar v={r.change} /></td>
+                    <td className="px-4 py-2 text-right"><Pct v={r.change_pct} /></td>
+                  </>
+                )}
                 {enriched && (
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-4 py-2 text-right text-xs">
                     {r.return_1m !== undefined
                       ? <Pct v={r.return_1m * 100} />
                       : <span className="text-gray-600 text-xs">—</span>}
                   </td>
                 )}
                 {enriched && (
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-4 py-2 text-right text-xs">
                     {r.mean_daily_return !== undefined
                       ? <Pct v={r.mean_daily_return * 100} />
                       : <span className="text-gray-600 text-xs">—</span>}
                   </td>
                 )}
                 {enriched && (
-                  <td className="px-3 py-2 text-right text-gray-400 text-xs font-mono">
+                  <td className="px-4 py-2 text-right text-gray-400 text-xs font-mono">
                     {r.stddev_daily !== undefined ? (r.stddev_daily * 100).toFixed(3) + "%" : <span className="text-gray-600">—</span>}
                   </td>
                 )}
-                {hasReturns && RETURN_PERIODS.map((p) => (
-                  <td key={p} className="px-3 py-2 text-right text-xs font-mono">
+                {hasReturns && periodsToShow.map((p) => (
+                  <td key={p} className="px-4 py-2 text-right text-sm font-mono">
                     <ReturnCell v={r.returns?.[p]} />
                   </td>
                 ))}
-                <td className="px-3 py-2 text-right text-xs font-mono text-amber-400">
-                  {r["52w_high"] != null ? `$${r["52w_high"].toFixed(2)}` : <span className="text-gray-700">—</span>}
-                </td>
-                <td className="px-3 py-2 text-right text-xs font-mono text-amber-600">
-                  {r["52w_low"] != null ? `$${r["52w_low"].toFixed(2)}` : <span className="text-gray-700">—</span>}
-                </td>
               </tr>
             );
           })}
@@ -213,6 +230,7 @@ export function IndustryTracker({ data }: { data: IndustryData }) {
   const [view, setView] = useState<"ranked" | "sector">("ranked");
   const [showReturns, setShowReturns] = useState(false);
   const [leaderPeriod, setLeaderPeriod] = useState<ReturnPeriod>("1d");
+  const [selectedPeriods, setSelectedPeriods] = useState<ReturnPeriod[]>(["1d", "1w", "1m", "3m", "ytd", "1y"]);
   const enriched = hasEnrichment(data.rankings);
   const hasReturns = hasStoredReturns(data.rankings);
 
@@ -351,17 +369,51 @@ export function IndustryTracker({ data }: { data: IndustryData }) {
         </div>
       </div>
 
+      {/* Period column selector (when returns are shown) */}
+      {showReturns && hasReturns && (
+        <div className="flex items-center gap-2 flex-wrap p-3 rounded-lg border border-gray-800 bg-gray-900/30">
+          <span className="text-xs text-gray-500 font-medium mr-1">Columns:</span>
+          {RETURN_PERIODS.map((p) => (
+            <button
+              key={p}
+              onClick={() => {
+                setSelectedPeriods((prev) =>
+                  prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p].sort((a, b) => RETURN_PERIODS.indexOf(a) - RETURN_PERIODS.indexOf(b))
+                );
+              }}
+              className={`px-2.5 py-1 text-xs rounded transition-colors ${
+                selectedPeriods.includes(p)
+                  ? "bg-blue-700 text-white"
+                  : "border border-gray-700 text-gray-400 hover:text-white hover:border-gray-600"
+              }`}
+            >
+              {RETURN_PERIOD_LABELS[p]}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Main table */}
       <div className="rounded-xl border border-gray-800 overflow-x-auto">
         {view === "ranked" ? (
-          <IndustryTable rows={data.rankings} startRank={1} showReturns={showReturns} />
+          <IndustryTable
+            rows={data.rankings}
+            startRank={1}
+            showReturns={showReturns}
+            selectedPeriods={showReturns ? selectedPeriods : undefined}
+          />
         ) : (
           Object.entries(data.by_sector).map(([sector, rows]) => (
             <div key={sector} className="overflow-x-auto">
               <div className="px-3 py-2 bg-gray-900/80 border-t border-gray-800 text-xs font-semibold text-gray-400 uppercase tracking-wider">
                 {sector}
               </div>
-              <IndustryTable rows={rows} startRank={1} showReturns={showReturns} />
+              <IndustryTable
+                rows={rows}
+                startRank={1}
+                showReturns={showReturns}
+                selectedPeriods={showReturns ? selectedPeriods : undefined}
+              />
             </div>
           ))
         )}
