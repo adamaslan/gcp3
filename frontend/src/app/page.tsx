@@ -103,7 +103,7 @@ const TOOLS = [
     description: "Daily insights and longer-form market analysis capturing the broader narrative.",
     badge: null,
     badgeColor: "",
-    accent: "hover:border-slate-500",
+    accent: "hover:border-blue-500",
   },
   {
     href: "/blog-review",
@@ -111,7 +111,7 @@ const TOOLS = [
     description: "Review and manage daily blog entries or historical posts.",
     badge: null,
     badgeColor: "",
-    accent: "hover:border-zinc-500",
+    accent: "hover:border-amber-500",
   },
   {
     href: "/correlation-article",
@@ -119,7 +119,7 @@ const TOOLS = [
     description: "Deep dive into cross-asset correlations and unearthing hidden market relationships.",
     badge: null,
     badgeColor: "",
-    accent: "hover:border-stone-500",
+    accent: "hover:border-purple-500",
   },
 ];
 
@@ -128,7 +128,7 @@ export default function Home() {
     <div className="space-y-8">
       <div>
         <h1 className="text-3xl font-bold text-white">GCP3 Finance</h1>
-        <p className="mt-2 text-gray-400">15 real-time market intelligence tools powered by GCP + Claude AI.</p>
+        <p className="mt-2 text-gray-400">{TOOLS.length} real-time market intelligence tools powered by GCP + Claude AI.</p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -152,7 +152,7 @@ export default function Home() {
       </div>
 
       <div className="border-t border-gray-800 pt-6 flex flex-wrap items-center gap-4 text-xs text-gray-600">
-        <span>15 endpoints</span>
+        <span>{TOOLS.length} endpoints</span>
         <span>·</span>
         <span>Finnhub + yfinance + Alpha Vantage</span>
         <span>·</span>
