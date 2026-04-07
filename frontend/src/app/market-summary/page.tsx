@@ -1,3 +1,4 @@
+import React from "react";
 import { MarketSummary } from "@/components/MarketSummary";
 
 export const dynamic = "force-dynamic"; // Skip prerendering; ISR revalidates on first request
@@ -18,7 +19,7 @@ export default async function MarketSummaryPage({
   searchParams,
 }: {
   searchParams: Promise<{ days?: string }>;
-}): Promise<JSX.Element> {
+}): Promise<React.ReactElement> {
   const { days: daysParam } = await searchParams;
   const days: ValidDays = VALID_DAYS.includes(daysParam as ValidDays)
     ? (daysParam as ValidDays)

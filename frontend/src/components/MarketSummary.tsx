@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 
 interface TickerMention {
@@ -50,7 +50,7 @@ export function MarketSummary({
 }: {
   data: MarketSummaryData;
   selectedDays?: string;
-}): JSX.Element {
+}): React.ReactElement {
   const [selected, setSelected] = useState(0);
   const router = useRouter();
   const summary = data.summaries[selected];
