@@ -1,5 +1,6 @@
 import { MarketSummary } from "@/components/MarketSummary";
 
+export const dynamic = "force-dynamic"; // Skip prerendering; ISR revalidates on first request
 export const revalidate = 3600; // 1 hour — reads precomputed summaries from MCP pipeline
 
 async function getData() {
