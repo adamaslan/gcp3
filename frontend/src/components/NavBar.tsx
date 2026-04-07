@@ -22,7 +22,7 @@ export function NavBar() {
   const pathname = usePathname();
   return (
     <nav className="border-b border-gray-800 px-6 py-2 flex items-center gap-1 overflow-x-auto">
-      <Link href="/" className="font-bold text-white mr-4 shrink-0 text-sm">GCP3</Link>
+      <Link href="/" className="font-bold text-white mr-4 shrink-0 text-sm">Nuwrrrld</Link>
       {NAV_LINKS.map(({ href, label }) => {
         const active = pathname === href;
         return (
