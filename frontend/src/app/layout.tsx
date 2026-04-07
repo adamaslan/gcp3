@@ -2,10 +2,10 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { NavBar } from "@/components/NavBar";
 
-const siteUrl = "https://nuwrrrld.com";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://nuwrrrld.com";
 
 const siteDescription =
-  "Helping everyone make better financial choices. Nuwrrrld Financial offers 15 free real-time market intelligence tools: AI market summary, morning brief (SPY, QQQ, IWM, DIA), stock screener, sector rotation, earnings radar, macro pulse, news sentiment, portfolio analyzer, technical signals, industry tracker, industry returns, market summary, daily blog, and more — powered by Finnhub, Gemini AI, and GCP.";
+  "Nuwrrrld Financial — 15 free real-time market intelligence tools: AI summary, morning brief, stock screener, sector rotation, earnings radar, macro pulse, news sentiment, portfolio analyzer, and more.";
 
 export const metadata: Metadata = {
   title: "Nuwrrrld Financial — Helping Everyone Make Better Financial Choices",
@@ -37,8 +37,8 @@ export const metadata: Metadata = {
     images: [
       {
         url: "/og-image.png",
-        width: 1200,
-        height: 630,
+        width: 1024,
+        height: 541,
         alt: "Nuwrrrld Financial — Helping everyone make better financial choices",
       },
     ],

@@ -127,8 +127,8 @@ export default function Home() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-white">GCP3 Finance</h1>
-        <p className="mt-2 text-gray-400">{TOOLS.length} real-time market intelligence tools powered by GCP + Claude AI.</p>
+        <h1 className="text-3xl font-bold text-white">Nuwrrrld Financial</h1>
+        <p className="mt-2 text-gray-400">{TOOLS.length} free real-time market intelligence tools powered by Finnhub, Gemini AI, and GCP.</p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
