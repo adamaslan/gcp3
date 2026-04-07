@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import React, { useState } from "react";
+import { useRouter } from "next/navigation";
 
 interface TickerMention {
   symbol: string;
@@ -18,9 +19,15 @@ interface DaySummary {
 }
 
 interface MarketSummaryData {
-  days: number;
-  summaries: DaySummary[];
+  days_analyzed: number;
+  history: DaySummary[];
 }
+
+const WINDOW_OPTIONS = [
+  { value: "7", label: "7 days" },
+  { value: "14", label: "14 days" },
+  { value: "30", label: "30 days" },
+] as const;
 
 const REGIME_COLOR: Record<string, string> = {
   Bullish: "text-green-400",
@@ -37,9 +44,16 @@ function ActionBadge({ action }: { action?: string }) {
   return <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${style}`}>{action}</span>;
 }
 
-export function MarketSummary({ data }: { data: MarketSummaryData }) {
+export function MarketSummary({
+  data,
+  selectedDays = "7",
+}: {
+  data: MarketSummaryData;
+  selectedDays?: string;
+}): React.ReactElement {
   const [selected, setSelected] = useState(0);
-  const summary = data.summaries[selected];
+  const router = useRouter();
+  const summary = data.history[selected];
 
   if (!summary) {
     return (
@@ -51,16 +65,37 @@ export function MarketSummary({ data }: { data: MarketSummaryData }) {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Market Summary</h1>
-        <p className="text-sm text-gray-500 mt-0.5">
-          {data.days}-day trend from AI signal pipeline
-        </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Market Summary</h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {data.days_analyzed}-day trend from AI signal pipeline
+          </p>
+        </div>
+        {/* Window selector */}
+        <div className="flex gap-1 bg-gray-900 rounded-lg p-1">
+          {WINDOW_OPTIONS.map(({ value, label }) => (
+            <button
+              key={value}
+              onClick={() => {
+                setSelected(0);
+                router.push(`/market-summary?days=${value}`);
+              }}
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                selectedDays === value
+                  ? "bg-blue-700 text-white"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Day selector */}
       <div className="flex gap-1 overflow-x-auto pb-1">
-        {data.summaries.map((s, i) => (
+        {data.history.map((s, i) => (
           <button
             key={s.date}
             onClick={() => setSelected(i)}

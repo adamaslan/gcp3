@@ -161,19 +161,24 @@ async def purge_expired_cache(
     batch_count = 0
 
     try:
-        query = (
-            firestore_db().collection("gcp3_cache")
-            .where("expires_at", "<", now)
-            .limit(450)
-        )
-        for snap in query.stream():
-            batch.delete(snap.reference)
-            batch_count += 1
-            deleted += 1
-            if batch_count >= 450:
-                batch.commit()
-                batch = firestore_db().batch()
-                batch_count = 0
+        # Loop until no more expired docs remain (each pass handles up to 450)
+        while True:
+            query = (
+                firestore_db().collection("gcp3_cache")
+                .where("expires_at", "<", now)
+                .limit(450)
+            )
+            snaps = list(query.stream())
+            if not snaps:
+                break
+            for snap in snaps:
+                batch.delete(snap.reference)
+                batch_count += 1
+                deleted += 1
+                if batch_count >= 450:
+                    batch.commit()
+                    batch = firestore_db().batch()
+                    batch_count = 0
 
         if batch_count > 0:
             batch.commit()

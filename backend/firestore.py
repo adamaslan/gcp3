@@ -7,6 +7,9 @@ import time
 _db = None
 
 # In-memory cache layer (Phase 2B) — eliminates Firestore reads on hot paths
+# Capped at 256 entries; LRU eviction prevents unbounded growth from
+# rotating keys like industry_quotes:{minute_bucket}.
+_MEM_CACHE_MAX = 256
 _MEM_CACHE: dict[str, tuple[float, dict]] = {}
 
 
@@ -34,7 +37,10 @@ def mem_get(key: str, max_age: float = 60.0) -> dict | None:
 
 
 def mem_set(key: str, value: dict) -> None:
-    """Set in-memory cache with current timestamp."""
+    """Set in-memory cache with current timestamp. Evicts oldest entry when full."""
+    if key not in _MEM_CACHE and len(_MEM_CACHE) >= _MEM_CACHE_MAX:
+        # FIFO eviction: dicts maintain insertion order (Python 3.7+), O(1)
+        del _MEM_CACHE[next(iter(_MEM_CACHE))]
     _MEM_CACHE[key] = (time.monotonic(), value)
 
 

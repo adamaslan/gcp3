@@ -3,6 +3,8 @@ import "./globals.css";
 import { NavBar } from "@/components/NavBar";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://nuwrrrld.com";
+// Use hardcoded production URL for OG image so it resolves correctly on all deployments
+const ogImageUrl = `https://nuwrrrld.com/og-image.png`;
 
 const siteDescription =
   "Nuwrrrld Financial — 15 free real-time market intelligence tools: AI summary, morning brief, stock screener, sector rotation, earnings radar, macro pulse, news sentiment, portfolio analyzer, and more.";
@@ -36,7 +38,7 @@ export const metadata: Metadata = {
     description: siteDescription,
     images: [
       {
-        url: "/og-image.png",
+        url: ogImageUrl,
         width: 1024,
         height: 541,
         alt: "Nuwrrrld Financial — Helping everyone make better financial choices",
@@ -47,7 +49,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Nuwrrrld Financial — Helping Everyone Make Better Financial Choices",
     description: siteDescription,
-    images: ["/og-image.png"],
+    images: [ogImageUrl],
   },
 };
 
