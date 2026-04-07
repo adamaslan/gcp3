@@ -19,8 +19,8 @@ interface DaySummary {
 }
 
 interface MarketSummaryData {
-  days: number;
-  summaries: DaySummary[];
+  days_analyzed: number;
+  history: DaySummary[];
 }
 
 const WINDOW_OPTIONS = [
@@ -53,7 +53,7 @@ export function MarketSummary({
 }): React.ReactElement {
   const [selected, setSelected] = useState(0);
   const router = useRouter();
-  const summary = data.summaries[selected];
+  const summary = data.history[selected];
 
   if (!summary) {
     return (
@@ -69,7 +69,7 @@ export function MarketSummary({
         <div>
           <h1 className="text-2xl font-bold text-white">Market Summary</h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            {data.days}-day trend from AI signal pipeline
+            {data.days_analyzed}-day trend from AI signal pipeline
           </p>
         </div>
         {/* Window selector */}
@@ -95,7 +95,7 @@ export function MarketSummary({
 
       {/* Day selector */}
       <div className="flex gap-1 overflow-x-auto pb-1">
-        {data.summaries.map((s, i) => (
+        {data.history.map((s, i) => (
           <button
             key={s.date}
             onClick={() => setSelected(i)}

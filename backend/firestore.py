@@ -39,9 +39,8 @@ def mem_get(key: str, max_age: float = 60.0) -> dict | None:
 def mem_set(key: str, value: dict) -> None:
     """Set in-memory cache with current timestamp. Evicts oldest entry when full."""
     if key not in _MEM_CACHE and len(_MEM_CACHE) >= _MEM_CACHE_MAX:
-        # Evict the entry with the smallest (oldest) timestamp
-        oldest = min(_MEM_CACHE, key=lambda k: _MEM_CACHE[k][0])
-        del _MEM_CACHE[oldest]
+        # FIFO eviction: dicts maintain insertion order (Python 3.7+), O(1)
+        del _MEM_CACHE[next(iter(_MEM_CACHE))]
     _MEM_CACHE[key] = (time.monotonic(), value)
 
 

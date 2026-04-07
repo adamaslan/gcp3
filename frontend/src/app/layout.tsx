@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { NavBar } from "@/components/NavBar";
 
-const siteUrl = "https://nuwrrrld.com";
-const ogImageUrl = `${siteUrl}/og-image.png`;
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://nuwrrrld.com";
+// Use hardcoded production URL for OG image so it resolves correctly on all deployments
+const ogImageUrl = `https://nuwrrrld.com/og-image.png`;
 
 const siteDescription =
   "Nuwrrrld Financial — 15 free real-time market intelligence tools: AI summary, morning brief, stock screener, sector rotation, earnings radar, macro pulse, news sentiment, portfolio analyzer, and more.";
