@@ -1,6 +1,8 @@
 import { MacroPulse } from "@/components/MacroPulse";
-
 export const dynamic = "force-dynamic";
+
+
+export const revalidate = 3600; // 1 hour — cross-asset indicators move slowly, same pattern as sector rotation
 
 async function getData() {
   const base = process.env.BACKEND_URL;

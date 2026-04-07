@@ -2,8 +2,12 @@
 from google.cloud import firestore
 from datetime import datetime, timedelta, timezone
 import os
+import time
 
 _db = None
+
+# In-memory cache layer (Phase 2B) — eliminates Firestore reads on hot paths
+_MEM_CACHE: dict[str, tuple[float, dict]] = {}
 
 
 def db() -> firestore.Client:
@@ -13,7 +17,38 @@ def db() -> firestore.Client:
     return _db
 
 
+def mem_get(key: str, max_age: float = 60.0) -> dict | None:
+    """Get from in-memory cache if not stale. Returns None on miss or expiry.
+
+    Args:
+        key: Cache key
+        max_age: Max age in seconds (default 60s for hot paths like quotes)
+
+    Returns:
+        Cached value or None
+    """
+    entry = _MEM_CACHE.get(key)
+    if entry and (time.monotonic() - entry[0]) < max_age:
+        return entry[1]
+    return None
+
+
+def mem_set(key: str, value: dict) -> None:
+    """Set in-memory cache with current timestamp."""
+    _MEM_CACHE[key] = (time.monotonic(), value)
+
+
 def get_cache(key: str) -> dict | None:
+    """Get from cache with 3-tier fallback: in-memory → Firestore → None.
+
+    In-memory hits (within 60s) avoid Firestore round-trips on warm instances.
+    """
+    # Tier 1: In-memory (0ms)
+    cached = mem_get(key, max_age=60.0)
+    if cached is not None:
+        return cached
+
+    # Tier 2: Firestore (50-200ms)
     doc = db().collection("gcp3_cache").document(key).get()
     if not doc.exists:
         return None
@@ -23,7 +58,11 @@ def get_cache(key: str) -> dict | None:
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
         if expires_at > datetime.now(timezone.utc):
-            return data.get("value")
+            value = data.get("value")
+            # Populate in-memory for next request
+            if value:
+                mem_set(key, value)
+            return value
     return None
 
 
@@ -84,9 +123,15 @@ def delete_cache(key: str) -> None:
 
 
 def set_cache(key: str, value: dict, ttl_hours: int = 1) -> None:
+    """Set cache in both Firestore and in-memory.
+
+    Ensures subsequent reads hit in-memory for 60s without Firestore round-trip.
+    """
     now = datetime.now(timezone.utc)
     db().collection("gcp3_cache").document(key).set({
         "value": value,
         "expires_at": now + timedelta(hours=ttl_hours),
         "updated_at": now,
     })
+    # Populate in-memory layer for hot path (industry_quotes, screener, etc.)
+    mem_set(key, value)

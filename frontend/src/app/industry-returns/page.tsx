@@ -1,6 +1,8 @@
 import { IndustryReturns } from "@/components/IndustryReturns";
-
 export const dynamic = "force-dynamic";
+
+
+export const revalidate = 3600; // 1 hour — returns precomputed daily, reads from industry_cache (1 Firestore read, zero API)
 
 async function getData() {
   const base = process.env.BACKEND_URL;

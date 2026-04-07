@@ -1,6 +1,8 @@
 import { SectorRotation } from "@/components/SectorRotation";
-
 export const dynamic = "force-dynamic";
+
+
+export const revalidate = 3600; // 1 hour — momentum scores shift slowly, revalidation reads from warm Firestore
 
 async function getData() {
   const base = process.env.BACKEND_URL;

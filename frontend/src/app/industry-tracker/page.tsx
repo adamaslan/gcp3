@@ -1,8 +1,10 @@
 import { cache, Suspense } from "react";
+export const dynamic = "force-dynamic";
+
 import { IndustryTracker } from "@/components/IndustryTracker";
 import { IndustryTrackerLocalFallback, LocalStorageSaver } from "./IndustryTrackerClient";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60; // 1 minute — quotes refresh every minute via ISR, returns precomputed daily
 
 const getQuotes = cache(async () => {
   const base = process.env.BACKEND_URL;

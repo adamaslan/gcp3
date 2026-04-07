@@ -19,6 +19,7 @@ interface IndustryReturn {
 
 interface IndustryReturnsData {
   date: string;
+  updated?: string;
   total: number;
   industries: IndustryReturn[];
   leaders: Record<string, { industry: string; etf: string; return: number }[]>;
@@ -80,6 +81,11 @@ export function IndustryReturns({ data }: { data: IndustryReturnsData }) {
         <h1 className="text-2xl font-bold text-white">Industry Returns</h1>
         <p className="text-sm text-gray-500 mt-0.5">
           Multi-period ETF returns across {data.total} industries · {data.date}
+          {data.updated && (
+            <span className="ml-2 text-gray-600">
+              · updated {new Date(data.updated).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" })}
+            </span>
+          )}
         </p>
       </div>
 

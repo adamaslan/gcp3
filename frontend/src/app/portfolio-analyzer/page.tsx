@@ -1,5 +1,7 @@
 import { PortfolioAnalyzer } from "@/components/PortfolioAnalyzer";
 
+// Cannot use ISR: accepts user-provided ?tickers= query params (infinite input space)
+// Optimization: use client-side SWR/React Query with API proxy route — backend in-memory cache still helps
 export const dynamic = "force-dynamic";
 
 async function getData() {
