@@ -2,9 +2,53 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { NavBar } from "@/components/NavBar";
 
+const siteUrl = "https://nuwrrrld.com";
+
+const siteDescription =
+  "Helping everyone make better financial choices. Nuwrrrld Financial offers 15 free real-time market intelligence tools: AI market summary, morning brief (SPY, QQQ, IWM, DIA), stock screener, sector rotation, earnings radar, macro pulse, news sentiment, portfolio analyzer, technical signals, industry tracker, industry returns, market summary, daily blog, and more — powered by Finnhub, Gemini AI, and GCP.";
+
 export const metadata: Metadata = {
-  title: "GCP3 Finance",
-  description: "12 real-time market intelligence tools powered by GCP + Claude AI",
+  title: "Nuwrrrld Financial — Helping Everyone Make Better Financial Choices",
+  description: siteDescription,
+  keywords: [
+    "stock market tools",
+    "real-time market data",
+    "AI market summary",
+    "stock screener",
+    "sector rotation",
+    "earnings radar",
+    "macro pulse",
+    "news sentiment",
+    "portfolio analyzer",
+    "technical signals",
+    "industry tracker",
+    "morning brief",
+    "SPY QQQ IWM DIA",
+    "VIX macro indicators",
+    "financial choices",
+    "Nuwrrrld Financial",
+  ],
+  metadataBase: new URL(siteUrl),
+  openGraph: {
+    type: "website",
+    url: siteUrl,
+    title: "Nuwrrrld Financial — Helping Everyone Make Better Financial Choices",
+    description: siteDescription,
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "Nuwrrrld Financial — Helping everyone make better financial choices",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Nuwrrrld Financial — Helping Everyone Make Better Financial Choices",
+    description: siteDescription,
+    images: ["/og-image.png"],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -1,1 +1,3 @@
 .vercel
+src/app/admin/
+src/app/api/admin/
