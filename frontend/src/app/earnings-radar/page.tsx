@@ -1,6 +1,8 @@
 import { EarningsRadar } from "@/components/EarningsRadar";
-
 export const dynamic = "force-dynamic";
+
+
+export const revalidate = 21600; // 6 hours — EPS data doesn't change intraday, long ISR is correct
 
 async function getData() {
   const base = process.env.BACKEND_URL;

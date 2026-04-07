@@ -1,6 +1,8 @@
 import { TechnicalSignals } from "@/components/TechnicalSignals";
-
 export const dynamic = "force-dynamic";
+
+
+export const revalidate = 3600; // 1 hour — reads from permanent analysis collection, zero API calls, pipeline-updated periodically
 
 async function getData() {
   const base = process.env.BACKEND_URL;
