@@ -39,5 +39,9 @@ export async function GET(): Promise<NextResponse> {
   }
 
   console.log("[morning-brief] Success");
-  return NextResponse.json(data);
+  return NextResponse.json(data, {
+    headers: {
+      "Cache-Control": "public, s-maxage=300, stale-while-revalidate=1800",
+    },
+  });
 }

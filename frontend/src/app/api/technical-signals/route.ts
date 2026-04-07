@@ -27,5 +27,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Backend unavailable", status: res.status, detail: body }, { status: 503 });
   }
 
-  return NextResponse.json(await res.json());
+  return NextResponse.json(await res.json(), {
+    headers: {
+      "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=7200",
+    },
+  });
 }

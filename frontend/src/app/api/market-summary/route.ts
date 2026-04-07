@@ -16,7 +16,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   let res: Response;
   try {
-    res = await fetch(`${BACKEND}/market-summary?days=${days}`, { cache: "no-store" });
+    res = await fetch(`${BACKEND}/market-summary?days=${days}`, { next: { revalidate: 3600 } });
   } catch (err) {
     console.error("[market-summary] Network error:", err);
     return NextResponse.json({ error: "Network error", detail: String(err) }, { status: 503 });
@@ -28,5 +28,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Backend unavailable", status: res.status, detail: body }, { status: 503 });
   }
 
-  return NextResponse.json(await res.json());
+  return NextResponse.json(await res.json(), {
+    headers: {
+      "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=7200",
+    },
+  });
 }

@@ -26,7 +26,7 @@ export async function GET(): Promise<NextResponse> {
 
   return NextResponse.json(await res.json(), {
     headers: {
-      "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
+      "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=7200",
     },
   });
 }

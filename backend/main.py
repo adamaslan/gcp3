@@ -25,6 +25,8 @@ from market_summary import get_market_summary
 from daily_blog import get_daily_blog, refresh_daily_blog
 from blog_reviewer import get_blog_review, refresh_blog_review
 from correlation_article import get_correlation_article, refresh_correlation_article
+from firestore import db as firestore_db
+from datetime import datetime, timezone
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -133,6 +135,53 @@ async def compute_returns_endpoint(
         return result
     except Exception as exc:
         logger.exception("POST /admin/compute-returns failed: %s", exc)
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
+# ── Admin: Purge expired cache (safety net for native TTL) ─────────────────────
+@app.post("/admin/purge-cache")
+async def purge_expired_cache(
+    request: Request,
+    x_scheduler_token: Optional[str] = Header(default=None),
+) -> dict:
+    """Delete expired documents from gcp3_cache collection.
+
+    Runs nightly as a safety net alongside native Firestore TTL (Phase 1A).
+    Batches deletes to stay under Firestore's 500-operation batch limit.
+    Called by Cloud Scheduler at 2:00 AM ET (6:00 AM UTC).
+
+    Returns:
+        {"deleted": int, "timestamp": ISO string}
+    """
+    _verify_scheduler(x_scheduler_token)
+    logger.info("POST /admin/purge-cache triggered")
+    now = datetime.now(timezone.utc)
+    deleted = 0
+    batch = firestore_db().batch()
+    batch_count = 0
+
+    try:
+        query = (
+            firestore_db().collection("gcp3_cache")
+            .where("expires_at", "<", now)
+            .limit(450)
+        )
+        for snap in query.stream():
+            batch.delete(snap.reference)
+            batch_count += 1
+            deleted += 1
+            if batch_count >= 450:
+                batch.commit()
+                batch = firestore_db().batch()
+                batch_count = 0
+
+        if batch_count > 0:
+            batch.commit()
+
+        logger.info("purge-cache: deleted %d expired documents", deleted)
+        return {"deleted": deleted, "timestamp": now.isoformat()}
+    except Exception as exc:
+        logger.exception("POST /admin/purge-cache failed: %s", exc)
         raise HTTPException(status_code=503, detail=str(exc))
 
 
@@ -284,6 +333,50 @@ async def _warm_backend2(client: httpx.AsyncClient, path: str) -> dict:
         return {"status": "error", "detail": str(exc)}
 
 
+# ── POST /refresh/premarket — Pre-market warmup (Cloud Scheduler, 8:30 AM ET) ──
+@app.post("/refresh/premarket")
+async def refresh_premarket(
+    request: Request,
+    x_scheduler_token: Optional[str] = Header(default=None),
+) -> dict:
+    """Lightweight pre-market cache warm-up for early users (8:30 AM ET).
+
+    Only warms endpoints that don't require heavy computation:
+    - morning_brief (news summary, lightweight)
+    - news_sentiment (social sentiment, lightweight)
+    - macro_pulse (macro indicators, lightweight)
+
+    Skips industry tracker (50 Finnhub calls), earnings radar, and AI synthesis.
+    Runs 1 hour before the full morning refresh to ensure data is ready for
+    early-bird traders.
+    """
+    _verify_scheduler(x_scheduler_token)
+    logger.info("POST /refresh/premarket started")
+    stages: dict[str, dict] = {}
+    overall_start = time.perf_counter()
+
+    # Lightweight endpoints only — no heavy computation
+    t0 = time.perf_counter()
+    try:
+        await asyncio.gather(
+            get_morning_brief(),
+            get_news_sentiment(),
+            get_macro_pulse(),
+        )
+        stages["lightweight_data"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
+    except Exception as exc:
+        logger.warning("refresh/premarket error: %s", exc)
+        stages["lightweight_data"] = {"status": "error", "detail": str(exc)}
+
+    total_ms = round((time.perf_counter() - overall_start) * 1000)
+    logger.info("POST /refresh/premarket complete total_ms=%d", total_ms)
+    return {
+        "status": "premarket_warmed",
+        "stages": stages,
+        "total_ms": total_ms,
+    }
+
+
 # ── POST /refresh/all — Morning full warm-up (Cloud Scheduler, 9:35 AM ET) ───
 @app.post("/refresh/all")
 async def refresh_all(
@@ -352,6 +445,15 @@ async def refresh_all(
     except Exception as exc:
         logger.warning("refresh/all stage 3 error: %s", exc)
         stages["industry"] = {"status": "error", "detail": str(exc)}
+
+    # Stage 3b — Recompute multi-period returns from etf_store → industry_cache
+    t0 = time.perf_counter()
+    try:
+        await compute_returns()
+        stages["compute_returns"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
+    except Exception as exc:
+        logger.warning("refresh/all stage 3b error: %s", exc)
+        stages["compute_returns"] = {"status": "error", "detail": str(exc)}
 
     # Stage 4 — Backend2 HTTP fan-out (yfinance, no Finnhub quota consumed)
     t0 = time.perf_counter()
