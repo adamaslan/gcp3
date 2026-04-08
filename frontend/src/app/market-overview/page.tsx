@@ -1,5 +1,3 @@
-export const dynamic = "force-dynamic";
-
 import { MorningBrief } from "@/components/MorningBrief";
 import { AiSummary } from "@/components/AiSummary";
 import { NewsSentiment } from "@/components/NewsSentiment";
@@ -9,14 +7,29 @@ export const revalidate = 900;
 
 async function getData() {
   const base = process.env.BACKEND_URL;
-  if (!base) throw new Error("BACKEND_URL is not configured");
-  const res = await fetch(`${base}/market-overview`, { next: { revalidate: 900 } });
-  if (!res.ok) throw new Error(`Backend error ${res.status}`);
-  return res.json();
+  if (!base) return null;
+  try {
+    const res = await fetch(`${base}/market-overview`, { next: { revalidate: 900 } });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
 }
 
 export default async function MarketOverviewPage() {
   const data = await getData();
+
+  if (!data) {
+    return (
+      <div className="p-8 text-gray-400 animate-pulse">
+        <div className="h-8 w-48 bg-gray-800 rounded mb-6" />
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="h-32 bg-gray-800 rounded mb-4" />
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 p-6">
