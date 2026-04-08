@@ -6,11 +6,8 @@ import { NavBar } from "@/components/NavBar";
 const siteDescription =
   "Nuwrrrld Financial — 15 free real-time market intelligence tools: AI summary, morning brief, stock screener, sector rotation, earnings radar, macro pulse, news sentiment, portfolio analyzer, and more.";
 
-export async function generateMetadata(): Promise<Metadata> {
-  const headersList = await headers();
-  const host = headersList.get("host") || "nuwrrrld.com";
-  const protocol = headersList.get("x-forwarded-proto") || "https";
-  const siteUrl = `${protocol}://${host}`;
+export function generateMetadata(): Metadata {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://nuwrrrld.com";
   const ogImageUrl =
     process.env.NEXT_PUBLIC_OG_IMAGE_URL || `${siteUrl}/api/og`;
 
