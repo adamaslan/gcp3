@@ -18,3 +18,4 @@ nudocs3/
 .gemini/
 .geminiignore
 GEMINI.md
+*_output.txt
