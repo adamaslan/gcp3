@@ -1,4 +1,4 @@
-"""GCP3 Finance API - 12 MCP tools (9 Finnhub + 3 shared Firestore)."""
+"""GCP3 Finance API — 8 consolidated public endpoints."""
 import asyncio
 import logging
 import os
@@ -10,14 +10,13 @@ from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
-from industry import compute_returns, get_industry_data, get_industry_quotes, seed_etf_history
+from industry import compute_returns, get_industry_data, seed_etf_history
 from morning import get_morning_brief
 from screener import get_screener_data
-from sector_rotation import get_sector_rotation  # force_rule_based param added
+from sector_rotation import get_sector_rotation
 from earnings_radar import get_earnings_radar
 from macro_pulse import get_macro_pulse
 from news_sentiment import get_news_sentiment
-from portfolio_analyzer import get_portfolio_analysis
 from ai_summary import get_ai_summary, refresh_ai_summary
 from technical_signals import get_technical_signals
 from industry_returns import get_industry_returns
@@ -47,48 +46,6 @@ def health() -> dict:
     return {"status": "ok", "version": "2.1.0", "tools": 12}
 
 
-# ── Tool 1: Morning Brief ─────────────────────────────────────────────────────
-@app.get("/morning-brief")
-async def morning_brief(request: Request) -> dict:
-    logger.info("GET /morning-brief from %s", request.client)
-    try:
-        data = await get_morning_brief()
-        logger.info("GET /morning-brief success")
-        return data
-    except Exception as exc:
-        logger.exception("GET /morning-brief failed: %s", exc)
-        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
-
-
-# ── Tool 2: Industry Tracker ─────────────────────────────────────────────────
-@app.get("/industry-tracker")
-async def industry_tracker(request: Request) -> dict:
-    logger.info("GET /industry-tracker from %s", request.client)
-    try:
-        data = await get_industry_data()
-        logger.info("GET /industry-tracker success")
-        return data
-    except Exception as exc:
-        logger.exception("GET /industry-tracker failed: %s", exc)
-        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
-
-
-# ── Industry Quotes (live prices only, short cache) ──────────────────────────
-@app.get("/industry-quotes")
-async def industry_quotes(
-    request: Request,
-    view: str = Query(default="full", description="'compact' returns only sector/etf/price/change_pct"),
-) -> dict:
-    logger.info("GET /industry-quotes view=%s from %s", view, request.client)
-    try:
-        data = await get_industry_quotes()
-        if view == "compact":
-            data = _compact_quotes(data)
-        logger.info("GET /industry-quotes success")
-        return data
-    except Exception as exc:
-        logger.exception("GET /industry-quotes failed: %s", exc)
-        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
 
 def _compact_quotes(data: dict) -> dict:
@@ -190,7 +147,7 @@ async def purge_expired_cache(
         raise HTTPException(status_code=503, detail=str(exc))
 
 
-# ── Tool 3: Stock Screener ────────────────────────────────────────────────────
+# ── Stock Screener (kept — standalone, no overlap) ────────────────────────────
 @app.get("/screener")
 async def screener(request: Request) -> dict:
     logger.info("GET /screener from %s", request.client)
@@ -203,20 +160,7 @@ async def screener(request: Request) -> dict:
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
 
-# ── Tool 4: Sector Rotation ───────────────────────────────────────────────────
-@app.get("/sector-rotation")
-async def sector_rotation(request: Request) -> dict:
-    logger.info("GET /sector-rotation from %s", request.client)
-    try:
-        data = await get_sector_rotation()
-        logger.info("GET /sector-rotation success")
-        return data
-    except Exception as exc:
-        logger.exception("GET /sector-rotation failed: %s", exc)
-        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
-
-
-# ── Tool 5: Earnings Radar ────────────────────────────────────────────────────
+# ── Earnings Radar (kept — used internally by /market-overview + /macro proxy) ─
 @app.get("/earnings-radar")
 async def earnings_radar(request: Request) -> dict:
     logger.info("GET /earnings-radar from %s", request.client)
@@ -229,7 +173,7 @@ async def earnings_radar(request: Request) -> dict:
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
 
-# ── Tool 6: Macro Pulse ───────────────────────────────────────────────────────
+# ── Macro Pulse (kept — used internally by /macro proxy) ─────────────────────
 @app.get("/macro-pulse")
 async def macro_pulse(request: Request) -> dict:
     logger.info("GET /macro-pulse from %s", request.client)
@@ -240,79 +184,6 @@ async def macro_pulse(request: Request) -> dict:
     except Exception as exc:
         logger.exception("GET /macro-pulse failed: %s", exc)
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
-
-
-# ── Tool 7: News Sentiment ────────────────────────────────────────────────────
-@app.get("/news-sentiment")
-async def news_sentiment(request: Request) -> dict:
-    logger.info("GET /news-sentiment from %s", request.client)
-    try:
-        data = await get_news_sentiment()
-        logger.info("GET /news-sentiment success")
-        return data
-    except Exception as exc:
-        logger.exception("GET /news-sentiment failed: %s", exc)
-        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
-
-
-# ── Tool 8: Portfolio Analyzer ────────────────────────────────────────────────
-@app.get("/portfolio-analyzer")
-async def portfolio_analyzer(
-    request: Request,
-    tickers: Optional[str] = Query(default=None, description="Comma-separated tickers, e.g. AAPL,MSFT,TSLA"),
-) -> dict:
-    logger.info("GET /portfolio-analyzer from %s tickers=%s", request.client, tickers)
-    try:
-        ticker_list = [t.strip() for t in tickers.split(",")] if tickers else None
-        data = await get_portfolio_analysis(ticker_list)
-        logger.info("GET /portfolio-analyzer success")
-        return data
-    except Exception as exc:
-        logger.exception("GET /portfolio-analyzer failed: %s", exc)
-        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
-
-
-# ── Tool 9: AI Market Summary ─────────────────────────────────────────────────
-@app.get("/ai-summary")
-async def ai_summary(request: Request) -> dict:
-    logger.info("GET /ai-summary from %s", request.client)
-    try:
-        data = await get_ai_summary()
-        logger.info("GET /ai-summary success")
-        return data
-    except Exception as exc:
-        logger.exception("GET /ai-summary failed: %s", exc)
-        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
-
-
-# ── Tool 10: Daily Blog ───────────────────────────────────────────────────────
-@app.get("/daily-blog")
-async def daily_blog(request: Request) -> dict:
-    logger.info("GET /daily-blog from %s", request.client)
-    try:
-        return await get_daily_blog()
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
-
-
-# ── Tool 11: Blog Review ──────────────────────────────────────────────────────
-@app.get("/blog-review")
-async def blog_review(request: Request) -> dict:
-    logger.info("GET /blog-review from %s", request.client)
-    try:
-        return await get_blog_review()
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
-
-
-# ── Tool 12: Correlation Article ──────────────────────────────────────────────
-@app.get("/correlation-article")
-async def correlation_article(request: Request) -> dict:
-    logger.info("GET /correlation-article from %s", request.client)
-    try:
-        return await get_correlation_article()
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
 
 
 # ── Scheduler auth helper ─────────────────────────────────────────────────────
@@ -604,23 +475,7 @@ async def refresh_ai_summary_endpoint(
         raise HTTPException(status_code=503, detail="Refresh failed")
 
 
-# ── Tool 10: Technical Signals (from shared Firestore analysis collection) ────
-@app.get("/technical-signals")
-async def technical_signals(
-    request: Request,
-    symbol: Optional[str] = Query(default=None, description="Single ticker, e.g. AAPL"),
-) -> dict:
-    logger.info("GET /technical-signals from %s symbol=%s", request.client, symbol)
-    try:
-        data = await get_technical_signals(symbol)
-        logger.info("GET /technical-signals success")
-        return data
-    except Exception as exc:
-        logger.exception("GET /technical-signals failed: %s", exc)
-        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
-
-
-# ── Tool 11: Industry Returns (from shared Firestore industry_cache) ──────────
+# ── Industry Returns (kept — still used by /industry-returns page directly) ───
 @app.get("/industry-returns")
 async def industry_returns(request: Request) -> dict:
     logger.info("GET /industry-returns from %s", request.client)
@@ -659,17 +514,172 @@ async def seed_etf_history_endpoint(
         raise HTTPException(status_code=503, detail=str(exc))
 
 
-# ── Tool 12: Market Summary (from shared Firestore summaries collection) ──────
-@app.get("/market-summary")
-async def market_summary(
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONSOLIDATED ENDPOINTS (API Consolidation — 17 → 8)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── /industry-intel: replaces /industry-tracker + /industry-quotes ────────────
+@app.get("/industry-intel")
+async def industry_intel(
     request: Request,
-    days: int = Query(default=7, ge=1, le=30, description="Number of days of history"),
+    view: str = Query(default="full", description="'compact' returns only sector/etf/price/change_pct"),
 ) -> dict:
-    logger.info("GET /market-summary from %s days=%d", request.client, days)
+    """Today's industry-level market intelligence.
+
+    Merges live quotes, sector heatmap, and leaders/laggards into one payload.
+    Replaces /industry-tracker and /industry-quotes.
+    """
+    logger.info("GET /industry-intel view=%s from %s", view, request.client)
     try:
-        data = await get_market_summary(days)
-        logger.info("GET /market-summary success")
+        data = await get_industry_data()
+        if view == "compact":
+            data = _compact_quotes(data)
+        logger.info("GET /industry-intel success")
         return data
     except Exception as exc:
-        logger.exception("GET /market-summary failed: %s", exc)
+        logger.exception("GET /industry-intel failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+
+
+# ── /signals: replaces /technical-signals, adds ?scope=industries ─────────────
+@app.get("/signals")
+async def signals(
+    request: Request,
+    symbol: Optional[str] = Query(default=None, description="Single ticker, e.g. AAPL"),
+    scope: Optional[str] = Query(default=None, description="'industries' returns industry-level signal aggregation"),
+) -> dict:
+    """Signals hub: per-ticker AI signals and/or industry-level signal aggregation.
+
+    GET /signals                  → all ticker signals
+    GET /signals?symbol=AAPL      → single ticker
+    GET /signals?scope=industries → industry-level signal summary (bullish/bearish counts)
+    """
+    logger.info("GET /signals symbol=%s scope=%s from %s", symbol, scope, request.client)
+    try:
+        if scope == "industries":
+            ticker_signals, industry_data = await asyncio.gather(
+                get_technical_signals(symbol),
+                get_industry_data(),
+            )
+            sector_summary = _compute_industry_signal_summary(industry_data)
+            data = {**ticker_signals, "industry_signals": sector_summary}
+        else:
+            data = await get_technical_signals(symbol)
+        logger.info("GET /signals success")
+        return data
+    except Exception as exc:
+        logger.exception("GET /signals failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+
+
+def _compute_industry_signal_summary(industry_data: dict) -> dict:
+    """Aggregate industry ETF data into per-sector signal counts.
+
+    Uses change_pct as a simple directional proxy: >0 = bullish, <0 = bearish.
+    Full MA/RSI computation would require etf_store price history (future enhancement).
+    """
+    by_sector: dict[str, dict] = {}
+    for name, info in industry_data.get("industries", {}).items():
+        sector = info.get("sector", "Unknown")
+        change_pct = info.get("change_pct") or 0.0
+        if sector not in by_sector:
+            by_sector[sector] = {"bullish": 0, "bearish": 0, "neutral": 0, "industries": []}
+        direction = "bullish" if change_pct > 0 else ("bearish" if change_pct < 0 else "neutral")
+        by_sector[sector][direction] += 1
+        by_sector[sector]["industries"].append({
+            "industry": name,
+            "etf": info.get("etf"),
+            "change_pct": change_pct,
+            "direction": direction,
+        })
+    return by_sector
+
+
+# ── /market-overview: replaces /morning-brief + /ai-summary + /news-sentiment + /market-summary ──
+@app.get("/market-overview")
+async def market_overview(
+    request: Request,
+    sections: Optional[str] = Query(
+        default=None,
+        description="Comma-separated subset: brief,ai_summary,sentiment,history",
+    ),
+    days: int = Query(default=7, ge=1, le=30, description="History days for the 'history' section"),
+) -> dict:
+    """Daily market narrative combining morning brief, AI summary, news sentiment, and history.
+
+    GET /market-overview                           → all sections
+    GET /market-overview?sections=brief,sentiment  → specific sections only
+    """
+    logger.info("GET /market-overview sections=%s from %s", sections, request.client)
+
+    requested = set(sections.split(",")) if sections else {"brief", "ai_summary", "sentiment", "history"}
+
+    tasks: dict[str, object] = {}
+    if "brief" in requested:
+        tasks["brief"] = get_morning_brief()
+    if "ai_summary" in requested:
+        tasks["ai_summary"] = get_ai_summary()
+    if "sentiment" in requested:
+        tasks["sentiment"] = get_news_sentiment()
+    if "history" in requested:
+        tasks["history"] = get_market_summary(days)
+
+    try:
+        keys = list(tasks.keys())
+        results = await asyncio.gather(*tasks.values(), return_exceptions=True)
+        payload: dict = {"sections_included": keys}
+        for key, result in zip(keys, results):
+            if isinstance(result, Exception):
+                logger.warning("market-overview section %s failed: %s", key, result)
+                payload[key] = {"error": str(result)}
+            else:
+                payload[key] = result
+        logger.info("GET /market-overview success sections=%s", keys)
+        return payload
+    except Exception as exc:
+        logger.exception("GET /market-overview failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+
+
+# ── /content: replaces /daily-blog + /blog-review + /correlation-article ─────
+@app.get("/content")
+async def content(
+    request: Request,
+    type: Optional[str] = Query(
+        default=None,
+        description="Content type: 'blog', 'review', or 'correlation'. Omit for all.",
+    ),
+) -> dict:
+    """Content feed: AI-generated articles via ?type=blog|review|correlation.
+
+    GET /content?type=blog         → was /daily-blog
+    GET /content?type=review       → was /blog-review
+    GET /content?type=correlation  → was /correlation-article
+    GET /content                   → latest of each type
+    """
+    logger.info("GET /content type=%s from %s", type, request.client)
+    try:
+        if type == "blog":
+            return await get_daily_blog()
+        if type == "review":
+            return await get_blog_review()
+        if type == "correlation":
+            return await get_correlation_article()
+
+        # No type param — return all three concurrently
+        blog, review, correlation = await asyncio.gather(
+            get_daily_blog(),
+            get_blog_review(),
+            get_correlation_article(),
+            return_exceptions=True,
+        )
+        return {
+            "blog": blog if not isinstance(blog, Exception) else {"error": str(blog)},
+            "review": review if not isinstance(review, Exception) else {"error": str(review)},
+            "correlation": correlation if not isinstance(correlation, Exception) else {"error": str(correlation)},
+        }
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        logger.exception("GET /content failed: %s", exc)
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
