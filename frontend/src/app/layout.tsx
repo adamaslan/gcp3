@@ -3,7 +3,7 @@ import "./globals.css";
 import { NavBar } from "@/components/NavBar";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://nuwrrrld.com";
-const ogImageUrl = `${siteUrl}/og-image.png`;
+const ogImageUrl = "https://res.cloudinary.com/adamaslan/image/upload/v1775677066/nuwrrrld-fin1d_je4aay.jpg";
 
 const siteDescription =
   "Nuwrrrld Financial — 15 free real-time market intelligence tools: AI summary, morning brief, stock screener, sector rotation, earnings radar, macro pulse, news sentiment, portfolio analyzer, and more.";

@@ -2,6 +2,7 @@
 import logging
 from datetime import date, datetime, timedelta
 
+from google.cloud import firestore
 from firestore import db as _db, get_cache, set_cache
 
 logger = logging.getLogger(__name__)
