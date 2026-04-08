@@ -1,7 +1,7 @@
 "use client";
 import { useState, useMemo } from "react";
 
-interface Quote {
+export interface Quote {
   symbol: string;
   price: number;
   change: number;
@@ -14,7 +14,7 @@ interface Quote {
   error?: string;
 }
 
-interface ScreenerData {
+export interface ScreenerData {
   date: string;
   total_screened: number;
   gainers: Quote[];
