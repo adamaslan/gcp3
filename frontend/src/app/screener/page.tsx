@@ -1,29 +1,7 @@
 "use client";
 
-import { Screener } from "@/components/Screener";
+import { Screener, type ScreenerData } from "@/components/Screener";
 import { useEffect, useState } from "react";
-
-interface Quote {
-  ticker: string;
-  price: number;
-  change: number;
-  change_pct: number;
-  signal: string;
-  source: string;
-  [key: string]: string | number;
-}
-
-interface ScreenerData {
-  date: string;
-  total_screened: number;
-  gainers: Quote[];
-  losers: Quote[];
-  signal_counts: Record<string, number>;
-  breadth_pct: number;
-  ai_regime: string;
-  quotes: Record<string, Quote>;
-  sources?: Record<string, number>;
-}
 
 export default function ScreenerPage() {
   const [data, setData] = useState<ScreenerData | null>(null);
