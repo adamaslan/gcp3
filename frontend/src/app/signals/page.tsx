@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { TechnicalSignals } from "@/components/TechnicalSignals";
 
 export const revalidate = 3600;

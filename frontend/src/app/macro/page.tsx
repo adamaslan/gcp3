@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { MacroPulse } from "@/components/MacroPulse";
 import { EarningsRadar } from "@/components/EarningsRadar";
 

@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { DailyBlog } from "@/components/DailyBlog";
 import { BlogReview } from "@/components/BlogReview";
 import { CorrelationArticle } from "@/components/CorrelationArticle";

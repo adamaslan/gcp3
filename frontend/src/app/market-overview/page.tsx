@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { MorningBrief } from "@/components/MorningBrief";
 import { AiSummary } from "@/components/AiSummary";
 import { NewsSentiment } from "@/components/NewsSentiment";
