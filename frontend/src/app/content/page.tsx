@@ -1,5 +1,4 @@
-export const dynamic = "force-dynamic";
-
+import Link from "next/link";
 import { DailyBlog } from "@/components/DailyBlog";
 import { BlogReview } from "@/components/BlogReview";
 import { CorrelationArticle } from "@/components/CorrelationArticle";
@@ -8,10 +7,14 @@ export const revalidate = 14400;
 
 async function getData() {
   const base = process.env.BACKEND_URL;
-  if (!base) throw new Error("BACKEND_URL is not configured");
-  const res = await fetch(`${base}/content`, { next: { revalidate: 14400 } });
-  if (!res.ok) throw new Error(`Backend error ${res.status}`);
-  return res.json();
+  if (!base) return null;
+  try {
+    const res = await fetch(`${base}/content`, { next: { revalidate: 14400 } });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
 }
 
 export default async function ContentPage({
@@ -30,7 +33,6 @@ export default async function ContentPage({
     <div className="p-6">
       <h1 className="text-2xl font-bold text-white mb-6">Content</h1>
 
-      {/* Tab bar */}
       <div className="flex gap-2 mb-6 border-b border-gray-700">
         {(
           [
@@ -39,7 +41,7 @@ export default async function ContentPage({
             { id: "correlation", label: "Correlations" },
           ] as { id: Tab; label: string }[]
         ).map(({ id, label }) => (
-          <a
+          <Link
             key={id}
             href={`?tab=${id}`}
             className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${
@@ -49,18 +51,24 @@ export default async function ContentPage({
             }`}
           >
             {label}
-          </a>
+          </Link>
         ))}
       </div>
 
-      {activeTab === "blog" && data.blog && !data.blog.error && (
-        <DailyBlog data={data.blog} />
-      )}
-      {activeTab === "review" && data.review && !data.review.error && (
-        <BlogReview data={data.review} />
-      )}
-      {activeTab === "correlation" && data.correlation && !data.correlation.error && (
-        <CorrelationArticle data={data.correlation} />
+      {!data ? (
+        <div className="h-64 bg-gray-800 rounded animate-pulse" />
+      ) : (
+        <>
+          {activeTab === "blog" && data.blog && !data.blog.error && (
+            <DailyBlog data={data.blog} />
+          )}
+          {activeTab === "review" && data.review && !data.review.error && (
+            <BlogReview data={data.review} />
+          )}
+          {activeTab === "correlation" && data.correlation && !data.correlation.error && (
+            <CorrelationArticle data={data.correlation} />
+          )}
+        </>
       )}
     </div>
   );
