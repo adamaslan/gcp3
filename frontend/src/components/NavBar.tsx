@@ -3,19 +3,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const NAV_LINKS = [
-  { href: "/ai-summary", label: "AI Summary" },
-  { href: "/morning-brief", label: "Morning Brief" },
-  { href: "/industry-tracker", label: "Industries" },
-  { href: "/screener", label: "Screener" },
-  { href: "/sector-rotation", label: "Sectors" },
-  { href: "/earnings-radar", label: "Earnings" },
-  { href: "/macro-pulse", label: "Macro" },
-  { href: "/news-sentiment", label: "News" },
-  { href: "/portfolio-analyzer", label: "Portfolio" },
-  { href: "/technical-signals", label: "Signals" },
+  { href: "/market-overview", label: "Market" },
+  { href: "/industry-intel", label: "Industries" },
   { href: "/industry-returns", label: "Returns" },
-  { href: "/market-summary", label: "Mkt Summary" },
-  { href: "/correlation-article", label: "Correlations" },
+  { href: "/signals", label: "Signals" },
+  { href: "/screener", label: "Screener" },
+  { href: "/macro", label: "Macro" },
+  { href: "/content", label: "Content" },
 ];
 
 export function NavBar() {
