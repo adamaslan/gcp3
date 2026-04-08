@@ -12,6 +12,7 @@ credentials*.json
 *-key.json
 .DS_Store
 .claude/
+nudocs/
 nudocs3/
 .vercel
 .gemini/
