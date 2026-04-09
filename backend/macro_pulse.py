@@ -27,12 +27,19 @@ MACRO_TICKERS: dict[str, dict] = {
 
 async def _fetch_quote(client: httpx.AsyncClient, symbol: str) -> dict:
     d = await finnhub_get(client, "/quote", {"symbol": symbol})
+    # Finnhub returns None for c/dp/d/h/l when the symbol has no data (e.g. VIX, DXY)
+    def _safe_round(v: float | None) -> float | None:
+        return round(v, 2) if v is not None else None
+
+    price = _safe_round(d.get("c"))
+    if price is None or price == 0:
+        raise ValueError(f"No price data from Finnhub for {symbol} (c={d.get('c')})")
     return {
-        "price": round(d["c"], 2),
-        "change_pct": round(d["dp"], 2),
-        "change": round(d["d"], 2),
-        "high": round(d["h"], 2),
-        "low": round(d["l"], 2),
+        "price": price,
+        "change_pct": _safe_round(d.get("dp")),
+        "change": _safe_round(d.get("d")),
+        "high": _safe_round(d.get("h")),
+        "low": _safe_round(d.get("l")),
     }
 
 

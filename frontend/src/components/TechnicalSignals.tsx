@@ -69,7 +69,7 @@ function TickerCard({ t }: { t: TickerData }) {
         </div>
         <div className="text-right">
           <div className="text-sm font-semibold text-gray-200">${t.price?.toFixed(2)}</div>
-          {t.change_pct !== undefined && (
+          {t.change_pct != null && (
             <div className={`text-xs ${chgColor}`}>{t.change_pct > 0 ? "+" : ""}{t.change_pct.toFixed(2)}%</div>
           )}
         </div>
@@ -77,17 +77,17 @@ function TickerCard({ t }: { t: TickerData }) {
 
       {/* Indicators bar */}
       <div className="flex gap-3 mt-3 text-xs text-gray-600">
-        {t.indicators?.rsi !== undefined && (
+        {t.indicators?.rsi != null && (
           <span className={t.indicators.rsi > 70 ? "text-red-400" : t.indicators.rsi < 30 ? "text-green-400" : "text-gray-500"}>
             RSI {t.indicators.rsi.toFixed(0)}
           </span>
         )}
-        {t.indicators?.macd !== undefined && (
+        {t.indicators?.macd != null && (
           <span className={t.indicators.macd > 0 ? "text-green-400" : "text-red-400"}>
             MACD {t.indicators.macd.toFixed(2)}
           </span>
         )}
-        {t.indicators?.adx !== undefined && (
+        {t.indicators?.adx != null && (
           <span className={t.indicators.adx > 25 ? "text-yellow-400" : "text-gray-600"}>
             ADX {t.indicators.adx.toFixed(0)}
           </span>
@@ -105,7 +105,7 @@ function TickerCard({ t }: { t: TickerData }) {
             <div key={i} className="flex items-center gap-2 text-xs">
               <span className={STRENGTH_DOT[s.strength] ?? "text-gray-500"}>●</span>
               <span className="text-gray-400">{s.signal}</span>
-              {s.value !== undefined && <span className="text-gray-600 font-mono">{s.value.toFixed(3)}</span>}
+              {s.value != null && <span className="text-gray-600 font-mono">{s.value.toFixed(3)}</span>}
               <span className="text-gray-700 ml-auto">{s.category}</span>
             </div>
           ))}

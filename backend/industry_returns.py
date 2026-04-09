@@ -61,25 +61,26 @@ def _find_most_recent_returns_cache() -> tuple[dict, str] | None:
 async def get_industry_returns() -> dict:
     cache_key = f"industry_returns:{date.today()}"
     if cached := get_cache(cache_key):
-        logger.info("industry_returns cache hit")
+        logger.info("industry_returns: cache_hit key=%s", cache_key)
         return cached
 
+    logger.info("industry_returns: cache_miss key=%s — reading industry_cache", cache_key)
     try:
         docs = list(_db().collection("industry_cache").stream())
     except Exception as exc:
-        logger.warning("industry_returns: industry_cache unreadable (%s) — trying stale cache", exc)
+        logger.warning("industry_returns: industry_cache_unreadable error=%s — trying stale cache", exc)
         stale_value, stale_as_of = get_cache_stale(cache_key)
         if stale_value is None:
             prior = _find_most_recent_returns_cache()
             if prior:
                 stale_value, stale_as_of = prior
         if stale_value:
-            logger.info("industry_returns: serving stale data as_of=%s", stale_as_of)
+            logger.warning("industry_returns: serving_stale_data as_of=%s", stale_as_of)
             return {**stale_value, "stale": True, "stale_as_of": stale_as_of}
         # Today's key doesn't exist yet — fall back to most recent previous day
         prev_value, prev_as_of = get_cache_stale_prev("industry_returns:", cache_key)
         if prev_value:
-            logger.info("industry_returns: serving previous-day data as_of=%s", prev_as_of)
+            logger.warning("industry_returns: serving_prev_day_data as_of=%s", prev_as_of)
             return {**prev_value, "stale": True, "stale_as_of": prev_as_of}
         raise
 
@@ -134,4 +135,8 @@ async def get_industry_returns() -> dict:
     }
 
     set_cache(cache_key, result, ttl_hours=6)
+    logger.info(
+        "industry_returns: cache_written key=%s industries=%d updated=%s periods=%s",
+        cache_key, len(industries), updated, result["periods_available"],
+    )
     return result

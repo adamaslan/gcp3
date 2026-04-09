@@ -6,9 +6,11 @@ import time
 from typing import Optional
 
 import httpx
-from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 
 from industry import compute_returns, get_industry_data, seed_etf_history
 from morning import get_morning_brief
@@ -25,7 +27,8 @@ from daily_blog import get_daily_blog, refresh_daily_blog
 from blog_reviewer import get_blog_review, refresh_blog_review
 from correlation_article import get_correlation_article, refresh_correlation_article
 from firestore import db as firestore_db
-from datetime import datetime, timezone
+from data_client import fh_429_stats
+from datetime import date, datetime, timezone
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -46,6 +49,93 @@ def health() -> dict:
     return {"status": "ok", "version": "2.1.0", "tools": 12}
 
 
+@app.get("/debug/status")
+def debug_status() -> dict:
+    """Live diagnostic snapshot for the backend-debug command.
+
+    Returns:
+      - route_inventory: all registered GET/POST routes (detects deployed-code drift)
+      - industry_cache: doc count + most-stale updated timestamp (detects rate-limit stalls)
+      - rate_limits: Finnhub 429 rolling counter from this instance
+      - gcp3_cache: count of live (non-expired) cache docs
+    """
+    now = datetime.now(timezone.utc)
+
+    # Route inventory — the definitive list of what's actually registered
+    routes = sorted(
+        [r.path for r in app.routes if hasattr(r, "path") and r.path not in ("/openapi.json", "/docs", "/redoc")]
+    )
+
+    # industry_cache freshness
+    try:
+        ic_docs = list(firestore_db().collection("industry_cache").stream())
+        ic_count = len(ic_docs)
+        updated_times = [
+            d.to_dict().get("updated") for d in ic_docs
+            if d.to_dict().get("updated")
+        ]
+        # updated is stored as ISO string
+        ic_oldest_updated = min(updated_times) if updated_times else None
+        ic_newest_updated = max(updated_times) if updated_times else None
+        # Age in hours of the newest write (how stale is the freshest doc?)
+        ic_freshness_hours: float | None = None
+        if ic_newest_updated:
+            try:
+                newest_dt = datetime.fromisoformat(ic_newest_updated)
+                if newest_dt.tzinfo is None:
+                    newest_dt = newest_dt.replace(tzinfo=timezone.utc)
+                ic_freshness_hours = round((now - newest_dt).total_seconds() / 3600, 2)
+            except Exception as exc:
+                logger.warning("debug_status: failed to parse or calculate freshness for '%s': %s", ic_newest_updated, exc)
+    except Exception as exc:
+        ic_count = -1
+        ic_oldest_updated = ic_newest_updated = None
+        ic_freshness_hours = None
+        logger.warning("debug_status: industry_cache read failed: %s", exc)
+
+    # gcp3_cache live doc count
+    try:
+        live_cache_docs = list(
+            firestore_db().collection("gcp3_cache")
+            .where("expires_at", ">", now)
+            .limit(200)
+            .stream()
+        )
+        live_cache_keys = [d.id for d in live_cache_docs]
+    except Exception as exc:
+        live_cache_keys = []
+        logger.warning("debug_status: gcp3_cache read failed: %s", exc)
+
+    # Expected consolidated routes (POST-consolidation set)
+    expected_routes = {"/industry-intel", "/signals", "/industry-returns", "/screener",
+                       "/market-overview", "/content", "/macro-pulse"}
+    missing_routes = sorted(expected_routes - set(routes))
+
+    logger.info(
+        "debug_status: routes=%d industry_cache_docs=%d ic_freshness_h=%s missing_routes=%s",
+        len(routes), ic_count, ic_freshness_hours, missing_routes or "none",
+    )
+
+    return {
+        "timestamp": now.isoformat(),
+        "today": str(date.today()),
+        "route_inventory": routes,
+        "missing_expected_routes": missing_routes,
+        "industry_cache": {
+            "doc_count": ic_count,
+            "newest_updated": ic_newest_updated,
+            "oldest_updated": ic_oldest_updated,
+            "freshness_hours": ic_freshness_hours,
+            "stale": ic_freshness_hours is not None and ic_freshness_hours > 25,
+        },
+        "rate_limits": {
+            "finnhub_429s": fh_429_stats(),
+        },
+        "gcp3_cache": {
+            "live_doc_count": len(live_cache_keys),
+            "live_keys": live_cache_keys,
+        },
+    }
 
 
 def _compact_quotes(data: dict) -> dict:
@@ -76,16 +166,13 @@ def _compact_quotes(data: dict) -> dict:
 
 # ── Admin: Precompute returns from etf_store → industry_cache ────────────────
 @app.post("/admin/compute-returns")
-async def compute_returns_endpoint(
-    request: Request,
-    x_scheduler_token: Optional[str] = Header(default=None),
-) -> dict:
+async def compute_returns_endpoint(request: Request) -> dict:
     """Precompute multi-period returns from stored ETF history into industry_cache.
 
     Zero Finnhub or Alpha Vantage calls. Safe to run hourly or daily via
     Cloud Scheduler. Must run after seed-etf-history has populated etf_store.
     """
-    _verify_scheduler(x_scheduler_token)
+    _verify_scheduler(request)
     logger.info("POST /admin/compute-returns triggered")
     try:
         result = await compute_returns()
@@ -97,10 +184,7 @@ async def compute_returns_endpoint(
 
 # ── Admin: Purge expired cache (safety net for native TTL) ─────────────────────
 @app.post("/admin/purge-cache")
-async def purge_expired_cache(
-    request: Request,
-    x_scheduler_token: Optional[str] = Header(default=None),
-) -> dict:
+async def purge_expired_cache(request: Request) -> dict:
     """Delete expired documents from gcp3_cache collection.
 
     Runs nightly as a safety net alongside native Firestore TTL (Phase 1A).
@@ -110,7 +194,7 @@ async def purge_expired_cache(
     Returns:
         {"deleted": int, "timestamp": ISO string}
     """
-    _verify_scheduler(x_scheduler_token)
+    _verify_scheduler(request)
     logger.info("POST /admin/purge-cache triggered")
     now = datetime.now(timezone.utc)
     deleted = 0
@@ -187,10 +271,46 @@ async def macro_pulse(request: Request) -> dict:
 
 
 # ── Scheduler auth helper ─────────────────────────────────────────────────────
-def _verify_scheduler(token: Optional[str]) -> None:
-    """Raise 401 if token does not match SCHEDULER_SECRET env var."""
-    expected = os.environ.get("SCHEDULER_SECRET")
-    if not expected or token != expected:
+_EXPECTED_AUDIENCE = os.environ.get("SCHEDULER_EXPECTED_AUDIENCE")
+_EXPECTED_SA = os.environ.get("SCHEDULER_EXPECTED_SA")
+
+if not _EXPECTED_AUDIENCE or not _EXPECTED_SA:
+    logger.warning(
+        "Scheduler OIDC variables (SCHEDULER_EXPECTED_AUDIENCE/SA) are missing. "
+        "OIDC auth will fail unless SCHEDULER_SECRET is used for manual override."
+    )
+
+def _verify_scheduler(request: Request) -> None:
+    """Verify Cloud Scheduler OIDC token from Authorization header.
+
+    Validates:
+    - Token is a valid Google-signed JWT
+    - Audience matches this Cloud Run service URL
+    - Email claim matches the dedicated scheduler service account
+    Raises 401 on any failure. Falls back to SCHEDULER_SECRET env var for
+    local/manual testing when the Authorization header is absent.
+    """
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        bearer = auth_header[len("Bearer "):]
+        try:
+            claims = google_id_token.verify_oauth2_token(
+                bearer,
+                google_requests.Request(),
+                audience=_EXPECTED_AUDIENCE,
+            )
+        except Exception as exc:
+            logger.warning("Scheduler OIDC token verification failed: %s", exc)
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        if claims.get("email") != _EXPECTED_SA:
+            logger.warning("Scheduler token email mismatch: %s", claims.get("email"))
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        return
+
+    # Fallback: shared secret for local curl / manual testing only
+    secret = os.environ.get("SCHEDULER_SECRET")
+    manual_token = request.headers.get("X-Scheduler-Token")
+    if not secret or manual_token != secret:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
@@ -211,10 +331,7 @@ async def _warm_backend2(client: httpx.AsyncClient, path: str) -> dict:
 
 # ── POST /refresh/premarket — Pre-market warmup (Cloud Scheduler, 8:30 AM ET) ──
 @app.post("/refresh/premarket")
-async def refresh_premarket(
-    request: Request,
-    x_scheduler_token: Optional[str] = Header(default=None),
-) -> dict:
+async def refresh_premarket(request: Request) -> dict:
     """Lightweight pre-market cache warm-up for early users (8:30 AM ET).
 
     Only warms endpoints that don't require heavy computation:
@@ -226,7 +343,7 @@ async def refresh_premarket(
     Runs 1 hour before the full morning refresh to ensure data is ready for
     early-bird traders.
     """
-    _verify_scheduler(x_scheduler_token)
+    _verify_scheduler(request)
     logger.info("POST /refresh/premarket started")
     stages: dict[str, dict] = {}
     overall_start = time.perf_counter()
@@ -255,10 +372,7 @@ async def refresh_premarket(
 
 # ── POST /refresh/all — Morning full warm-up (Cloud Scheduler, 9:35 AM ET) ───
 @app.post("/refresh/all")
-async def refresh_all(
-    request: Request,
-    x_scheduler_token: Optional[str] = Header(default=None),
-) -> dict:
+async def refresh_all(request: Request) -> dict:
     """Full cache warm-up in dependency order. Called by Cloud Scheduler at 9:35 AM ET Mon-Fri.
 
     Stages:
@@ -269,7 +383,7 @@ async def refresh_all(
         4  Backend2 fan-out — scan + key Fibonacci levels via yfinance (no Finnhub quota)
         5  AI synthesis — must run last; aggregates all prior warm caches
     """
-    _verify_scheduler(x_scheduler_token)
+    _verify_scheduler(request)
     logger.info("POST /refresh/all started")
     stages: dict[str, dict] = {}
     overall_start = time.perf_counter()
@@ -403,14 +517,13 @@ async def refresh_all(
 async def refresh_intraday(
     request: Request,
     skip_gemini: bool = Query(default=False, description="Skip Gemini sector analysis (EOD run)"),
-    x_scheduler_token: Optional[str] = Header(default=None),
 ) -> dict:
     """Refresh short-TTL endpoints only. Called at 12:00 PM ET and 4:15 PM ET Mon-Fri.
 
     Skips industry (24h TTL), earnings (6h TTL), and ai_summary (to-midnight TTL).
     Pass skip_gemini=true for the EOD run to avoid a 3rd daily Gemini call.
     """
-    _verify_scheduler(x_scheduler_token)
+    _verify_scheduler(request)
     logger.info("POST /refresh/intraday skip_gemini=%s", skip_gemini)
     stages: dict[str, dict] = {}
     overall_start = time.perf_counter()
@@ -460,12 +573,9 @@ async def refresh_intraday(
 
 # ── POST /refresh/ai-summary — Legacy endpoint (kept for backwards compat) ───
 @app.post("/refresh/ai-summary")
-async def refresh_ai_summary_endpoint(
-    request: Request,
-    x_scheduler_token: Optional[str] = Header(default=None),
-) -> dict:
+async def refresh_ai_summary_endpoint(request: Request) -> dict:
     """Legacy single-endpoint refresh. Prefer /refresh/all for full warm-up."""
-    _verify_scheduler(x_scheduler_token)
+    _verify_scheduler(request)
     logger.info("POST /refresh/ai-summary (legacy) triggered")
     try:
         data = await refresh_ai_summary()
@@ -490,10 +600,7 @@ async def industry_returns(request: Request) -> dict:
 
 # ── Admin: Seed / delta-update permanent ETF price history ───────────────────
 @app.post("/admin/seed-etf-history")
-async def seed_etf_history_endpoint(
-    request: Request,
-    x_scheduler_token: Optional[str] = Header(default=None),
-) -> dict:
+async def seed_etf_history_endpoint(request: Request) -> dict:
     """Seed or delta-update permanent ETF history for all 50 industries.
 
     - First run: fetches full yfinance history (max), stores in etf_history/*.
@@ -502,7 +609,7 @@ async def seed_etf_history_endpoint(
 
     Trigger manually once after deploy, then optionally add to /refresh/all.
     """
-    _verify_scheduler(x_scheduler_token)
+    _verify_scheduler(request)
     logger.info("POST /admin/seed-etf-history triggered")
     try:
         results = await seed_etf_history()

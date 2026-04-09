@@ -214,14 +214,18 @@ async def compute_returns() -> dict:
 async def get_industry_data(enrich_av: bool = False) -> dict:
     cache_key = f"industry_data:{date.today()}"
     if cached := get_cache(cache_key):
+        logger.info("industry_data: cache_hit key=%s", cache_key)
         return cached
 
     async with _INDUSTRY_LOCK:
         # Re-check cache after acquiring lock (another coroutine may have built it)
         if cached := get_cache(cache_key):
+            logger.info("industry_data: cache_hit key=%s (post-lock)", cache_key)
             return cached
 
+        logger.info("industry_data: cache_miss key=%s — fetching %d ETFs", cache_key, len(_FLAT))
         all_etfs = list({etf for _, etf in _FLAT.values()})
+        t_quotes_start = time.monotonic()
 
         # Step 1: fetch all quotes (Finnhub → yfinance per symbol)
         async def fetch_one(industry: str, sector: str, etf: str):
@@ -229,7 +233,7 @@ async def get_industry_data(enrich_av: bool = False) -> dict:
                 quote = await _fetch_quote_with_fallback(client, etf)
                 return industry, {"sector": sector, "etf": etf, **quote}
             except Exception as exc:
-                logger.error("industry: all sources failed for %s (%s): %s", industry, etf, exc)
+                logger.error("industry: all_sources_failed industry=%s etf=%s error=%s", industry, etf, exc)
                 return industry, {"sector": sector, "etf": etf, "error": str(exc)}
 
         async with httpx.AsyncClient(timeout=15) as client:
@@ -240,6 +244,16 @@ async def get_industry_data(enrich_av: bool = False) -> dict:
             pairs = await asyncio.gather(*tasks)
 
         industries = dict(pairs)
+        failed_count = sum(1 for v in industries.values() if "error" in v)
+        ok_count = len(industries) - failed_count
+        t_quotes_ms = round((time.monotonic() - t_quotes_start) * 1000)
+        logger.info(
+            "industry_data: quotes_done ok=%d failed=%d total=%d ms=%d",
+            ok_count, failed_count, len(industries), t_quotes_ms,
+        )
+        if failed_count > 0:
+            failed_names = [k for k, v in industries.items() if "error" in v]
+            logger.warning("industry_data: quote_failures industries=%s", failed_names)
 
         # Step 2: enrich with AV multi-period analytics (scheduler-only path)
         if enrich_av:
@@ -288,7 +302,10 @@ async def get_industry_data(enrich_av: bool = False) -> dict:
             by_sector.setdefault(row["sector"], []).append(row)
 
         # Step 3: attach multi-period returns from permanent ETF store + persist to industry_cache
+        t_returns_start = time.monotonic()
         _attach_stored_returns(industries)
+        t_returns_ms = round((time.monotonic() - t_returns_start) * 1000)
+        logger.info("industry_data: attach_stored_returns_done ms=%d", t_returns_ms)
 
         result = {
             "date": str(date.today()),
@@ -303,6 +320,9 @@ async def get_industry_data(enrich_av: bool = False) -> dict:
 
         if ranked:
             set_cache(cache_key, result, ttl_hours=24)
+            logger.info("industry_data: cache_written key=%s industries=%d", cache_key, len(industries))
+        else:
+            logger.error("industry_data: no_valid_quotes — skipping cache write key=%s", cache_key)
         return result
 
 
@@ -370,7 +390,10 @@ def _attach_stored_returns(industries: dict) -> None:
 
     if ops:
         batch.commit()
-    logger.info("industry: persisted %d industries to industry_cache", len(industries))
+    logger.info(
+        "industry_cache: write_complete industries=%d timestamp=%s",
+        len(industries), now_str,
+    )
 
 
 async def seed_etf_history() -> dict[str, int]:
