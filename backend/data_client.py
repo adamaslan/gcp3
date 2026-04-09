@@ -123,6 +123,20 @@ def _fh_headers() -> dict[str, str]:
     return {"X-Finnhub-Token": os.environ["FINNHUB_API_KEY"]}
 
 
+# Rolling 429 counter — reset each time a successful request completes.
+# Lets the debug command detect sustained rate-limiting without log-scanning.
+_fh_429_count: int = 0
+_fh_429_since: datetime | None = None
+
+
+def fh_429_stats() -> dict:
+    """Return current Finnhub 429 rolling stats for debug endpoints."""
+    return {
+        "count": _fh_429_count,
+        "since": _fh_429_since.isoformat() if _fh_429_since else None,
+    }
+
+
 async def finnhub_get(
     client: httpx.AsyncClient,
     path: str,
@@ -135,6 +149,7 @@ async def finnhub_get(
     - Global semaphore + 50ms delay keeps throughput under 30 req/s.
     - Retries once on HTTP 429 with a 2-second backoff.
     """
+    global _fh_429_count, _fh_429_since
     async with _FH_SEMAPHORE:
         await asyncio.sleep(_FH_REQUEST_DELAY)
         try:
@@ -144,13 +159,23 @@ async def finnhub_get(
                 headers=_fh_headers(),
             )
             if r.status_code == 429:
-                logger.warning("finnhub: 429 received — waiting 2s before retry")
+                _fh_429_count += 1
+                if _fh_429_since is None:
+                    _fh_429_since = datetime.now(timezone.utc)
+                logger.warning(
+                    "finnhub: rate_limited_429 path=%s total_429s=%d since=%s — waiting 2s",
+                    path, _fh_429_count, _fh_429_since.isoformat(),
+                )
                 await asyncio.sleep(2.0)
                 r = await client.get(
                     f"{_FINNHUB_BASE}{path}",
                     params=params,
                     headers=_fh_headers(),
                 )
+            if r.status_code != 429:
+                # Reset counter on any non-429 success
+                _fh_429_count = 0
+                _fh_429_since = None
             r.raise_for_status()
             return r.json()
         except httpx.HTTPStatusError as exc:
