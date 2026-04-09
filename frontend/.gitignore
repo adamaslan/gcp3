@@ -2,3 +2,4 @@
 # Admin routes are intentionally local-only — never deploy or commit
 src/app/admin/
 src/app/api/admin/
+.env*.local

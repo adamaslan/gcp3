@@ -13,7 +13,7 @@ export async function GET(): Promise<NextResponse> {
 
   const [macroPulseRes, earningsRes] = await Promise.allSettled([
     fetch(`${BACKEND}/macro-pulse`, { next: { revalidate: 900 } }),
-    fetch(`${BACKEND}/earnings-radar`, { next: { revalidate: 21600 } }),
+    fetch(`${BACKEND}/earnings-radar`, { next: { revalidate: 3600 } }),
   ]);
 
   const getPayload = async (result: PromiseSettledResult<Response>, label: string) => {

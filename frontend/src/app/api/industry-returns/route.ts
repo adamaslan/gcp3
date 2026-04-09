@@ -12,7 +12,7 @@ export async function GET(): Promise<NextResponse> {
 
   let res: Response;
   try {
-    res = await fetch(`${BACKEND}/industry-returns`, { next: { revalidate: 21600 } });
+    res = await fetch(`${BACKEND}/industry-returns`, { next: { revalidate: 3600 } });
   } catch (err) {
     console.error("[industry-returns] Network error:", err);
     return NextResponse.json({ error: "Network error", detail: String(err) }, { status: 503 });
@@ -26,7 +26,9 @@ export async function GET(): Promise<NextResponse> {
 
   return NextResponse.json(await res.json(), {
     headers: {
-      "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=7200",
+      "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0",
+      "Pragma": "no-cache",
+      "Expires": "0",
     },
   });
 }

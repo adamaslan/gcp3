@@ -394,7 +394,6 @@ async def refresh_all(request: Request) -> dict:
         await asyncio.gather(
             get_technical_signals(),
             get_market_summary(),
-            get_industry_returns(),
         )
         stages["firestore_readers"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
     except Exception as exc:
@@ -509,6 +508,261 @@ async def refresh_all(request: Request) -> dict:
         "date": summary.get("date"),
         "stages": stages,
         "total_ms": total_ms,
+    }
+
+
+# ── POST /refresh/fetch — Phase 1: Data ingestion (9:30 AM ET, Mon-Fri) ────────
+@app.post("/refresh/fetch")
+async def refresh_fetch(request: Request) -> dict:
+    """Phase 1 of Fetch-then-Bake: ingest all external data into Firestore.
+
+    Called by Cloud Scheduler at 9:30 AM ET Mon-Fri. Skips automatically on
+    non-trading days. Writes refresh_state:fetch checkpoint on completion.
+
+    Stages:
+        F0  seed_etf_history — Delta-append ETF history (yfinance)
+        F1  Market data — Concurrent Finnhub calls (morning_brief, macro_pulse, earnings_radar, news_sentiment)
+        F2  Sector + screener — Concurrent (sector_rotation, screener_data)
+        F3  Industry data — 50 Finnhub + Alpha Vantage enrichment
+        F4  Backend2 fan-out — yfinance scan + Fibonacci levels
+    """
+    from market_calendar import trading_date, is_trading_day
+    from firestore import write_checkpoint
+
+    _verify_scheduler(request)
+    logger.info("POST /refresh/fetch started")
+
+    # Guard: skip on non-trading days
+    if not is_trading_day(trading_date()):
+        logger.info("refresh/fetch: skipping — not a trading day")
+        return {"status": "skipped", "reason": "not_trading_day"}
+
+    stages: dict[str, dict] = {}
+    overall_start = time.perf_counter()
+    stages_completed: list[str] = []
+    stages_failed: list[str] = []
+
+    # Stage F0 — seed_etf_history (delta append, yfinance only)
+    t0 = time.perf_counter()
+    try:
+        await seed_etf_history()
+        stages["etf_history"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
+        stages_completed.append("etf_history")
+    except Exception as exc:
+        logger.warning("refresh/fetch stage F0 error: %s", exc)
+        stages["etf_history"] = {"status": "error", "detail": str(exc)}
+        stages_failed.append("etf_history")
+
+    # Stage F1 — market data (concurrent Finnhub)
+    t0 = time.perf_counter()
+    try:
+        await asyncio.gather(
+            get_morning_brief(),
+            get_macro_pulse(),
+            get_earnings_radar(),
+            get_news_sentiment(),
+        )
+        stages["market_data"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
+        stages_completed.append("market_data")
+    except Exception as exc:
+        logger.warning("refresh/fetch stage F1 error: %s", exc)
+        stages["market_data"] = {"status": "error", "detail": str(exc)}
+        stages_failed.append("market_data")
+
+    # Stage F2 — sector + screener (concurrent)
+    t0 = time.perf_counter()
+    try:
+        await asyncio.gather(
+            get_sector_rotation(),
+            get_screener_data(),
+        )
+        stages["sector_screener"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
+        stages_completed.append("sector_screener")
+    except Exception as exc:
+        logger.warning("refresh/fetch stage F2 error: %s", exc)
+        stages["sector_screener"] = {"status": "error", "detail": str(exc)}
+        stages_failed.append("sector_screener")
+
+    # Stage F3 — industry data (50 Finnhub + AV batches)
+    t0 = time.perf_counter()
+    try:
+        await get_industry_data(enrich_av=True)
+        stages["industry"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
+        stages_completed.append("industry")
+    except Exception as exc:
+        logger.warning("refresh/fetch stage F3 error: %s", exc)
+        stages["industry"] = {"status": "error", "detail": str(exc)}
+        stages_failed.append("industry")
+
+    # Stage F4 — backend2 fan-out (yfinance)
+    t0 = time.perf_counter()
+    async with httpx.AsyncClient(timeout=35) as b2_client:
+        fib_symbols = ["SPY", "QQQ", "NVDA", "AAPL", "GLD"]
+        b2_results = await asyncio.gather(
+            _warm_backend2(b2_client, "/scan"),
+            *[_warm_backend2(b2_client, f"/fibonacci/{sym}") for sym in fib_symbols],
+        )
+    b2_statuses = [r["status"] for r in b2_results]
+    b2_ok = all(s in ("ok", "skipped") for s in b2_statuses)
+    stages["backend2"] = {
+        "status": "ok" if b2_ok else "partial",
+        "ms": round((time.perf_counter() - t0) * 1000),
+        "endpoints": b2_statuses,
+    }
+    if b2_ok:
+        stages_completed.append("backend2")
+    else:
+        stages_failed.append("backend2")
+
+    # Write checkpoint
+    fetch_status = "fetch_failed" if not stages_completed else ("fetch_partial" if stages_failed else "fetch_ok")
+    write_checkpoint("fetch", fetch_status, stages_completed, stages_failed)
+    logger.info("POST /refresh/fetch complete status=%s stages_failed=%s", fetch_status, stages_failed)
+
+    return {
+        "status": fetch_status,
+        "trading_date": str(trading_date()),
+        "stages": stages,
+        "total_ms": round((time.perf_counter() - overall_start) * 1000),
+    }
+
+
+# ── POST /refresh/bake — Phase 2: Computation (9:45 AM ET, Mon-Fri) ────────────
+@app.post("/refresh/bake")
+async def refresh_bake(request: Request) -> dict:
+    """Phase 2 of Fetch-then-Bake: compute returns + AI synthesis from Firestore data only.
+
+    Called by Cloud Scheduler at 9:45 AM ET Mon-Fri. Aborts with 503 if Fetch
+    checkpoint is missing or failed. Skips automatically on non-trading days.
+
+    Stages:
+        B0  compute_returns — Multi-period return calculations (zero external APIs)
+        B1  industry_returns_seal — Write fresh industry_returns cache (force=True overwrite)
+        B2  AI summary — Gemini synthesis of all market data
+        B3  Daily blog — Gemini blog generation
+        B4  Blog review — Gemini review (gated on B3 success)
+        B5  Correlation article — Gemini correlation analysis
+    """
+    from market_calendar import trading_date, is_trading_day
+    from firestore import read_checkpoint, write_checkpoint
+
+    _verify_scheduler(request)
+    logger.info("POST /refresh/bake started")
+
+    if not is_trading_day(trading_date()):
+        logger.info("refresh/bake: skipping — not a trading day")
+        return {"status": "skipped", "reason": "not_trading_day"}
+
+    # Verify Fetch checkpoint
+    checkpoint = read_checkpoint("fetch")
+    today = str(trading_date())
+
+    if checkpoint is None:
+        logger.error("refresh/bake: aborted — no fetch checkpoint found")
+        raise HTTPException(503, "Bake aborted: no Fetch checkpoint found")
+
+    if checkpoint.get("trading_date") != today:
+        logger.error(
+            "refresh/bake: aborted — checkpoint date=%s expected=%s",
+            checkpoint.get("trading_date"),
+            today,
+        )
+        raise HTTPException(503, f"Bake aborted: checkpoint is from {checkpoint.get('trading_date')}, expected {today}")
+
+    if checkpoint.get("status") == "fetch_failed":
+        logger.error("refresh/bake: aborted — Fetch reported total failure")
+        raise HTTPException(503, "Bake aborted: Fetch reported total failure")
+
+    if checkpoint.get("status") == "fetch_partial":
+        logger.warning("refresh/bake: proceeding on partial fetch — failed=%s", checkpoint.get("stages_failed"))
+
+    stages: dict[str, dict] = {}
+    overall_start = time.perf_counter()
+    stages_completed: list[str] = []
+    stages_failed: list[str] = []
+
+    # Stage B0 — compute returns (zero external API calls)
+    t0 = time.perf_counter()
+    try:
+        await compute_returns()
+        stages["compute_returns"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
+        stages_completed.append("compute_returns")
+    except Exception as exc:
+        logger.warning("refresh/bake stage B0 error: %s", exc)
+        stages["compute_returns"] = {"status": "error", "detail": str(exc)}
+        stages_failed.append("compute_returns")
+
+    # Stage B1 — seal industry_returns cache (force=True overwrites stale Stage 0 entry)
+    t0 = time.perf_counter()
+    try:
+        await get_industry_returns(force=True)
+        stages["industry_returns_seal"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
+        stages_completed.append("industry_returns_seal")
+    except Exception as exc:
+        logger.warning("refresh/bake stage B1 error: %s", exc)
+        stages["industry_returns_seal"] = {"status": "error", "detail": str(exc)}
+        stages_failed.append("industry_returns_seal")
+
+    # Stage B2 — AI summary (reads all prior caches, no external APIs except Gemini)
+    t0 = time.perf_counter()
+    try:
+        summary = await refresh_ai_summary()
+        stages["ai_summary"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
+        stages_completed.append("ai_summary")
+    except Exception as exc:
+        logger.warning("refresh/bake stage B2 error: %s", exc)
+        stages["ai_summary"] = {"status": "error", "detail": str(exc)}
+        stages_failed.append("ai_summary")
+        summary = {}
+
+    # Stage B3 — daily blog
+    t0 = time.perf_counter()
+    blog_generated = False
+    try:
+        await refresh_daily_blog()
+        stages["daily_blog"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
+        stages_completed.append("daily_blog")
+        blog_generated = True
+    except Exception as exc:
+        logger.warning("refresh/bake stage B3 error: %s", exc)
+        stages["daily_blog"] = {"status": "error", "detail": str(exc)}
+        stages_failed.append("daily_blog")
+
+    # Stage B4 — blog review (gated on B3)
+    if blog_generated:
+        t0 = time.perf_counter()
+        try:
+            await refresh_blog_review()
+            stages["blog_review"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
+            stages_completed.append("blog_review")
+        except Exception as exc:
+            logger.warning("refresh/bake stage B4 error: %s", exc)
+            stages["blog_review"] = {"status": "error", "detail": str(exc)}
+            stages_failed.append("blog_review")
+    else:
+        stages["blog_review"] = {"status": "skipped", "detail": "Stage B3 did not produce a blog"}
+
+    # Stage B5 — correlation article
+    t0 = time.perf_counter()
+    try:
+        await refresh_correlation_article()
+        stages["correlation_article"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
+        stages_completed.append("correlation_article")
+    except Exception as exc:
+        logger.warning("refresh/bake stage B5 error: %s", exc)
+        stages["correlation_article"] = {"status": "error", "detail": str(exc)}
+        stages_failed.append("correlation_article")
+
+    bake_status = "bake_failed" if not stages_completed else ("bake_partial" if stages_failed else "bake_ok")
+    write_checkpoint("bake", bake_status, stages_completed, stages_failed)
+    logger.info("POST /refresh/bake complete status=%s", bake_status)
+
+    return {
+        "status": bake_status,
+        "trading_date": today,
+        "fetch_checkpoint": checkpoint.get("status"),
+        "stages": stages,
+        "total_ms": round((time.perf_counter() - overall_start) * 1000),
     }
 
 
