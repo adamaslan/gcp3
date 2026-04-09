@@ -85,8 +85,8 @@ def debug_status() -> dict:
                 if newest_dt.tzinfo is None:
                     newest_dt = newest_dt.replace(tzinfo=timezone.utc)
                 ic_freshness_hours = round((now - newest_dt).total_seconds() / 3600, 2)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("debug_status: failed to parse or calculate freshness for '%s': %s", ic_newest_updated, exc)
     except Exception as exc:
         ic_count = -1
         ic_oldest_updated = ic_newest_updated = None
@@ -271,8 +271,14 @@ async def macro_pulse(request: Request) -> dict:
 
 
 # ── Scheduler auth helper ─────────────────────────────────────────────────────
-_EXPECTED_AUDIENCE = "https://gcp3-backend-cif7ppahzq-uc.a.run.app"
-_EXPECTED_SA = "gcp3-scheduler@ttb-lang1.iam.gserviceaccount.com"
+_EXPECTED_AUDIENCE = os.environ.get("SCHEDULER_EXPECTED_AUDIENCE")
+_EXPECTED_SA = os.environ.get("SCHEDULER_EXPECTED_SA")
+
+if not _EXPECTED_AUDIENCE or not _EXPECTED_SA:
+    logger.warning(
+        "Scheduler OIDC variables (SCHEDULER_EXPECTED_AUDIENCE/SA) are missing. "
+        "OIDC auth will fail unless SCHEDULER_SECRET is used for manual override."
+    )
 
 def _verify_scheduler(request: Request) -> None:
     """Verify Cloud Scheduler OIDC token from Authorization header.
