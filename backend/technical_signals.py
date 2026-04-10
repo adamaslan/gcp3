@@ -44,7 +44,7 @@ ETF_CONSTITUENTS: dict[str, list[str]] = {
     "VHT":  ["LLY", "UNH", "JNJ", "TMO"],
     "KBE":  ["JPM", "BAC", "WFC", "GS"],
     "KIE":  ["BRK", "PGR", "TRV", "AIG"],
-    "PFM":  ["BLK", "AUM", "BEN", "AMG"],
+    "PFM":  ["BLK", "AMP", "BEN", "AMG"],
     "FINX": ["SQ", "PYPL", "COIN", "UPST"],
 <<<<<<< HEAD
     "REM":  ["RITM", "AGNC", "NLY", "MFA"],
@@ -78,9 +78,9 @@ ETF_CONSTITUENTS: dict[str, list[str]] = {
     "PAVE": ["BIP", "KMI", "NEP", "APD"],
     "XHB":  ["DHI", "LEN", "KBH", "LGIH"],
     "INDS": ["ARE", "STWD", "PLD", "WELL"],
-    "PBS":  ["CMCSA", "PARA", "FOXO", "LBRDA"],
+    "PBS":  ["CMCSA", "PARA", "FOXA", "LBRDA"],
     "PEJ":  ["DIS", "NFLX", "FOXA", "WBD"],
-    "SOCL": ["META", "SNAP", "PINS", "PEP"],
+    "SOCL": ["META", "SNAP", "PINS", "GOOGL"],
     "XLU":  ["NEE", "D", "SO", "AEP"],
 <<<<<<< HEAD
     "DBA":  ["DE", "ADM", "TSN", "CTVA"],
@@ -159,15 +159,14 @@ def _score_etf(row: dict, rank_1d: int, total: int) -> dict:
 
     # 52-week range position
     if high and low and high > low:
-        pct_of_range = ((high - low) * 0.0 + (high - low)) and (high - low)
         # We don't have current price in industry_cache, use 1y return as proxy:
         # if 1y is strong positive, likely near high
         if r1y is not None:
             if r1y > 20:
-                signals.append({"signal": f"Near 52w high (52w range: {low:.0f}–{high:.0f})", "strength": "BULLISH", "value": high, "category": "volume"})
+                signals.append({"signal": f"Near 52w high (52w range: {low:.0f}–{high:.0f})", "strength": "BULLISH", "value": high, "category": "trend"})
                 bullish += 1
             elif r1y < -20:
-                signals.append({"signal": f"Near 52w low (52w range: {low:.0f}–{high:.0f})", "strength": "BEARISH", "value": low, "category": "volume"})
+                signals.append({"signal": f"Near 52w low (52w range: {low:.0f}–{high:.0f})", "strength": "BEARISH", "value": low, "category": "trend"})
                 bearish += 1
 
     # Relative strength: top/bottom third among 54 ETFs by 1d return
@@ -221,9 +220,9 @@ def _score_etf(row: dict, rank_1d: int, total: int) -> dict:
         "change_pct": r1d,
         "signals": signals,
         "indicators": {
-            "rsi": None,  # not available from returns data
-            "macd": r1m,  # use 1m return as directional proxy
-            "adx": r1y,   # use 1y return as trend strength proxy
+            "rsi": None,   # not available from returns data
+            "macd": None,  # not available from returns data
+            "adx": None,   # not available from returns data
         },
         "industry": row.get("industry"),
         "returns": returns,
