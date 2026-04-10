@@ -4,18 +4,81 @@ import re
 from datetime import date, datetime
 
 from firestore import db as _db, get_cache, set_cache
+from industry import INDUSTRIES
 
 logger = logging.getLogger(__name__)
 
-# Tickers tracked in the analysis collection by gcp-app-w-mcp1
-TRACKED_SYMBOLS = [
-    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "AMD",
-    "SPY", "QQQ", "IWM", "DIA",
-    "JPM", "BAC", "GS", "XLF",
-    "JNJ", "UNH", "LLY",
-    "XOM", "CVX",
-    "COST", "WMT",
+# 54 industry ETFs derived from industry.py — single source of truth
+ETF_UNIVERSE: list[str] = [
+    etf for sector in INDUSTRIES.values() for etf in sector.values()
 ]
+
+# 4 primary constituent stocks per ETF (representative holdings, not exhaustive)
+ETF_CONSTITUENTS: dict[str, list[str]] = {
+    "IGV":  ["MSFT", "ADBE", "NXPI", "SNPS"],
+    "SOXX": ["NVDA", "ASML", "AMD", "QCOM"],
+    "CLOU": ["MSFT", "CRM", "ADBE", "INTU"],
+    "HACK": ["CRWD", "OKTA", "DDOG", "PANW"],
+    "BOTZ": ["NVDA", "MSFT", "TSLA", "ASML"],
+    "FDN":  ["GOOGL", "META", "MSFT", "AMZN"],
+    "XLK":  ["AAPL", "MSFT", "NVDA", "INTC"],
+    "VOX":  ["VZ", "T", "TMUS", "CMCSA"],
+    "IBB":  ["AMGN", "GILD", "VRTX", "REGN"],
+    "XPH":  ["JNJ", "PFE", "AZN", "BMY"],
+    "IHF":  ["UNH", "AMEDX", "CVS", "HCA"],
+    "IHI":  ["TMO", "ABT", "ISRG", "DXCM"],
+    "XLV":  ["UNH", "AMEDX", "BLDP", "VEEV"],
+    "VHT":  ["WELL", "OHI", "LTC", "SBRA"],
+    "KBE":  ["JPM", "BAC", "WFC", "GS"],
+    "KIE":  ["BRK", "PGR", "TRV", "AIG"],
+    "PFM":  ["BLK", "AUM", "BEN", "AMG"],
+    "FINX": ["SQ", "PYPL", "COIN", "UPST"],
+    "REM":  ["NRZ", "AGNC", "ARMOUR", "MFA"],
+    "IPAY": ["MA", "V", "AXP", "DFS"],
+    "KRE":  ["WAL", "HBAN", "PNC", "FITB"],
+    "XRT":  ["AMZN", "TJX", "MCD", "LOW"],
+    "IBUY": ["AMZN", "EBAY", "SHOP", "MELI"],
+    "XLP":  ["WMT", "PG", "KO", "COST"],
+    "ESPO": ["ATVI", "EA", "TTWO", "RBLX"],
+    "PAWZ": ["CHWY", "TRUP", "AMEDX", "VSH"],
+    "PBJ":  ["MCD", "SBUX", "YUM", "DPZ"],
+    "CARZ": ["TSLA", "F", "GM", "TM"],
+    "LUXE": ["CPRI", "RRL", "LULUR", "EL"],
+    "XLB":  ["LIN", "APD", "SHW", "CTVA"],
+    "LIT":  ["ALB", "SQM", "LAC", "CBAK"],
+    "XME":  ["SCCO", "FCX", "RIO", "BHP"],
+    "URA":  ["CCJ", "SPRWF", "DNN", "LEU"],
+    "XLE":  ["XOM", "CVX", "COP", "MPC"],
+    "ICLN": ["PLUG", "SEDG", "ENPH", "RUN"],
+    "SLX":  ["X", "SCCO", "CMC", "RS"],
+    "ITA":  ["BA", "RTX", "LMT", "GD"],
+    "ITB":  ["DHI", "LEN", "PHM", "TOL"],
+    "ROBO": ["ISRG", "NDSN", "AXON", "ABB"],
+    "FTXR": ["FDX", "UPS", "ODFL", "XPO"],
+    "UFO":  ["RKLB", "MAXR", "PAID", "ASTRA"],
+    "JETS": ["DAL", "UAL", "AAL", "SWA"],
+    "BOAT": ["ZIM", "MATX", "GOGL", "DAC"],
+    "IYR":  ["PSA", "SELF", "CCI", "STOR"],
+    "PAVE": ["BIP", "KMI", "NEP", "APD"],
+    "XHB":  ["DHI", "LEN", "KBH", "LGIH"],
+    "INDS": ["ARE", "STWD", "PLD", "WELL"],
+    "PBS":  ["CMCSA", "PARA", "FOXO", "LBRDA"],
+    "PEJ":  ["DIS", "NFLX", "FOXA", "WBD"],
+    "SOCL": ["META", "SNAP", "PINS", "PEP"],
+    "XLU":  ["NEE", "D", "SO", "AEP"],
+    "DBA":  ["DE", "MON", "AGRO", "ADM"],
+    "MSOS": ["CURLF", "GTBIF", "TCNNF", "SNDL"],
+    "ESGU": ["AAPL", "MSFT", "NVDA", "GOOGL"],
+}
+
+# Deduplicated full signal universe: 54 ETFs + ~216 unique constituent stocks
+ALL_SIGNAL_TICKERS: list[str] = list(dict.fromkeys(
+    ETF_UNIVERSE +
+    [stock for stocks in ETF_CONSTITUENTS.values() for stock in stocks]
+))
+
+# Legacy alias — kept for any callers that reference TRACKED_SYMBOLS directly
+TRACKED_SYMBOLS = ALL_SIGNAL_TICKERS
 
 _ACTION_ORDER = {"BUY": 0, "HOLD": 1, "SELL": 2}
 _SYMBOL_RE = re.compile(r"^[A-Z0-9][A-Z0-9.\-]{0,9}$")

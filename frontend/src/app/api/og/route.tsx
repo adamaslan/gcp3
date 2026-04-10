@@ -3,14 +3,14 @@ import { ImageResponse } from "next/og";
 export const runtime = "nodejs";
 export const revalidate = 3600; // Cache for 1 hour
 
-export async function GET(request: Request) {
+export async function GET(request: Request): Promise<ImageResponse | Response> {
   const { searchParams } = new URL(request.url);
   const title = searchParams.get("title") || "Nuwrrrld Financial";
   const description = searchParams.get("description") || "Helping everyone make better financial choices";
   const domain = searchParams.get("domain") || "nuwrrrld.com";
 
   try {
-    return new ImageResponse(
+    const response = new ImageResponse(
       (
         <div
           style={{
@@ -65,6 +65,12 @@ export async function GET(request: Request) {
         height: 541,
       }
     );
+
+    // Add proper cache headers for social media scrapers
+    response.headers.set("Cache-Control", "public, max-age=3600, immutable");
+    response.headers.set("Content-Disposition", "inline");
+
+    return response;
   } catch (error) {
     console.error("OG image generation error:", error);
     return new Response("Failed to generate OG image", { status: 500 });
