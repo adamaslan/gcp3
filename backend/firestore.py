@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 import os
 import time
 
+from market_calendar import trading_date
+
 _db = None
 
 # In-memory cache layer (Phase 2B) — eliminates Firestore reads on hot paths
@@ -141,3 +143,40 @@ def set_cache(key: str, value: dict, ttl_hours: int = 1) -> None:
     })
     # Populate in-memory layer for hot path (industry_quotes, screener, etc.)
     mem_set(key, value)
+
+
+def write_checkpoint(phase: str, status: str, stages_completed: list[str], stages_failed: list[str], extra: dict | None = None) -> None:
+    """Write a Fetch/Bake phase checkpoint to Firestore.
+
+    Args:
+        phase: "fetch" or "bake"
+        status: "fetch_ok" | "fetch_partial" | "fetch_failed" | "bake_ok" | "bake_partial" | "bake_failed"
+        stages_completed: List of stage names that completed successfully
+        stages_failed: List of stage names that failed
+        extra: Optional extra fields to include in checkpoint
+    """
+    doc = {
+        "trading_date": str(trading_date()),
+        "phase": phase,
+        "status": status,
+        "stages_completed": stages_completed,
+        "stages_failed": stages_failed,
+        "written_at": datetime.now(timezone.utc),
+        **(extra or {}),
+    }
+    db().collection("gcp3_cache").document(f"refresh_state:{phase}").set(doc)
+
+
+def read_checkpoint(phase: str) -> dict | None:
+    """Read a phase checkpoint. Returns None if missing.
+
+    Args:
+        phase: "fetch" or "bake"
+
+    Returns:
+        Dict with checkpoint document data, or None if not found
+    """
+    snap = db().collection("gcp3_cache").document(f"refresh_state:{phase}").get()
+    if not snap.exists:
+        return None
+    return snap.to_dict()

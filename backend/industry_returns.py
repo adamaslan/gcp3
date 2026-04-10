@@ -58,9 +58,9 @@ def _find_most_recent_returns_cache() -> tuple[dict, str] | None:
     return value, stale_as_of
 
 
-async def get_industry_returns() -> dict:
+async def get_industry_returns(force: bool = False) -> dict:
     cache_key = f"industry_returns:{date.today()}"
-    if cached := get_cache(cache_key):
+    if not force and (cached := get_cache(cache_key)):
         logger.info("industry_returns: cache_hit key=%s", cache_key)
         return cached
 
