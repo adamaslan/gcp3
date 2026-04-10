@@ -18,7 +18,7 @@ steps:
       - --memory=512Mi
       - --cpu=1
       - --max-instances=5
-      - --set-env-vars=GCP_PROJECT_ID=$PROJECT_ID
+      - --set-env-vars=GCP_PROJECT_ID=$PROJECT_ID,SCHEDULER_EXPECTED_AUDIENCE=https://gcp3-backend-cif7ppahzq-uc.a.run.app,SCHEDULER_EXPECTED_SA=gcp3-scheduler@ttb-lang1.iam.gserviceaccount.com
       - --set-secrets=FINNHUB_API_KEY=FINNHUB_API_KEY:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,SCHEDULER_SECRET=SCHEDULER_SECRET:latest
 
 images:
