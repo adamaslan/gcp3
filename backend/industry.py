@@ -399,8 +399,9 @@ def _attach_stored_returns(industries: dict) -> None:
 async def seed_etf_history() -> dict[str, int]:
     """Seed or delta-update permanent ETF history for all tracked industries.
 
-    Call once at startup or via a scheduled endpoint. Uses yfinance for
-    full history on first run; appends only new days on subsequent runs.
+    Call once at startup or via a scheduled endpoint. Uses yfinance batch
+    download (one HTTP request for all tickers) to avoid per-ticker rate limits.
+    Full history on first run; 3-month window on subsequent delta runs.
 
     Returns:
         Dict mapping ETF symbol → rows stored/appended.
@@ -410,24 +411,61 @@ async def seed_etf_history() -> dict[str, int]:
     unique_etfs = list({etf for _, etf in _FLAT.values()})
     results: dict[str, int] = {}
 
-    for etf in unique_etfs:
-        meta = etf_store.get_metadata(etf)
+    # Split into new (need full history) vs existing (3mo delta)
+    new_etfs = [e for e in unique_etfs if etf_store.get_metadata(e) is None]
+    delta_etfs = [e for e in unique_etfs if etf_store.get_metadata(e) is not None]
+
+    # Batch download — one request per group instead of 54 individual calls
+    batches: list[tuple[list[str], str, str]] = []
+    if new_etfs:
+        batches.append((new_etfs, "max", "yfinance_seed"))
+    if delta_etfs:
+        batches.append((delta_etfs, "3mo", "yfinance_delta"))
+
+    for etfs, period, source in batches:
         try:
-            ticker = yf.Ticker(etf)
-            period = "max" if meta is None else "3mo"
-            hist = ticker.history(period=period)
-            if hist.empty:
-                logger.warning("seed_etf_history: no data for %s", etf)
-                continue
-            hist = hist.rename(columns={"Close": "adjusted_close", "Volume": "volume"})
-            if meta is None:
-                rows = etf_store.store_history(etf, hist, source="yfinance_seed")
-            else:
-                rows = etf_store.append_daily(etf, hist, source="yfinance_delta")
-            results[etf] = rows
+            raw = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda e=etfs, p=period: yf.download(
+                    e, period=p, auto_adjust=True, progress=False, threads=False
+                ),
+            )
         except Exception as exc:
-            logger.error("seed_etf_history: failed for %s: %s", etf, exc)
-            results[etf] = 0
+            logger.error("seed_etf_history: batch download failed (%s): %s", period, exc)
+            for etf in etfs:
+                results[etf] = 0
+            continue
+
+        if raw.empty:
+            logger.warning("seed_etf_history: batch download returned no data (%s)", period)
+            for etf in etfs:
+                results[etf] = 0
+            continue
+
+        # yf.download returns MultiIndex (field, ticker) for multiple tickers,
+        # or flat columns for a single ticker. Normalise to a per-ticker DataFrame.
+        import pandas as pd
+        if isinstance(raw.columns, pd.MultiIndex):
+            close = raw.xs("Close", axis=1, level=0)
+        else:
+            # Single ticker — wrap into a DataFrame with the ticker as column name
+            close = raw[["Close"]].rename(columns={"Close": etfs[0]}) if len(etfs) == 1 else raw["Close"]
+        for etf in etfs:
+            if etf not in close.columns:
+                logger.warning("seed_etf_history: no data for %s in batch", etf)
+                results[etf] = 0
+                continue
+            hist = close[[etf]].rename(columns={etf: "adjusted_close"})
+            hist = hist.dropna()
+            try:
+                if source == "yfinance_seed":
+                    rows = etf_store.store_history(etf, hist, source=source)
+                else:
+                    rows = etf_store.append_daily(etf, hist, source=source)
+                results[etf] = rows
+            except Exception as exc:
+                logger.error("seed_etf_history: store failed for %s: %s", etf, exc)
+                results[etf] = 0
 
     logger.info("seed_etf_history complete: %d ETFs, %d total rows", len(results), sum(results.values()))
     return results
