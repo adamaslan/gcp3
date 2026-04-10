@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 import os
 import time
 
+from market_calendar import trading_date
+
 _db = None
 
 # In-memory cache layer (Phase 2B) — eliminates Firestore reads on hot paths
@@ -153,8 +155,6 @@ def write_checkpoint(phase: str, status: str, stages_completed: list[str], stage
         stages_failed: List of stage names that failed
         extra: Optional extra fields to include in checkpoint
     """
-    from market_calendar import trading_date
-
     doc = {
         "trading_date": str(trading_date()),
         "phase": phase,

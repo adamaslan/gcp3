@@ -26,12 +26,33 @@ from market_summary import get_market_summary
 from daily_blog import get_daily_blog, refresh_daily_blog
 from blog_reviewer import get_blog_review, refresh_blog_review
 from correlation_article import get_correlation_article, refresh_correlation_article
-from firestore import db as firestore_db
+from firestore import db as firestore_db, write_checkpoint, read_checkpoint
 from data_client import fh_429_stats
+from market_calendar import trading_date, is_trading_day
 from datetime import date, datetime, timezone
+from contextlib import asynccontextmanager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def timed_stage(name: str, stages: dict, completed: list, failed: list):
+    """Context manager for timing and error-handling refresh stages.
+
+    Handles timing, success/error logging, and checkpoint updates for
+    each stage in the fetch/bake pipeline.
+    """
+    t0 = time.perf_counter()
+    try:
+        yield
+        stages[name] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
+        completed.append(name)
+    except Exception as exc:
+        logger.warning("refresh stage %s error: %s", name, exc)
+        stages[name] = {"status": "error", "detail": str(exc)}
+        failed.append(name)
+
 
 app = FastAPI(title="GCP3 Finance API", version="2.0.0")
 
@@ -526,9 +547,6 @@ async def refresh_fetch(request: Request) -> dict:
         F3  Industry data — 50 Finnhub + Alpha Vantage enrichment
         F4  Backend2 fan-out — yfinance scan + Fibonacci levels
     """
-    from market_calendar import trading_date, is_trading_day
-    from firestore import write_checkpoint
-
     _verify_scheduler(request)
     logger.info("POST /refresh/fetch started")
 
@@ -643,9 +661,6 @@ async def refresh_bake(request: Request) -> dict:
         B4  Blog review — Gemini review (gated on B3 success)
         B5  Correlation article — Gemini correlation analysis
     """
-    from market_calendar import trading_date, is_trading_day
-    from firestore import read_checkpoint, write_checkpoint
-
     _verify_scheduler(request)
     logger.info("POST /refresh/bake started")
 
@@ -706,14 +721,13 @@ async def refresh_bake(request: Request) -> dict:
     # Stage B2 — AI summary (reads all prior caches, no external APIs except Gemini)
     t0 = time.perf_counter()
     try:
-        summary = await refresh_ai_summary()
+        await refresh_ai_summary()
         stages["ai_summary"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
         stages_completed.append("ai_summary")
     except Exception as exc:
         logger.warning("refresh/bake stage B2 error: %s", exc)
         stages["ai_summary"] = {"status": "error", "detail": str(exc)}
         stages_failed.append("ai_summary")
-        summary = {}
 
     # Stage B3 — daily blog
     t0 = time.perf_counter()
