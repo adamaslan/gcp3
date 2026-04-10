@@ -12,7 +12,7 @@ export async function GET(): Promise<NextResponse> {
 
   let res: Response;
   try {
-    res = await fetch(`${BACKEND}/industry-returns`, { next: { revalidate: 3600 } });
+    res = await fetch(`${BACKEND}/industry-returns`, { cache: "no-store" });
   } catch (err) {
     console.error("[industry-returns] Network error:", err);
     return NextResponse.json({ error: "Network error", detail: String(err) }, { status: 503 });

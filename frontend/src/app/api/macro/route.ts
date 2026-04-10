@@ -12,8 +12,8 @@ export async function GET(): Promise<NextResponse> {
   }
 
   const [macroPulseRes, earningsRes] = await Promise.allSettled([
-    fetch(`${BACKEND}/macro-pulse`, { next: { revalidate: 900 } }),
-    fetch(`${BACKEND}/earnings-radar`, { next: { revalidate: 3600 } }),
+    fetch(`${BACKEND}/macro-pulse`, { cache: "no-store" }),
+    fetch(`${BACKEND}/earnings-radar`, { cache: "no-store" }),
   ]);
 
   const getPayload = async (result: PromiseSettledResult<Response>, label: string) => {
@@ -32,6 +32,12 @@ export async function GET(): Promise<NextResponse> {
 
   return NextResponse.json(
     { macro_pulse, earnings_radar },
-    { headers: { "Cache-Control": "public, s-maxage=900, stale-while-revalidate=1800" } }
+    {
+      headers: {
+        "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0",
+        "Pragma": "no-cache",
+        "Expires": "0",
+      },
+    }
   );
 }
