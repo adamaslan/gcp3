@@ -2,19 +2,67 @@
 
 from datetime import date, datetime, timedelta, time
 from zoneinfo import ZoneInfo
-
-import pandas_market_calendars as mcal
+import logging
 
 _ET = ZoneInfo("America/New_York")
-_NYSE_CALENDAR = mcal.get_calendar("NYSE")
-_NYSE_HOLIDAYS = set(h.date() for h in _NYSE_CALENDAR.holidays())
+logger = logging.getLogger(__name__)
+
+# NYSE holidays 2026–2028 (hardcoded; future years require manual update)
+# For production use beyond 2028, migrate to pandas_market_calendars library
+_NYSE_HOLIDAYS_2026 = {
+    date(2026, 1, 1),    # New Year's Day
+    date(2026, 1, 19),   # MLK Day
+    date(2026, 2, 16),   # Presidents Day
+    date(2026, 4, 3),    # Good Friday
+    date(2026, 5, 25),   # Memorial Day
+    date(2026, 7, 3),    # Independence Day (observed)
+    date(2026, 9, 7),    # Labor Day
+    date(2026, 11, 26),  # Thanksgiving
+    date(2026, 12, 25),  # Christmas
+}
+
+_NYSE_HOLIDAYS_2027 = {
+    date(2027, 1, 1),    # New Year's Day
+    date(2027, 1, 18),   # MLK Day
+    date(2027, 2, 15),   # Presidents Day
+    date(2027, 3, 26),   # Good Friday
+    date(2027, 5, 31),   # Memorial Day
+    date(2027, 7, 5),    # Independence Day (observed)
+    date(2027, 9, 6),    # Labor Day
+    date(2027, 11, 25),  # Thanksgiving
+    date(2027, 12, 25),  # Christmas
+}
+
+_NYSE_HOLIDAYS_2028 = {
+    date(2028, 1, 1),    # New Year's Day
+    date(2028, 1, 17),   # MLK Day
+    date(2028, 2, 21),   # Presidents Day
+    date(2028, 4, 14),   # Good Friday
+    date(2028, 5, 29),   # Memorial Day
+    date(2028, 7, 4),    # Independence Day
+    date(2028, 9, 4),    # Labor Day
+    date(2028, 11, 23),  # Thanksgiving
+    date(2028, 12, 25),  # Christmas
+}
+
+_NYSE_HOLIDAYS = _NYSE_HOLIDAYS_2026 | _NYSE_HOLIDAYS_2027 | _NYSE_HOLIDAYS_2028
+
+# Warn if accessing holidays for years beyond what we've defined
+_SUPPORTED_YEARS = {2026, 2027, 2028}
 
 
 def is_trading_day(d: date) -> bool:
     """Return True if d is a NYSE trading day (weekday, not holiday).
 
-    Uses pandas_market_calendars for accurate, always-current holiday data.
+    Note: Holiday data is hardcoded through 2028. For years beyond 2028,
+    migrate to pandas_market_calendars library. See CLAUDE.md.
     """
+    if d.year not in _SUPPORTED_YEARS:
+        logger.warning(
+            "trading_day check for %d is outside supported range (%s). "
+            "Add holidays for this year or migrate to pandas_market_calendars.",
+            d.year, sorted(_SUPPORTED_YEARS)
+        )
     return d.weekday() < 5 and d not in _NYSE_HOLIDAYS
 
 
