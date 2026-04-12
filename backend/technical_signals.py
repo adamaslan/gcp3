@@ -24,7 +24,6 @@ ETF_UNIVERSE: list[str] = [
     etf for sector in INDUSTRIES.values() for etf in sector.values()
 ]
 
-<<<<<<< HEAD
 # 4 primary constituent stocks per ETF (representative holdings)
 ETF_CONSTITUENTS: dict[str, list[str]] = {
     "IGV":  ["MSFT", "ADBE", "NXPI", "SNPS"],
@@ -37,7 +36,6 @@ ETF_CONSTITUENTS: dict[str, list[str]] = {
     "VOX":  ["VZ", "T", "TMUS", "CMCSA"],
     "IBB":  ["AMGN", "GILD", "VRTX", "REGN"],
     "XPH":  ["JNJ", "PFE", "AZN", "BMY"],
-<<<<<<< HEAD
     "IHF":  ["UNH", "ELV", "CVS", "HCA"],
     "IHI":  ["TMO", "ABT", "ISRG", "DXCM"],
     "XLV":  ["LLY", "UNH", "JNJ", "ABBV"],
@@ -46,7 +44,6 @@ ETF_CONSTITUENTS: dict[str, list[str]] = {
     "KIE":  ["BRK", "PGR", "TRV", "AIG"],
     "PFM":  ["BLK", "AMP", "BEN", "AMG"],
     "FINX": ["SQ", "PYPL", "COIN", "UPST"],
-<<<<<<< HEAD
     "REM":  ["RITM", "AGNC", "NLY", "MFA"],
     "IPAY": ["MA", "V", "AXP", "DFS"],
     "KRE":  ["WAL", "HBAN", "PNC", "FITB"],
@@ -54,7 +51,6 @@ ETF_CONSTITUENTS: dict[str, list[str]] = {
     "IBUY": ["AMZN", "EBAY", "SHOP", "MELI"],
     "XLP":  ["WMT", "PG", "KO", "COST"],
     "ESPO": ["ATVI", "EA", "TTWO", "RBLX"],
-<<<<<<< HEAD
     "PAWZ": ["ZTS", "IDXX", "CHWY", "TRUP"],
     "PBJ":  ["MCD", "SBUX", "YUM", "DPZ"],
     "CARZ": ["TSLA", "F", "GM", "TM"],
@@ -70,7 +66,6 @@ ETF_CONSTITUENTS: dict[str, list[str]] = {
     "ITB":  ["DHI", "LEN", "PHM", "TOL"],
     "ROBO": ["ISRG", "NDSN", "AXON", "ABB"],
     "FTXR": ["FDX", "UPS", "ODFL", "XPO"],
-<<<<<<< HEAD
     "UFO":  ["RKLB", "LHX", "LMT", "RTX"],
     "JETS": ["DAL", "UAL", "AAL", "SWA"],
     "BOAT": ["ZIM", "MATX", "GOGL", "DAC"],
@@ -82,20 +77,17 @@ ETF_CONSTITUENTS: dict[str, list[str]] = {
     "PEJ":  ["DIS", "NFLX", "FOXA", "WBD"],
     "SOCL": ["META", "SNAP", "PINS", "GOOGL"],
     "XLU":  ["NEE", "D", "SO", "AEP"],
-<<<<<<< HEAD
     "DBA":  ["DE", "ADM", "TSN", "CTVA"],
     "MSOS": ["CURLF", "GTBIF", "TCNNF", "SNDL"],
     "ESGU": ["AAPL", "MSFT", "NVDA", "GOOGL"],
 }
 
-<<<<<<< HEAD
 # Deduplicated full signal universe: 54 ETFs + ~216 unique constituent stocks
 ALL_SIGNAL_TICKERS: list[str] = list(dict.fromkeys(
     ETF_UNIVERSE +
     [stock for stocks in ETF_CONSTITUENTS.values() for stock in stocks]
 ))
 
-<<<<<<< HEAD
 # Legacy alias — kept for any callers that reference TRACKED_SYMBOLS directly
 TRACKED_SYMBOLS = ALL_SIGNAL_TICKERS
 

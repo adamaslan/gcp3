@@ -412,11 +412,16 @@ async def seed_etf_history() -> dict[str, int]:
     unique_etfs = list({etf for _, etf in _FLAT.values()})
     results: dict[str, int] = {}
 
-    # Split into new (need full history) vs existing (3mo delta)
-    # Fetch metadata once to avoid redundant network calls
-    etf_metas = {e: etf_store.get_metadata(e) for e in unique_etfs}
-    new_etfs = [e for e, meta in etf_metas.items() if meta is None]
-    delta_etfs = [e for e, meta in etf_metas.items() if meta is not None]
+    # Split into new (need full history) vs existing (3mo delta).
+    # Use db.get_all() to fetch all metadata docs in a single round-trip
+    # instead of 54 sequential Firestore reads.
+    from firestore import db as _db
+    _firestore = _db()
+    refs = [_firestore.collection(etf_store._COLLECTION).document(e.upper()) for e in unique_etfs]
+    snaps = _firestore.get_all(refs)
+    existing_symbols = {snap.id for snap in snaps if snap.exists}
+    new_etfs = [e for e in unique_etfs if e.upper() not in existing_symbols]
+    delta_etfs = [e for e in unique_etfs if e.upper() in existing_symbols]
 
     # Batch download — one request per group instead of 54 individual calls
     batches: list[tuple[list[str], str, str]] = []
