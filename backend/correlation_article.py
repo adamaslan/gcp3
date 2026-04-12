@@ -335,39 +335,56 @@ async def _search_relevant_news(focus_pairs: list[CorrelationResult]) -> list[di
         logger.warning("correlation: FINNHUB_API_KEY not set, skipping news search")
         return []
 
-    # Extract keywords from focus pairs
-    keywords = set()
+    # Extract keywords from focus pairs — prefer specific terms over generic source names
+    keywords = []
     for pair in focus_pairs:
-        # Add source names as keywords
-        keywords.add(pair.source_a.replace("-", " "))
-        keywords.add(pair.source_b.replace("-", " "))
-        # Add data fields
-        if "sector" in str(pair.data_a):
-            keywords.add("sector rotation")
-        if "regime" in str(pair.data_a):
-            keywords.add("market regime")
+        if "sector" in str(pair.data_a) or "sector" in str(pair.data_b):
+            keywords.append("sector rotation")
+        if "regime" in str(pair.data_a) or "regime" in str(pair.data_b):
+            keywords.append("macro regime")
+        if "earnings" in pair.source_a or "earnings" in pair.source_b:
+            keywords.append("earnings")
+        if "sentiment" in pair.source_a or "sentiment" in pair.source_b:
+            keywords.append("market sentiment")
+    # Deduplicate while preserving order
+    seen_kw: set[str] = set()
+    unique_keywords = [k for k in keywords if not (k in seen_kw or seen_kw.add(k))]  # type: ignore[func-returns-value]
+    if not unique_keywords:
+        unique_keywords = ["market"]
 
     news_articles = []
     async with httpx.AsyncClient(timeout=20) as client:
-        for keyword in list(keywords)[:3]:  # Limit to 3 searches
+        for keyword in unique_keywords[:3]:  # Limit to 3 searches
             try:
                 url = "https://finnhub.io/api/v1/news"
                 params = {
                     "category": "general",
-                    "limit": 5,
+                    "minId": 0,
+                    "limit": 10,
                     "token": api_key,
                 }
                 resp = await client.get(url, params=params, timeout=20)
                 resp.raise_for_status()
 
                 articles = resp.json()
-                for article in articles[:3]:
+                # Filter articles whose headline contains the keyword
+                keyword_lower = keyword.lower()
+                matched = [
+                    a for a in articles
+                    if keyword_lower in a.get("headline", "").lower()
+                    or keyword_lower in a.get("summary", "").lower()
+                ]
+                for article in (matched or articles)[:3]:
                     news_articles.append({
                         "headline": article.get("headline", ""),
                         "source": article.get("source", ""),
                         "url": article.get("url", ""),
                         "summary": article.get("summary", "")[:200],
                     })
+                logger.info(
+                    "correlation: news search keyword=%s total=%d matched=%d",
+                    keyword, len(articles), len(matched),
+                )
             except Exception as e:
                 logger.warning("correlation: news search failed for keyword %s: %s", keyword, e)
 
@@ -471,9 +488,14 @@ async def get_correlation_article() -> dict:
     sources = await _gather_all_sources()
     if len(sources) < 3:
         logger.warning(
-            "correlation_article: only %d sources available, need at least 3",
+            "correlation_article: only %d sources available, need at least 3 — checking yesterday",
             len(sources),
         )
+        yesterday = today - timedelta(days=1)
+        stale = get_cache(f"daily_correlation:{yesterday}")
+        if stale:
+            logger.warning("correlation_article: serving stale article from %s", yesterday)
+            return {**stale, "stale": True, "stale_date": str(yesterday)}
         raise RuntimeError(f"Insufficient data sources ({len(sources)} < 3)")
 
     # Compute correlations
