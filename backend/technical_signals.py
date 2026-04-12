@@ -24,7 +24,6 @@ ETF_UNIVERSE: list[str] = [
     etf for sector in INDUSTRIES.values() for etf in sector.values()
 ]
 
-<<<<<<< HEAD
 # 4 primary constituent stocks per ETF (representative holdings)
 ETF_CONSTITUENTS: dict[str, list[str]] = {
     "IGV":  ["MSFT", "ADBE", "NXPI", "SNPS"],
@@ -37,16 +36,14 @@ ETF_CONSTITUENTS: dict[str, list[str]] = {
     "VOX":  ["VZ", "T", "TMUS", "CMCSA"],
     "IBB":  ["AMGN", "GILD", "VRTX", "REGN"],
     "XPH":  ["JNJ", "PFE", "AZN", "BMY"],
-<<<<<<< HEAD
     "IHF":  ["UNH", "ELV", "CVS", "HCA"],
     "IHI":  ["TMO", "ABT", "ISRG", "DXCM"],
     "XLV":  ["LLY", "UNH", "JNJ", "ABBV"],
     "VHT":  ["LLY", "UNH", "JNJ", "TMO"],
     "KBE":  ["JPM", "BAC", "WFC", "GS"],
     "KIE":  ["BRK", "PGR", "TRV", "AIG"],
-    "PFM":  ["BLK", "AUM", "BEN", "AMG"],
+    "PFM":  ["BLK", "AMP", "BEN", "AMG"],
     "FINX": ["SQ", "PYPL", "COIN", "UPST"],
-<<<<<<< HEAD
     "REM":  ["RITM", "AGNC", "NLY", "MFA"],
     "IPAY": ["MA", "V", "AXP", "DFS"],
     "KRE":  ["WAL", "HBAN", "PNC", "FITB"],
@@ -54,7 +51,6 @@ ETF_CONSTITUENTS: dict[str, list[str]] = {
     "IBUY": ["AMZN", "EBAY", "SHOP", "MELI"],
     "XLP":  ["WMT", "PG", "KO", "COST"],
     "ESPO": ["ATVI", "EA", "TTWO", "RBLX"],
-<<<<<<< HEAD
     "PAWZ": ["ZTS", "IDXX", "CHWY", "TRUP"],
     "PBJ":  ["MCD", "SBUX", "YUM", "DPZ"],
     "CARZ": ["TSLA", "F", "GM", "TM"],
@@ -70,7 +66,6 @@ ETF_CONSTITUENTS: dict[str, list[str]] = {
     "ITB":  ["DHI", "LEN", "PHM", "TOL"],
     "ROBO": ["ISRG", "NDSN", "AXON", "ABB"],
     "FTXR": ["FDX", "UPS", "ODFL", "XPO"],
-<<<<<<< HEAD
     "UFO":  ["RKLB", "LHX", "LMT", "RTX"],
     "JETS": ["DAL", "UAL", "AAL", "SWA"],
     "BOAT": ["ZIM", "MATX", "GOGL", "DAC"],
@@ -78,24 +73,21 @@ ETF_CONSTITUENTS: dict[str, list[str]] = {
     "PAVE": ["BIP", "KMI", "NEP", "APD"],
     "XHB":  ["DHI", "LEN", "KBH", "LGIH"],
     "INDS": ["ARE", "STWD", "PLD", "WELL"],
-    "PBS":  ["CMCSA", "PARA", "FOXO", "LBRDA"],
+    "PBS":  ["CMCSA", "PARA", "FOXA", "LBRDA"],
     "PEJ":  ["DIS", "NFLX", "FOXA", "WBD"],
-    "SOCL": ["META", "SNAP", "PINS", "PEP"],
+    "SOCL": ["META", "SNAP", "PINS", "GOOGL"],
     "XLU":  ["NEE", "D", "SO", "AEP"],
-<<<<<<< HEAD
     "DBA":  ["DE", "ADM", "TSN", "CTVA"],
     "MSOS": ["CURLF", "GTBIF", "TCNNF", "SNDL"],
     "ESGU": ["AAPL", "MSFT", "NVDA", "GOOGL"],
 }
 
-<<<<<<< HEAD
 # Deduplicated full signal universe: 54 ETFs + ~216 unique constituent stocks
 ALL_SIGNAL_TICKERS: list[str] = list(dict.fromkeys(
     ETF_UNIVERSE +
     [stock for stocks in ETF_CONSTITUENTS.values() for stock in stocks]
 ))
 
-<<<<<<< HEAD
 # Legacy alias — kept for any callers that reference TRACKED_SYMBOLS directly
 TRACKED_SYMBOLS = ALL_SIGNAL_TICKERS
 
@@ -159,15 +151,14 @@ def _score_etf(row: dict, rank_1d: int, total: int) -> dict:
 
     # 52-week range position
     if high and low and high > low:
-        pct_of_range = ((high - low) * 0.0 + (high - low)) and (high - low)
         # We don't have current price in industry_cache, use 1y return as proxy:
         # if 1y is strong positive, likely near high
         if r1y is not None:
             if r1y > 20:
-                signals.append({"signal": f"Near 52w high (52w range: {low:.0f}–{high:.0f})", "strength": "BULLISH", "value": high, "category": "volume"})
+                signals.append({"signal": f"Near 52w high (52w range: {low:.0f}–{high:.0f})", "strength": "BULLISH", "value": high, "category": "trend"})
                 bullish += 1
             elif r1y < -20:
-                signals.append({"signal": f"Near 52w low (52w range: {low:.0f}–{high:.0f})", "strength": "BEARISH", "value": low, "category": "volume"})
+                signals.append({"signal": f"Near 52w low (52w range: {low:.0f}–{high:.0f})", "strength": "BEARISH", "value": low, "category": "trend"})
                 bearish += 1
 
     # Relative strength: top/bottom third among 54 ETFs by 1d return
@@ -221,9 +212,9 @@ def _score_etf(row: dict, rank_1d: int, total: int) -> dict:
         "change_pct": r1d,
         "signals": signals,
         "indicators": {
-            "rsi": None,  # not available from returns data
-            "macd": r1m,  # use 1m return as directional proxy
-            "adx": r1y,   # use 1y return as trend strength proxy
+            "rsi": None,   # not available from returns data
+            "macd": None,  # not available from returns data
+            "adx": None,   # not available from returns data
         },
         "industry": row.get("industry"),
         "returns": returns,

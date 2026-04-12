@@ -21,6 +21,7 @@ from math import floor
 import time
 
 import httpx
+import pandas as pd
 
 from data_client import av_analytics_batch, av_remaining_calls, finnhub_get, get_cache, get_quote, set_cache
 import etf_store
@@ -411,9 +412,16 @@ async def seed_etf_history() -> dict[str, int]:
     unique_etfs = list({etf for _, etf in _FLAT.values()})
     results: dict[str, int] = {}
 
-    # Split into new (need full history) vs existing (3mo delta)
-    new_etfs = [e for e in unique_etfs if etf_store.get_metadata(e) is None]
-    delta_etfs = [e for e in unique_etfs if etf_store.get_metadata(e) is not None]
+    # Split into new (need full history) vs existing (3mo delta).
+    # Use db.get_all() to fetch all metadata docs in a single round-trip
+    # instead of 54 sequential Firestore reads.
+    from firestore import db as _db
+    _firestore = _db()
+    refs = [_firestore.collection(etf_store._COLLECTION).document(e.upper()) for e in unique_etfs]
+    snaps = _firestore.get_all(refs)
+    existing_symbols = {snap.id for snap in snaps if snap.exists}
+    new_etfs = [e for e in unique_etfs if e.upper() not in existing_symbols]
+    delta_etfs = [e for e in unique_etfs if e.upper() in existing_symbols]
 
     # Batch download — one request per group instead of 54 individual calls
     batches: list[tuple[list[str], str, str]] = []
@@ -444,19 +452,22 @@ async def seed_etf_history() -> dict[str, int]:
 
         # yf.download returns MultiIndex (field, ticker) for multiple tickers,
         # or flat columns for a single ticker. Normalise to a per-ticker DataFrame.
-        import pandas as pd
         if isinstance(raw.columns, pd.MultiIndex):
             close = raw.xs("Close", axis=1, level=0)
+            volume = raw.xs("Volume", axis=1, level=0)
         else:
-            # Single ticker — wrap into a DataFrame with the ticker as column name
-            close = raw[["Close"]].rename(columns={"Close": etfs[0]}) if len(etfs) == 1 else raw["Close"]
+            # Single ticker — wrap into DataFrames with the ticker as column name
+            close = raw[["Close"]].rename(columns={"Close": etfs[0]})
+            volume = raw[["Volume"]].rename(columns={"Volume": etfs[0]})
         for etf in etfs:
             if etf not in close.columns:
                 logger.warning("seed_etf_history: no data for %s in batch", etf)
                 results[etf] = 0
                 continue
-            hist = close[[etf]].rename(columns={etf: "adjusted_close"})
-            hist = hist.dropna()
+            hist = pd.DataFrame({
+                "adjusted_close": close[etf],
+                "volume": volume[etf]
+            }).dropna()
             try:
                 if source == "yfinance_seed":
                     rows = etf_store.store_history(etf, hist, source=source)
