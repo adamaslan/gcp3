@@ -176,5 +176,5 @@ async def get_sector_rotation(force_rule_based: bool = False) -> dict:
         "ai_analysis": ai_analysis,
     }
 
-    set_cache(cache_key, result, ttl_hours=2)
+    set_cache(cache_key, result, ttl_hours=8)
     return result

@@ -23,7 +23,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import httpx
 
-from firestore import delete_cache, get_cache, set_cache
+from firestore import delete_cache, get_cache, get_cache_stale_prev, set_cache
 from morning import get_morning_brief
 from sector_rotation import get_sector_rotation
 from macro_pulse import get_macro_pulse
@@ -819,14 +819,14 @@ async def get_correlation_article() -> dict:
     sources = await _gather_all_sources()
     if len(sources) < 3:
         logger.warning(
-            "correlation_article: only %d sources available, need at least 3 — checking yesterday",
+            "correlation_article: only %d sources available, need at least 3 — checking for prior article",
             len(sources),
         )
-        yesterday = today - timedelta(days=1)
-        stale = get_cache(f"daily_correlation:{yesterday}")
+        stale, stale_as_of = get_cache_stale_prev("daily_correlation:", cache_key)
         if stale:
-            logger.warning("correlation_article: serving stale article from %s", yesterday)
-            return {**stale, "stale": True, "stale_date": str(yesterday)}
+            stale_date = stale_as_of or str(today - timedelta(days=1))
+            logger.warning("correlation_article: serving stale article stale_as_of=%s", stale_date)
+            return {**stale, "stale": True, "stale_date": stale_date}
         raise RuntimeError(f"Insufficient data sources ({len(sources)} < 3)")
 
     # Compute correlations across all 20 pairs
@@ -860,13 +860,14 @@ async def get_correlation_article() -> dict:
     article_text = await _call_gemini(prompt)
     logger.info("correlation_article: Gemini response received (%d chars)", len(article_text))
 
-    # Generate title from focus pairs
-    title = _generate_title_from_pairs(focus_pairs)
+    # Generate catchy title + SEO slug via Gemini (grounded in focus pair signals)
+    title, slug = await _generate_title_and_slug(focus_pairs, article_text)
 
     # Build result
     result = {
         "date": str(today),
         "title": title,
+        "slug": slug,
         "body": article_text,
         "focus_pairs": [
             {
@@ -901,8 +902,81 @@ async def get_correlation_article() -> dict:
     return result
 
 
+async def _generate_title_and_slug(
+    pairs: list[CorrelationResult], article_text: str
+) -> tuple[str, str]:
+    """Generate a catchy title and SEO-friendly slug via Gemini.
+
+    Uses the same signal context as the rule-based title (divergence/agreement
+    counts, primary pair) but asks Gemini for a more engaging, click-worthy
+    headline. Falls back to rule-based title on any error.
+    """
+    if not pairs:
+        fallback = "Market Patterns Across Data Sources"
+        return fallback, "market-patterns-across-data-sources"
+
+    primary = pairs[0]
+    divergence_count = sum(1 for p in pairs if p.signal == "divergence")
+    agreement_count = sum(1 for p in pairs if p.signal == "agreement")
+
+    # Build a concise signal summary as Gemini context (mirrors rule-based logic)
+    if divergence_count >= 3:
+        signal_context = f"{divergence_count} of {len(pairs)} pairs show divergence — signals and fundamentals are pulling apart"
+    elif agreement_count >= 3:
+        signal_context = f"{agreement_count} of {len(pairs)} pairs show agreement — technical signals confirm the fundamental story"
+    elif primary.signal == "divergence":
+        signal_context = f"Primary divergence between {primary.source_a.replace('-', ' ')} and {primary.source_b.replace('-', ' ')}"
+    elif primary.signal == "agreement":
+        signal_context = f"Primary agreement between {primary.source_a.replace('-', ' ')} and {primary.source_b.replace('-', ' ')}"
+    else:
+        signal_context = f"Mixed signals across {len(pairs)} data source pairs"
+
+    # Use the opening sentence of the article as additional context
+    first_sentence = article_text.split(".")[0].strip() if article_text else ""
+
+    title_prompt = (
+        "You are writing a headline for a financial market analysis article.\n\n"
+        f"Signal context: {signal_context}\n"
+        f"Article opening: {first_sentence}.\n\n"
+        "Generate ONE catchy, high-engagement headline (under 80 characters) and ONE "
+        "URL-friendly slug (lowercase letters and hyphens only, under 60 characters, no date).\n\n"
+        "Rules for the headline:\n"
+        "- Must reflect the signal context (divergence vs agreement)\n"
+        "- Financial/market language, no clickbait\n"
+        "- Under 80 characters\n\n"
+        "Respond with exactly two lines:\n"
+        "TITLE: <the headline>\n"
+        "SLUG: <the-slug>"
+    )
+
+    try:
+        response = await _call_gemini(title_prompt)
+        lines = {
+            line.split(":", 1)[0].strip().upper(): line.split(":", 1)[1].strip()
+            for line in response.strip().splitlines()
+            if ":" in line
+        }
+        title = lines.get("TITLE", "").strip()
+        slug = lines.get("SLUG", "").strip().lower().replace(" ", "-")
+        # Validate: non-empty, reasonable length
+        if title and slug and len(title) <= 120 and len(slug) <= 80:
+            logger.info("correlation_article: Gemini title=%s slug=%s", title, slug)
+            return title, slug
+        logger.warning("correlation_article: Gemini title/slug out of spec — falling back")
+    except Exception as exc:
+        logger.warning("correlation_article: title generation failed: %s — falling back", exc)
+
+    # Fallback to rule-based title
+    fallback_title = _generate_title_from_pairs(pairs)
+    fallback_slug = fallback_title.lower().replace(":", "").replace("  ", " ").replace(" ", "-")
+    return fallback_title, fallback_slug
+
+
 def _generate_title_from_pairs(pairs: list[CorrelationResult]) -> str:
-    """Generate an article title from the focus correlation pairs."""
+    """Generate a rule-based article title from the focus correlation pairs.
+
+    Used as fallback when Gemini title generation fails.
+    """
     if not pairs:
         return "Market Patterns Across Data Sources"
 

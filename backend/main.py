@@ -26,6 +26,7 @@ from market_summary import get_market_summary
 from daily_blog import get_daily_blog, refresh_daily_blog
 from blog_reviewer import get_blog_review, refresh_blog_review
 from correlation_article import get_correlation_article, refresh_correlation_article
+from story_picker import get_story_article, refresh_story_article
 from firestore import db as firestore_db, write_checkpoint, read_checkpoint
 from data_client import fh_429_stats
 from market_calendar import trading_date, is_trading_day
@@ -573,33 +574,49 @@ async def refresh_fetch(request: Request) -> dict:
 
     # Stage F1 — market data (concurrent Finnhub)
     t0 = time.perf_counter()
-    try:
-        await asyncio.gather(
-            get_morning_brief(),
-            get_macro_pulse(),
-            get_earnings_radar(),
-            get_news_sentiment(),
-        )
+    f1_results = await asyncio.gather(
+        get_morning_brief(),
+        get_macro_pulse(),
+        get_earnings_radar(),
+        get_news_sentiment(),
+        return_exceptions=True,
+    )
+    f1_names = ["morning_brief", "macro_pulse", "earnings_radar", "news_sentiment"]
+    f1_errors = [n for n, r in zip(f1_names, f1_results) if isinstance(r, Exception)]
+    for name, result in zip(f1_names, f1_results):
+        if isinstance(result, Exception):
+            logger.warning("refresh/fetch stage F1 %s error: %s", name, result)
+    if len(f1_errors) == len(f1_names):
+        stages["market_data"] = {"status": "error", "detail": f"all sources failed: {f1_errors}"}
+        stages_failed.append("market_data")
+    elif f1_errors:
+        stages["market_data"] = {"status": "partial", "ms": round((time.perf_counter() - t0) * 1000), "failed": f1_errors}
+        stages_completed.append("market_data")
+    else:
         stages["market_data"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
         stages_completed.append("market_data")
-    except Exception as exc:
-        logger.warning("refresh/fetch stage F1 error: %s", exc)
-        stages["market_data"] = {"status": "error", "detail": str(exc)}
-        stages_failed.append("market_data")
 
     # Stage F2 — sector + screener (concurrent)
     t0 = time.perf_counter()
-    try:
-        await asyncio.gather(
-            get_sector_rotation(),
-            get_screener_data(),
-        )
+    f2_results = await asyncio.gather(
+        get_sector_rotation(),
+        get_screener_data(),
+        return_exceptions=True,
+    )
+    f2_names = ["sector_rotation", "screener_data"]
+    f2_errors = [n for n, r in zip(f2_names, f2_results) if isinstance(r, Exception)]
+    for name, result in zip(f2_names, f2_results):
+        if isinstance(result, Exception):
+            logger.warning("refresh/fetch stage F2 %s error: %s", name, result)
+    if len(f2_errors) == len(f2_names):
+        stages["sector_screener"] = {"status": "error", "detail": f"all sources failed: {f2_errors}"}
+        stages_failed.append("sector_screener")
+    elif f2_errors:
+        stages["sector_screener"] = {"status": "partial", "ms": round((time.perf_counter() - t0) * 1000), "failed": f2_errors}
+        stages_completed.append("sector_screener")
+    else:
         stages["sector_screener"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
         stages_completed.append("sector_screener")
-    except Exception as exc:
-        logger.warning("refresh/fetch stage F2 error: %s", exc)
-        stages["sector_screener"] = {"status": "error", "detail": str(exc)}
-        stages_failed.append("sector_screener")
 
     # Stage F3 — industry data (50 Finnhub + AV batches)
     t0 = time.perf_counter()
@@ -766,6 +783,17 @@ async def refresh_bake(request: Request) -> dict:
         logger.warning("refresh/bake stage B5 error: %s", exc)
         stages["correlation_article"] = {"status": "error", "detail": str(exc)}
         stages_failed.append("correlation_article")
+
+    # Stage B6 — story picker (single most extreme pair)
+    t0 = time.perf_counter()
+    try:
+        await refresh_story_article()
+        stages["story_article"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
+        stages_completed.append("story_article")
+    except Exception as exc:
+        logger.warning("refresh/bake stage B6 error: %s", exc)
+        stages["story_article"] = {"status": "error", "detail": str(exc)}
+        stages_failed.append("story_article")
 
     bake_status = "bake_failed" if not stages_completed else ("bake_partial" if stages_failed else "bake_ok")
     write_checkpoint("bake", bake_status, stages_completed, stages_failed)
@@ -1022,14 +1050,15 @@ async def content(
     request: Request,
     type: Optional[str] = Query(
         default=None,
-        description="Content type: 'blog', 'review', or 'correlation'. Omit for all.",
+        description="Content type: 'blog', 'review', 'correlation', or 'story'. Omit for all.",
     ),
 ) -> dict:
-    """Content feed: AI-generated articles via ?type=blog|review|correlation.
+    """Content feed: AI-generated articles via ?type=blog|review|correlation|story.
 
     GET /content?type=blog         → was /daily-blog
     GET /content?type=review       → was /blog-review
     GET /content?type=correlation  → was /correlation-article
+    GET /content?type=story        → single extreme-pair deep-dive
     GET /content                   → latest of each type
     """
     logger.info("GET /content type=%s from %s", type, request.client)
@@ -1040,18 +1069,22 @@ async def content(
             return await get_blog_review()
         if type == "correlation":
             return await get_correlation_article()
+        if type == "story":
+            return await get_story_article()
 
-        # No type param — return all three concurrently
-        blog, review, correlation = await asyncio.gather(
+        # No type param — return all four concurrently
+        blog, review, correlation, story = await asyncio.gather(
             get_daily_blog(),
             get_blog_review(),
             get_correlation_article(),
+            get_story_article(),
             return_exceptions=True,
         )
         return {
             "blog": blog if not isinstance(blog, Exception) else {"error": str(blog)},
             "review": review if not isinstance(review, Exception) else {"error": str(review)},
             "correlation": correlation if not isinstance(correlation, Exception) else {"error": str(correlation)},
+            "story": story if not isinstance(story, Exception) else {"error": str(story)},
         }
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
