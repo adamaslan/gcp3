@@ -1,8 +1,19 @@
 """Correlation Article: Cross-source market intelligence grounded in multi-source patterns.
 
 Runs daily after /refresh/all (Stage 8). Detects correlations/divergences between
-2+ data sources, searches for relevant news, and generates a 600-900 word article
-grounded in the strongest patterns.
+ALL backend data sources, searches for relevant news, and generates a 600-900 word
+article grounded in the strongest patterns.
+
+Data sources (9 total):
+  1. morning_brief     — market tone, index moves
+  2. sector_rotation   — leading/lagging sectors, offense/defense
+  3. macro_pulse       — macro regime, economic signals
+  4. screener          — breadth, top gainers/losers
+  5. news_sentiment    — overall sentiment, narratives, top movers
+  6. earnings_radar    — beats/misses, earnings-driven movers
+  7. industry_returns  — 54 ETFs × 13 return periods, leaders/laggards
+  8. technical_signals — BUY/HOLD/SELL signals, regime, signal counts
+  9. market_summary    — 7-day trend, sentiment history, bullish/bearish lists
 """
 import asyncio
 import logging
@@ -19,6 +30,9 @@ from macro_pulse import get_macro_pulse
 from screener import get_screener_data
 from news_sentiment import get_news_sentiment
 from earnings_radar import get_earnings_radar
+from industry_returns import get_industry_returns
+from technical_signals import get_technical_signals
+from market_summary import get_market_summary
 
 logger = logging.getLogger(__name__)
 
@@ -37,31 +51,32 @@ class CorrelationResult:
 
 
 async def _gather_all_sources() -> dict:
-    """Fetch all available data sources concurrently."""
-    morning, rotation, macro, screener, news, earnings = await asyncio.gather(
+    """Fetch all 9 backend data sources concurrently."""
+    results = await asyncio.gather(
         get_morning_brief(),
         get_sector_rotation(),
         get_macro_pulse(),
         get_screener_data(),
         get_news_sentiment(),
         get_earnings_radar(),
+        get_industry_returns(),
+        get_technical_signals(),
+        get_market_summary(),
         return_exceptions=True,
     )
 
+    names = [
+        "morning", "rotation", "macro", "screener", "news",
+        "earnings", "industry_returns", "signals", "market_summary",
+    ]
     sources = {}
-    if not isinstance(morning, Exception):
-        sources["morning"] = morning
-    if not isinstance(rotation, Exception):
-        sources["rotation"] = rotation
-    if not isinstance(macro, Exception):
-        sources["macro"] = macro
-    if not isinstance(screener, Exception):
-        sources["screener"] = screener
-    if not isinstance(news, Exception):
-        sources["news"] = news
-    if not isinstance(earnings, Exception):
-        sources["earnings"] = earnings
+    for name, result in zip(names, results):
+        if isinstance(result, Exception):
+            logger.warning("correlation: source %s failed: %s", name, result)
+        else:
+            sources[name] = result
 
+    logger.info("correlation: gathered %d/%d sources: %s", len(sources), len(names), list(sources.keys()))
     return sources
 
 
@@ -325,6 +340,243 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
             data_b={"regime": regime}
         ))
 
+    # ── NEW PAIRS: industry_returns, technical_signals, market_summary ────
+
+    # Pair 11: signals regime vs macro regime
+    if "signals" in sources and "macro" in sources:
+        sig_summary = sources["signals"].get("signal_summary", {})
+        sig_regime = sig_summary.get("ai_regime", "Mixed").lower()
+        macro_regime = sources["macro"].get("ai_regime", "").lower()
+
+        sig_signal = 1.0 if "bullish" in sig_regime else (-1.0 if "bearish" in sig_regime else 0.0)
+        macro_signal = 1.0 if "risk-on" in macro_regime else (-1.0 if "risk-off" in macro_regime else 0.0)
+
+        score = _compute_correlation_score(sig_signal, macro_signal)
+        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.5 else "neutral")
+
+        results.append(CorrelationResult(
+            pair_id="signals-vs-macro",
+            source_a="technical-signals",
+            source_b="macro-pulse",
+            score=score,
+            signal=signal_type,
+            summary=f"Technical regime {sig_regime} vs macro regime {macro_regime}",
+            data_a={"regime": sig_regime, "buys": sig_summary.get("buy_count", 0), "sells": sig_summary.get("sell_count", 0)},
+            data_b={"regime": macro_regime}
+        ))
+
+    # Pair 12: signals BUY/SELL ratio vs screener breadth
+    if "signals" in sources and "screener" in sources:
+        sig_summary = sources["signals"].get("signal_summary", {})
+        buys = sig_summary.get("buy_count", 0)
+        sells = sig_summary.get("sell_count", 0)
+        total_sig = buys + sells or 1
+        breadth = sources["screener"].get("breadth_pct", 0)
+
+        buy_ratio_signal = _normalize_signal(buys - sells, -total_sig, total_sig)
+        breadth_signal = 1.0 if breadth > 0 else (-1.0 if breadth < 0 else 0.0)
+
+        score = _compute_correlation_score(buy_ratio_signal, breadth_signal)
+        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.5 else "neutral")
+
+        results.append(CorrelationResult(
+            pair_id="signals-vs-screener",
+            source_a="technical-signals",
+            source_b="screener",
+            score=score,
+            signal=signal_type,
+            summary=f"Signals {buys} BUY / {sells} SELL vs breadth {breadth:+.1f}%",
+            data_a={"buys": buys, "sells": sells},
+            data_b={"breadth_pct": breadth}
+        ))
+
+    # Pair 13: industry returns leaders vs rotation leaders
+    if "industry_returns" in sources and "rotation" in sources:
+        ir_leaders_1m = sources["industry_returns"].get("leaders", {}).get("1m", [])
+        ir_leader_names = set(l.get("industry", "").lower() for l in ir_leaders_1m[:5])
+
+        rot_leaders = sources["rotation"].get("leaders", [])
+        rot_leader_names = set(l.get("sector", "").lower() for l in rot_leaders)
+
+        overlap = len(ir_leader_names & rot_leader_names)
+        max_possible = max(len(ir_leader_names), len(rot_leader_names), 1)
+        score = _normalize_signal(overlap, 0, max_possible)
+        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.3 else "neutral")
+
+        results.append(CorrelationResult(
+            pair_id="industry-returns-vs-rotation",
+            source_a="industry-returns",
+            source_b="sector-rotation",
+            score=score,
+            signal=signal_type,
+            summary=f"1-month industry leaders overlap with sector rotation leaders: {overlap}",
+            data_a={"leaders_1m": [l.get("industry") for l in ir_leaders_1m[:3]]},
+            data_b={"rotation_leaders": [l.get("sector") for l in rot_leaders[:3]]}
+        ))
+
+    # Pair 14: industry returns short-term vs long-term (1d vs 1y leaders)
+    if "industry_returns" in sources:
+        leaders_1d = sources["industry_returns"].get("leaders", {}).get("1d", [])
+        leaders_1y = sources["industry_returns"].get("leaders", {}).get("1y", [])
+
+        leaders_1d_names = set(l.get("industry", "").lower() for l in leaders_1d[:5])
+        leaders_1y_names = set(l.get("industry", "").lower() for l in leaders_1y[:5])
+
+        overlap = len(leaders_1d_names & leaders_1y_names)
+        score = _normalize_signal(overlap, 0, 5)
+        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.3 else "neutral")
+
+        top_1d = [l.get("industry") for l in leaders_1d[:3]]
+        top_1y = [l.get("industry") for l in leaders_1y[:3]]
+
+        results.append(CorrelationResult(
+            pair_id="industry-1d-vs-1y",
+            source_a="industry-returns-1d",
+            source_b="industry-returns-1y",
+            score=score,
+            signal=signal_type,
+            summary=f"Today's leaders ({', '.join(top_1d[:2])}) vs 1-year leaders ({', '.join(top_1y[:2])}): {overlap} overlap",
+            data_a={"leaders_1d": top_1d},
+            data_b={"leaders_1y": top_1y}
+        ))
+
+    # Pair 15: market_summary 7-day trend vs morning tone
+    if "market_summary" in sources and "morning" in sources:
+        trend = sources["market_summary"].get("trend", "Stable").lower()
+        tone = sources["morning"].get("market_tone", "neutral").lower()
+
+        trend_signal = 1.0 if "improv" in trend else (-1.0 if "deterior" in trend else 0.0)
+        tone_signal = 1.0 if "bullish" in tone else (-1.0 if "bearish" in tone else 0.0)
+
+        score = _compute_correlation_score(trend_signal, tone_signal)
+        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.5 else "neutral")
+
+        results.append(CorrelationResult(
+            pair_id="trend-vs-morning",
+            source_a="market-summary-7d",
+            source_b="morning-brief",
+            score=score,
+            signal=signal_type,
+            summary=f"7-day trend {trend} vs today's tone {tone}",
+            data_a={"trend": trend, "avg_score": sources["market_summary"].get("avg_sentiment_score", 0)},
+            data_b={"tone": tone}
+        ))
+
+    # Pair 16: market_summary trend vs signals regime
+    if "market_summary" in sources and "signals" in sources:
+        trend = sources["market_summary"].get("trend", "Stable").lower()
+        sig_regime = sources["signals"].get("signal_summary", {}).get("ai_regime", "Mixed").lower()
+
+        trend_signal = 1.0 if "improv" in trend else (-1.0 if "deterior" in trend else 0.0)
+        sig_signal = 1.0 if "bullish" in sig_regime else (-1.0 if "bearish" in sig_regime else 0.0)
+
+        score = _compute_correlation_score(trend_signal, sig_signal)
+        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.5 else "neutral")
+
+        results.append(CorrelationResult(
+            pair_id="trend-vs-signals",
+            source_a="market-summary-7d",
+            source_b="technical-signals",
+            score=score,
+            signal=signal_type,
+            summary=f"7-day trend {trend} vs signals regime {sig_regime}",
+            data_a={"trend": trend},
+            data_b={"regime": sig_regime}
+        ))
+
+    # Pair 17: signals vs rotation (BUY sectors vs leading sectors)
+    if "signals" in sources and "rotation" in sources:
+        buy_signals = sources["signals"].get("buys", [])
+        buy_industries = set(b.get("industry", "").lower() for b in buy_signals if b.get("industry"))
+
+        rot_leaders = sources["rotation"].get("leaders", [])
+        rot_sectors = set(l.get("sector", "").lower() for l in rot_leaders)
+
+        overlap = len(buy_industries & rot_sectors)
+        max_possible = max(len(buy_industries), len(rot_sectors), 1)
+        score = _normalize_signal(overlap, 0, max_possible)
+        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.3 else "neutral")
+
+        results.append(CorrelationResult(
+            pair_id="signals-vs-rotation",
+            source_a="technical-signals",
+            source_b="sector-rotation",
+            score=score,
+            signal=signal_type,
+            summary=f"BUY-signal industries vs rotation leaders: {overlap} overlap",
+            data_a={"buy_industries": list(buy_industries)[:3]},
+            data_b={"rotation_leaders": list(rot_sectors)[:3]}
+        ))
+
+    # Pair 18: signals vs earnings (BUY signals on earnings reporters)
+    if "signals" in sources and "earnings" in sources:
+        buy_symbols = set(b.get("symbol", "") for b in sources["signals"].get("buys", []))
+        sell_symbols = set(s.get("symbol", "") for s in sources["signals"].get("sells", []))
+        earnings_movers = set(e.get("symbol", "") for e in sources["earnings"].get("top_movers", []))
+
+        buys_with_earnings = len(buy_symbols & earnings_movers)
+        sells_with_earnings = len(sell_symbols & earnings_movers)
+
+        score = _normalize_signal(buys_with_earnings - sells_with_earnings, -3, 3)
+        signal_type = "agreement" if score > 0.3 else ("divergence" if score < -0.3 else "neutral")
+
+        results.append(CorrelationResult(
+            pair_id="signals-vs-earnings",
+            source_a="technical-signals",
+            source_b="earnings-radar",
+            score=score,
+            signal=signal_type,
+            summary=f"BUY signals on earnings movers: {buys_with_earnings}, SELL on earnings: {sells_with_earnings}",
+            data_a={"buys_with_earnings": buys_with_earnings, "sells_with_earnings": sells_with_earnings},
+            data_b={"earnings_movers": list(earnings_movers)[:3]}
+        ))
+
+    # Pair 19: industry returns 1m leaders vs news sentiment
+    if "industry_returns" in sources and "news" in sources:
+        ir_leaders_1m = sources["industry_returns"].get("leaders", {}).get("1m", [])
+        top_leader = ir_leaders_1m[0] if ir_leaders_1m else {}
+        top_leader_return = top_leader.get("return", 0)
+        sentiment = sources["news"].get("overall_sentiment", "neutral").lower()
+
+        leader_signal = 1.0 if top_leader_return > 5 else (-1.0 if top_leader_return < -5 else 0.0)
+        sentiment_signal = 1.0 if "positive" in sentiment else (-1.0 if "negative" in sentiment else 0.0)
+
+        score = _compute_correlation_score(leader_signal, sentiment_signal)
+        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.5 else "neutral")
+
+        results.append(CorrelationResult(
+            pair_id="industry-leaders-vs-news",
+            source_a="industry-returns",
+            source_b="news-sentiment",
+            score=score,
+            signal=signal_type,
+            summary=f"Top industry {top_leader.get('industry', '?')} ({top_leader_return:+.1f}% 1m) vs news {sentiment}",
+            data_a={"top_industry": top_leader.get("industry"), "return_1m": top_leader_return},
+            data_b={"sentiment": sentiment}
+        ))
+
+    # Pair 20: market_summary bullish list vs signals BUY list
+    if "market_summary" in sources and "signals" in sources:
+        ms_bullish = set(b.get("symbol", "") if isinstance(b, dict) else str(b)
+                         for b in sources["market_summary"].get("top_bullish_today", []))
+        sig_buys = set(b.get("symbol", "") for b in sources["signals"].get("buys", []))
+
+        overlap = len(ms_bullish & sig_buys)
+        max_possible = max(len(ms_bullish), len(sig_buys), 1)
+        score = _normalize_signal(overlap, 0, max_possible)
+        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.3 else "neutral")
+
+        results.append(CorrelationResult(
+            pair_id="summary-bullish-vs-signals-buy",
+            source_a="market-summary",
+            source_b="technical-signals",
+            score=score,
+            signal=signal_type,
+            summary=f"Market summary bullish list vs signals BUY list: {overlap} overlap",
+            data_a={"bullish_count": len(ms_bullish)},
+            data_b={"buy_count": len(sig_buys)}
+        ))
+
     return results
 
 
@@ -404,12 +656,13 @@ def _build_article_prompt(
     sources: dict,
     news_articles: list[dict],
 ) -> str:
-    """Build the Gemini prompt for the correlation article."""
+    """Build the Gemini prompt for the correlation article using all 9 data sources."""
     focus_section = "\n".join(
         f"  - {p.pair_id}: {p.summary} (signal: {p.signal}, score: {p.score:.2f})"
-        for p in focus_pairs[:3]
+        for p in focus_pairs[:5]
     )
 
+    # Core market context (original 6 sources)
     context_section = f"""
 - Market tone: {sources.get('morning', {}).get('market_tone', 'unknown')}
 - Macro regime: {sources.get('macro', {}).get('ai_regime', 'unknown')}
@@ -417,6 +670,67 @@ def _build_article_prompt(
 - News sentiment: {sources.get('news', {}).get('overall_sentiment', 'neutral')}
 """
 
+    # Earnings context
+    earnings = sources.get("earnings", {})
+    beats = earnings.get("beats_count", 0)
+    misses = earnings.get("misses_count", 0)
+    earnings_movers = [e.get("symbol", "") for e in earnings.get("top_movers", [])[:3]]
+    context_section += f"- Earnings: {beats} beats / {misses} misses, movers: {', '.join(earnings_movers) or 'none'}\n"
+
+    # Technical signals context (NEW)
+    signals = sources.get("signals", {})
+    sig_summary = signals.get("signal_summary", {})
+    buys = signals.get("buys", [])
+    sells = signals.get("sells", [])
+    buy_names = [b.get("industry") or b.get("symbol", "") for b in buys[:5]]
+    sell_names = [s.get("industry") or s.get("symbol", "") for s in sells[:5]]
+
+    signals_section = f"""
+TECHNICAL SIGNALS (54 ETFs across 13 periods):
+- Regime: {sig_summary.get('ai_regime', 'unknown')}
+- BUY signals: {sig_summary.get('buy_count', 0)} — {', '.join(buy_names) or 'none'}
+- SELL signals: {sig_summary.get('sell_count', 0)} — {', '.join(sell_names) or 'none'}
+- HOLD signals: {sig_summary.get('hold_count', 0)}
+- Total individual signals: {sig_summary.get('total_signals', 0)}
+"""
+
+    # Industry returns context (NEW)
+    ir = sources.get("industry_returns", {})
+    leaders_1d = ir.get("leaders", {}).get("1d", [])
+    laggards_1d = ir.get("leaders", {}).get("1d", [])  # Will use laggards below
+    leaders_1m = ir.get("leaders", {}).get("1m", [])
+    leaders_1y = ir.get("leaders", {}).get("1y", [])
+    laggards_1m = ir.get("laggards", {}).get("1m", [])
+    laggards_1y = ir.get("laggards", {}).get("1y", [])
+
+    industry_section = f"""
+INDUSTRY RETURNS (54 ETFs, {len(ir.get('periods_available', []))} periods available):
+- Today's leaders: {', '.join(f"{l.get('industry', '?')} ({l.get('return', 0):+.1f}%)" for l in leaders_1d[:3]) or 'n/a'}
+- 1-month leaders: {', '.join(f"{l.get('industry', '?')} ({l.get('return', 0):+.1f}%)" for l in leaders_1m[:3]) or 'n/a'}
+- 1-year leaders: {', '.join(f"{l.get('industry', '?')} ({l.get('return', 0):+.1f}%)" for l in leaders_1y[:3]) or 'n/a'}
+- 1-month laggards: {', '.join(f"{l.get('industry', '?')} ({l.get('return', 0):+.1f}%)" for l in laggards_1m[:3]) or 'n/a'}
+- 1-year laggards: {', '.join(f"{l.get('industry', '?')} ({l.get('return', 0):+.1f}%)" for l in laggards_1y[:3]) or 'n/a'}
+"""
+
+    # Market summary context (NEW)
+    ms = sources.get("market_summary", {})
+    ms_trend = ms.get("trend", "Stable")
+    ms_avg = ms.get("avg_sentiment_score", 0)
+    ms_bullish = ms.get("top_bullish_today", [])
+    ms_bearish = ms.get("top_bearish_today", [])
+    bullish_names = [b.get("symbol", str(b)) if isinstance(b, dict) else str(b) for b in ms_bullish[:3]]
+    bearish_names = [b.get("symbol", str(b)) if isinstance(b, dict) else str(b) for b in ms_bearish[:3]]
+
+    summary_section = f"""
+MARKET SUMMARY (7-day lookback):
+- Trend: {ms_trend}
+- Avg sentiment score: {ms_avg:+.1f}
+- Today's bullish names: {', '.join(bullish_names) or 'none'}
+- Today's bearish names: {', '.join(bearish_names) or 'none'}
+- Days analyzed: {ms.get('days_analyzed', 0)}
+"""
+
+    # News articles
     news_section = ""
     if news_articles:
         news_section = "\nRELEVANT NEWS:\n"
@@ -429,23 +743,32 @@ def _build_article_prompt(
 
 DATE: {date.today()}
 
-CORRELATION FOCUS:
+═══ CORRELATION FOCUS (strongest patterns detected) ═══
 {focus_section}
 
-SUPPORTING MARKET CONTEXT:
+═══ FUNDAMENTAL DATA ═══
 {context_section}
+═══ TECHNICAL SIGNALS ═══
+{signals_section}
+═══ INDUSTRY PERFORMANCE ═══
+{industry_section}
+═══ 7-DAY MARKET TREND ═══
+{summary_section}
 {news_section}
 
 INSTRUCTIONS:
-1. Open with the most striking correlation or divergence as a hook.
-2. Explain what each data source is showing independently, then what they reveal together.
-3. Weave in the news articles naturally as supporting evidence or counterpoints.
-4. For divergences: explain what could resolve the disagreement and what to watch for.
-5. For agreements: explain whether this confirmation strengthens the case or is already priced in.
-6. End with 2-3 specific things to watch tomorrow.
-7. Tone: authoritative but accessible. No jargon without explanation.
-8. Use short paragraphs. Subheadings welcome for 600+ word pieces.
-9. Do NOT mention "Gemini", "Finnhub", "GCP", or internal tool names."""
+1. Open with the most striking correlation or divergence as a hook — the kind of insight that requires seeing multiple data sources at once.
+2. Explain what each data source is showing independently, then what they reveal together. Cross-reference technical signals with industry returns and fundamental data.
+3. When technical signals agree with industry returns AND macro regime → emphasize high-conviction setup.
+4. When technical signals DIVERGE from fundamentals or news → explain the contrarian opportunity or warning.
+5. Use the 7-day trend to provide context: is today confirming or breaking the weekly pattern?
+6. Weave in the news articles naturally as supporting evidence or counterpoints.
+7. For divergences: explain what could resolve the disagreement and what to watch for.
+8. For agreements: explain whether this confirmation strengthens the case or is already priced in.
+9. End with 2-3 specific things to watch tomorrow, grounded in which correlations need resolution.
+10. Tone: authoritative but accessible. No jargon without explanation.
+11. Use short paragraphs. Subheadings welcome for 600+ word pieces.
+12. Do NOT mention "Gemini", "Finnhub", "GCP", "Firestore", or internal tool names."""
 
 
 async def _call_gemini(prompt: str) -> str:
@@ -498,14 +821,27 @@ async def get_correlation_article() -> dict:
             return {**stale, "stale": True, "stale_date": str(yesterday)}
         raise RuntimeError(f"Insufficient data sources ({len(sources)} < 3)")
 
-    # Compute correlations
+    # Compute correlations across all 20 pairs
     all_pairs = _compute_all_correlations(sources)
 
-    # Select focus pairs (top 2-3 by absolute score, prefer divergence)
-    sorted_pairs = sorted(all_pairs, key=lambda p: (abs(p.score), -1 if p.signal == "divergence" else 0), reverse=True)
-    focus_pairs = sorted_pairs[:3]
+    # Select focus pairs: top 3-5 by absolute score, prefer divergence, prefer new sources
+    sorted_pairs = sorted(
+        all_pairs,
+        key=lambda p: (
+            abs(p.score),
+            -1 if p.signal == "divergence" else 0,
+            # Bonus for pairs involving new sources (richer article)
+            1 if any(s in p.pair_id for s in ("signals", "industry", "trend", "summary")) else 0,
+        ),
+        reverse=True,
+    )
+    focus_pairs = sorted_pairs[:5]
 
-    logger.info("correlation_article: selected %d focus pairs", len(focus_pairs))
+    logger.info(
+        "correlation_article: selected %d focus pairs from %d total: %s",
+        len(focus_pairs), len(all_pairs),
+        [p.pair_id for p in focus_pairs],
+    )
 
     # Search for news
     news_articles = await _search_relevant_news(focus_pairs)
@@ -536,10 +872,17 @@ async def get_correlation_article() -> dict:
         "sources_used": list(sources.keys()),
         "news_articles": news_articles,
         "correlation_snapshot": {
+            "total_pairs": len(all_pairs),
             "agreements": sum(1 for p in all_pairs if p.signal == "agreement"),
             "divergences": sum(1 for p in all_pairs if p.signal == "divergence"),
             "neutral": sum(1 for p in all_pairs if p.signal == "neutral"),
         },
+        "signals_regime": sources.get("signals", {}).get("signal_summary", {}).get("ai_regime"),
+        "industry_leaders_1m": [
+            l.get("industry") for l in
+            sources.get("industry_returns", {}).get("leaders", {}).get("1m", [])[:3]
+        ],
+        "market_trend_7d": sources.get("market_summary", {}).get("trend"),
     }
 
     # Cache until midnight UTC
@@ -556,9 +899,16 @@ def _generate_title_from_pairs(pairs: list[CorrelationResult]) -> str:
         return "Market Patterns Across Data Sources"
 
     primary = pairs[0]
+    divergence_count = sum(1 for p in pairs if p.signal == "divergence")
+    agreement_count = sum(1 for p in pairs if p.signal == "agreement")
+
+    # Richer titles for multi-source articles
+    if divergence_count >= 3:
+        return "Markets at a Crossroads: Signals and Fundamentals Pull Apart"
+    if agreement_count >= 3:
+        return "Consensus Building: Technical Signals Confirm the Fundamental Story"
     if primary.signal == "divergence":
-        return f"When {primary.source_a.title()} Says No But {primary.source_b.title()} Says Yes"
-    elif primary.signal == "agreement":
-        return f"{primary.source_a.title()} and {primary.source_b.title()} Align"
-    else:
-        return f"Patterns in {primary.source_a.title()} and {primary.source_b.title()}"
+        return f"Divergence Alert: {primary.source_a.replace('-', ' ').title()} vs {primary.source_b.replace('-', ' ').title()}"
+    if primary.signal == "agreement":
+        return f"{primary.source_a.replace('-', ' ').title()} and {primary.source_b.replace('-', ' ').title()} Align"
+    return f"Mixed Signals: What {len(pairs)} Data Sources Reveal Today"
