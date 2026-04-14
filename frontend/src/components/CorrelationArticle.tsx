@@ -80,6 +80,19 @@ export function CorrelationArticle({ data }: { data: CorrelationArticleData }) {
         </div>
       </div>
 
+      {/* Breadth methodology note */}
+      <div className="p-3 rounded-lg border border-amber-800/30 bg-amber-950/10">
+        <p className="text-xs text-amber-400/80">
+          <span className="font-semibold">Breadth note (pairs 3, 7, 9, 12):</span>{" "}
+          These pairs use <em>screener breadth</em> — the percentage of buy vs sell signals across a 44-stock
+          large-cap watchlist (tech-heavy: NVDA, AAPL, MSFT, GOOGL, etc.). This is{" "}
+          <em>not</em> the same as the 54-ETF universe used by all other pairs. A day where only mega-cap tech
+          rallies can show positive screener breadth while the majority of industry ETFs are negative.
+          The breadth signal is also binarised (positive → +1, negative → −1), so a razor-thin reading
+          scores identically to a strong broad rally.
+        </p>
+      </div>
+
       {/* Focus pairs */}
       <div className="space-y-2">
         <div className="text-xs font-semibold text-blue-400 uppercase tracking-wide">Focus Correlations</div>

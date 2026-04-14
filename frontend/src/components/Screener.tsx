@@ -49,19 +49,19 @@ const SOURCE_BADGE: Record<string, string> = {
 function QuoteRow({ q, rank }: { q: Quote; rank: number }) {
   return (
     <tr className="border-t border-gray-800/60 hover:bg-gray-900/40">
-      <td className="px-3 py-2 text-gray-600 text-xs">{rank}</td>
-      <td className="px-3 py-2 font-mono text-blue-400 font-semibold">{q.symbol}</td>
-      <td className="px-3 py-2 text-right text-gray-300">${q.price?.toFixed(2)}</td>
-      <td className="px-3 py-2 text-right text-gray-500 text-xs font-mono">
+      <td className="px-2 py-2 text-gray-600 text-xs">{rank}</td>
+      <td className="px-2 py-2 font-mono text-blue-400 font-semibold">{q.symbol}</td>
+      <td className="px-2 py-2 text-right text-gray-300">${q.price?.toFixed(2)}</td>
+      <td className="px-2 py-2 text-right text-gray-500 text-xs font-mono hidden sm:table-cell">
         {q.high !== undefined && q.low !== undefined ? `${q.low.toFixed(2)}–${q.high.toFixed(2)}` : "—"}
       </td>
-      <td className="px-3 py-2 text-right"><Pct v={q.change_pct} /></td>
-      <td className="px-3 py-2 text-center">
-        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SIGNAL_BADGE[q.signal] ?? SIGNAL_BADGE.hold}`}>
+      <td className="px-2 py-2 text-right"><Pct v={q.change_pct} /></td>
+      <td className="px-2 py-2 text-center">
+        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${SIGNAL_BADGE[q.signal] ?? SIGNAL_BADGE.hold}`}>
           {q.signal?.replace("_", " ")}
         </span>
       </td>
-      <td className="px-3 py-2 text-center">
+      <td className="px-2 py-2 text-center hidden sm:table-cell">
         <span className={`text-xs font-mono ${SOURCE_BADGE[q.source ?? ""] ?? "text-gray-600"}`} title={q.source === "yfinance" ? "Prior-close fallback — Finnhub unavailable for this symbol" : "Real-time intraday quote"}>
           {q.source ?? "—"}
         </span>
@@ -149,6 +149,14 @@ export function Screener({ data }: { data: ScreenerData }) {
           <span className={`text-sm font-semibold ${breadthColor}`}>Breadth {data.breadth_pct > 0 ? "+" : ""}{data.breadth_pct}%</span>
         </div>
         <p className="text-sm text-gray-300">{data.ai_regime}</p>
+        <p className="text-xs text-gray-500 mt-2">
+          Breadth = (buy signals − sell signals) ÷ {data.total_screened} stocks screened, expressed as a percentage.
+          Universe: {data.total_screened} hand-picked large-cap stocks (tech-heavy). This is{" "}
+          <em>watchlist breadth</em>, not market-wide breadth — small- and mid-cap moves are not captured.
+          Signals use intraday momentum thresholds: strong buy (&gt;3% + top of range), buy (&gt;1.5% or &gt;0.5% near highs),
+          sell (&lt;−1.5% or &lt;−0.5% near lows), strong sell (&lt;−3% + bottom of range).
+          Position-in-range = (price − day low) ÷ (day high − day low) and is most reliable late in the session.
+        </p>
       </div>
 
       {/* Signal counts */}
@@ -177,28 +185,28 @@ export function Screener({ data }: { data: ScreenerData }) {
       )}
 
       {/* Table */}
-      <div className="rounded-xl border border-gray-800 overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="rounded-xl border border-gray-800 overflow-x-auto">
+        <table className="w-full text-sm min-w-[480px]">
           <thead className="bg-gray-900 sticky top-0">
             <tr>
-              <th className="text-left px-3 py-2 text-gray-500 font-medium w-8">#</th>
+              <th className="text-left px-2 py-2 text-gray-500 font-medium w-7">#</th>
               {view === "all" ? (
                 <>
                   <SortHeader label="Symbol" sortKey="symbol" current={sortKey} dir={sortDir} onClick={handleSort} align="left" />
                   <SortHeader label="Price" sortKey="price" current={sortKey} dir={sortDir} onClick={handleSort} />
-                  <th className="text-right px-3 py-2 text-gray-400 font-medium">Low–High</th>
+                  <th className="text-right px-2 py-2 text-gray-400 font-medium hidden sm:table-cell">Low–High</th>
                   <SortHeader label="Chg %" sortKey="change_pct" current={sortKey} dir={sortDir} onClick={handleSort} />
                   <SortHeader label="Signal" sortKey="signal" current={sortKey} dir={sortDir} onClick={handleSort} align="center" />
-                  <th className="text-center px-3 py-2 text-gray-400 font-medium">Source</th>
+                  <th className="text-center px-2 py-2 text-gray-400 font-medium hidden sm:table-cell">Src</th>
                 </>
               ) : (
                 <>
-                  <th className="text-left px-3 py-2 text-gray-400 font-medium">Symbol</th>
-                  <th className="text-right px-3 py-2 text-gray-400 font-medium">Price</th>
-                  <th className="text-right px-3 py-2 text-gray-400 font-medium">Low–High</th>
-                  <th className="text-right px-3 py-2 text-gray-400 font-medium">Chg %</th>
-                  <th className="text-center px-3 py-2 text-gray-400 font-medium">Signal</th>
-                  <th className="text-center px-3 py-2 text-gray-400 font-medium">Source</th>
+                  <th className="text-left px-2 py-2 text-gray-400 font-medium">Symbol</th>
+                  <th className="text-right px-2 py-2 text-gray-400 font-medium">Price</th>
+                  <th className="text-right px-2 py-2 text-gray-400 font-medium hidden sm:table-cell">Low–High</th>
+                  <th className="text-right px-2 py-2 text-gray-400 font-medium">Chg %</th>
+                  <th className="text-center px-2 py-2 text-gray-400 font-medium">Signal</th>
+                  <th className="text-center px-2 py-2 text-gray-400 font-medium hidden sm:table-cell">Src</th>
                 </>
               )}
             </tr>
