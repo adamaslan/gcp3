@@ -15,18 +15,18 @@ const NAV_LINKS = [
 export function NavBar() {
   const pathname = usePathname();
   return (
-    <nav className="border-b border-gray-800 px-6 py-2 flex items-center gap-1 overflow-x-auto">
-      <Link href="/" className="font-bold text-white mr-4 shrink-0 text-sm">Nuwrrrld</Link>
+    <nav className="border-b border-gray-800 px-4 sm:px-6 py-0 flex items-center gap-0.5 overflow-x-auto scrollbar-none">
+      <Link href="/" className="font-bold text-white mr-3 shrink-0 text-sm py-3">Nuwrrrld</Link>
       {NAV_LINKS.map(({ href, label }) => {
         const active = pathname === href;
         return (
           <Link
             key={href}
             href={href}
-            className={`px-3 py-1.5 text-sm rounded-md transition-colors shrink-0 whitespace-nowrap ${
+            className={`px-3 py-3 text-sm rounded-md transition-colors shrink-0 whitespace-nowrap min-h-[44px] flex items-center ${
               active
-                ? "bg-gray-700 text-white"
-                : "text-gray-400 hover:text-white hover:bg-gray-800"
+                ? "text-white border-b-2 border-blue-500"
+                : "text-gray-400 hover:text-white"
             }`}
           >
             {label}

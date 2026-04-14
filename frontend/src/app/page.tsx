@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CorrelationArticle } from "@/components/CorrelationArticle";
 
 const TOOLS = [
   {
@@ -59,7 +60,21 @@ const TOOLS = [
   },
 ];
 
-export default function Home() {
+async function getCorrelation() {
+  const base = process.env.BACKEND_URL;
+  if (!base) return null;
+  try {
+    const res = await fetch(`${base}/content`, { next: { revalidate: 14400 } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.correlation && !data.correlation.error ? data.correlation : null;
+  } catch {
+    return null;
+  }
+}
+
+export default async function Home() {
+  const correlation = await getCorrelation();
   return (
     <div className="space-y-8">
       <div>
@@ -67,12 +82,12 @@ export default function Home() {
         <p className="mt-2 text-gray-400">{TOOLS.length} free real-time market intelligence tools powered by Finnhub, Gemini AI, and GCP.</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         {TOOLS.map((tool) => (
           <Link
             key={tool.href}
             href={tool.href}
-            className={`block p-6 rounded-xl border border-gray-800 ${tool.accent} transition-colors`}
+            className={`block p-4 sm:p-6 rounded-xl border border-gray-800 ${tool.accent} transition-colors`}
           >
             <div className="flex items-start justify-between mb-2">
               <h2 className="text-base font-semibold text-white">{tool.title}</h2>
@@ -86,6 +101,13 @@ export default function Home() {
           </Link>
         ))}
       </div>
+
+      {correlation && (
+        <div className="border-t border-gray-800 pt-8">
+          <h2 className="text-lg font-semibold text-white mb-4">Correlation Article</h2>
+          <CorrelationArticle data={correlation} />
+        </div>
+      )}
 
       <div className="border-t border-gray-800 pt-6 flex flex-wrap items-center gap-4 text-xs text-gray-600">
         <span>{TOOLS.length} endpoints</span>

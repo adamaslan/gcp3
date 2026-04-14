@@ -131,8 +131,8 @@ export function TechnicalSignals({ data }: { data: TechnicalSignalsData }) {
       </div>
 
       {/* Regime + counts */}
-      <div className="grid grid-cols-4 gap-3">
-        <div className="p-4 rounded-xl border border-gray-800 text-center col-span-1">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="p-4 rounded-xl border border-gray-800 text-center col-span-2 sm:col-span-1">
           <div className={`text-xl font-bold ${regimeColor}`}>{ss.ai_regime}</div>
           <div className="text-xs text-gray-600 mt-1">AI Regime</div>
         </div>
@@ -151,12 +151,12 @@ export function TechnicalSignals({ data }: { data: TechnicalSignalsData }) {
       </div>
 
       {/* View toggle */}
-      <div className="flex gap-1 bg-gray-900 rounded-lg p-1 w-fit">
+      <div className="flex gap-1 bg-gray-900 rounded-lg p-1 w-full sm:w-fit">
         {(["all", "buys", "sells", "holds"] as const).map((v) => (
           <button
             key={v}
             onClick={() => setView(v)}
-            className={`px-3 py-1.5 text-sm rounded-md transition-colors capitalize ${
+            className={`flex-1 sm:flex-none px-3 py-1.5 text-sm rounded-md transition-colors capitalize text-center ${
               view === v ? "bg-gray-700 text-white" : "text-gray-400 hover:text-white"
             }`}
           >

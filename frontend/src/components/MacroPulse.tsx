@@ -82,16 +82,16 @@ export function MacroPulse({ data }: { data: MacroData }) {
 
       {/* Regime card */}
       <div className={`p-5 rounded-xl border ${regimeStyle}`}>
-        <div className="flex items-center gap-4 mb-3">
+        <div className="flex flex-wrap items-center gap-3 mb-3">
           <span className="text-xl font-bold">{data.ai_regime}</span>
-          <div className="flex items-center gap-2">
-            <div className="w-24 h-2 bg-gray-800 rounded-full overflow-hidden">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-20 h-2 bg-gray-800 rounded-full overflow-hidden shrink-0">
               <div
                 className={`h-full rounded-full ${data.ai_regime_score > 0 ? "bg-green-500" : "bg-red-500"}`}
                 style={{ width: `${scoreWidth}%` }}
               />
             </div>
-            <span className="text-xs text-gray-400">score: {data.ai_regime_score > 0 ? "+" : ""}{data.ai_regime_score}</span>
+            <span className="text-xs text-gray-400 whitespace-nowrap">score: {data.ai_regime_score > 0 ? "+" : ""}{data.ai_regime_score}</span>
           </div>
         </div>
         <p className="text-sm opacity-90 mb-3">{data.ai_summary}</p>

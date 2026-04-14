@@ -79,7 +79,7 @@ function SortHeader({
   const active = current === sortKey;
   return (
     <th
-      className={`px-4 py-2 font-medium cursor-pointer select-none hover:text-white ${className ?? ""} ${active ? "text-white" : "text-gray-400"}`}
+      className={`px-2 py-2 font-medium cursor-pointer select-none hover:text-white ${className ?? ""} ${active ? "text-white" : "text-gray-400"}`}
       onClick={() => onClick(sortKey)}
     >
       {label}{active ? (dir === "desc" ? " ▼" : " ▲") : ""}
@@ -151,19 +151,19 @@ function IndustryTable({
       <table className="w-full text-sm">
         <thead className="bg-gray-900 sticky top-0 z-10">
           <tr>
-            <th className="text-left px-4 py-2 text-gray-500 font-medium w-8">#</th>
+            <th className="text-left px-2 py-2 text-gray-500 font-medium w-7">#</th>
             <SortHeader label="Industry" sortKey="industry" current={sortKey} dir={sortDir} onClick={handleSort} className="text-left" />
-            <th className="text-left px-4 py-2 text-gray-400 font-medium">ETF</th>
+            <th className="text-left px-2 py-2 text-gray-400 font-medium">ETF</th>
             {!hasReturns && (
               <>
                 <SortHeader label="Price" sortKey="price" current={sortKey} dir={sortDir} onClick={handleSort} className="text-right" />
-                <SortHeader label="Chg $" sortKey="change" current={sortKey} dir={sortDir} onClick={handleSort} className="text-right" />
+                <SortHeader label="Chg $" sortKey="change" current={sortKey} dir={sortDir} onClick={handleSort} className="text-right hidden sm:table-cell" />
                 <SortHeader label="Chg %" sortKey="change_pct" current={sortKey} dir={sortDir} onClick={handleSort} className="text-right" />
               </>
             )}
-            {enriched && <th className="text-right px-4 py-2 text-gray-400 font-medium text-xs" title="1-month cumulative return (Alpha Vantage)">1M Return</th>}
-            {enriched && <th className="text-right px-4 py-2 text-gray-400 font-medium text-xs" title="Mean daily return (Alpha Vantage)">Avg/Day</th>}
-            {enriched && <th className="text-right px-4 py-2 text-gray-400 font-medium text-xs" title="Daily return standard deviation — higher = more volatile (Alpha Vantage)">Vol</th>}
+            {enriched && <th className="text-right px-2 py-2 text-gray-400 font-medium text-xs" title="1-month cumulative return (Alpha Vantage)">1M Return</th>}
+            {enriched && <th className="text-right px-2 py-2 text-gray-400 font-medium text-xs" title="Mean daily return (Alpha Vantage)">Avg/Day</th>}
+            {enriched && <th className="text-right px-2 py-2 text-gray-400 font-medium text-xs" title="Daily return standard deviation — higher = more volatile (Alpha Vantage)">Vol</th>}
             {hasReturns && periodsToShow.map((p) => (
               <SortHeader key={p} label={RETURN_PERIOD_LABELS[p]} sortKey={p} current={sortKey} dir={sortDir} onClick={handleSort} className="text-right text-blue-300 text-sm font-semibold" />
             ))}
@@ -181,48 +181,48 @@ function IndustryTable({
             const r = sorted[vr.index];
             return (
               <tr key={r.industry} className="border-t border-gray-800/60 hover:bg-gray-900/40">
-                <td className="px-4 py-2 text-gray-600 text-xs">{startRank + vr.index}</td>
-                <td className="px-4 py-2 text-gray-200 font-medium">{r.industry}</td>
-                <td className="px-4 py-2 text-blue-400 font-mono text-xs">{r.etf}</td>
+                <td className="px-2 py-2 text-gray-600 text-xs">{startRank + vr.index}</td>
+                <td className="px-2 py-2 text-gray-200 font-medium text-sm">{r.industry}</td>
+                <td className="px-2 py-2 text-blue-400 font-mono text-xs">{r.etf}</td>
                 {!hasReturns && (
                   <>
-                    <td className="px-4 py-2 text-right text-gray-300">
+                    <td className="px-2 py-2 text-right text-gray-300">
                       {r.error ? <span className="text-red-500 text-xs">err</span> : `$${r.price?.toFixed(2) ?? "—"}`}
                     </td>
-                    <td className="px-4 py-2 text-right"><Dollar v={r.change} /></td>
-                    <td className="px-4 py-2 text-right"><Pct v={r.change_pct} /></td>
+                    <td className="px-2 py-2 text-right hidden sm:table-cell"><Dollar v={r.change} /></td>
+                    <td className="px-2 py-2 text-right"><Pct v={r.change_pct} /></td>
                   </>
                 )}
                 {enriched && (
-                  <td className="px-4 py-2 text-right text-xs">
+                  <td className="px-2 py-2 text-right text-xs">
                     {r.return_1m !== undefined
                       ? <Pct v={r.return_1m * 100} />
                       : <span className="text-gray-600 text-xs">—</span>}
                   </td>
                 )}
                 {enriched && (
-                  <td className="px-4 py-2 text-right text-xs">
+                  <td className="px-2 py-2 text-right text-xs">
                     {r.mean_daily_return !== undefined
                       ? <Pct v={r.mean_daily_return * 100} />
                       : <span className="text-gray-600 text-xs">—</span>}
                   </td>
                 )}
                 {enriched && (
-                  <td className="px-4 py-2 text-right text-gray-400 text-xs font-mono">
+                  <td className="px-2 py-2 text-right text-gray-400 text-xs font-mono">
                     {r.stddev_daily !== undefined ? (r.stddev_daily * 100).toFixed(3) + "%" : <span className="text-gray-600">—</span>}
                   </td>
                 )}
                 {hasReturns && periodsToShow.map((p) => (
-                  <td key={p} className="px-4 py-2 text-right text-sm font-mono">
+                  <td key={p} className="px-2 py-2 text-right text-sm font-mono">
                     <ReturnCell v={r.returns?.[p]} />
                   </td>
                 ))}
                 {!hasReturns && (
                   <>
-                    <td className="px-4 py-2 text-right text-xs font-mono text-amber-400">
+                    <td className="px-2 py-2 text-right text-xs font-mono text-amber-400">
                       {r["52w_high"] != null ? `$${r["52w_high"].toFixed(2)}` : <span className="text-gray-700">—</span>}
                     </td>
-                    <td className="px-4 py-2 text-right text-xs font-mono text-amber-600">
+                    <td className="px-2 py-2 text-right text-xs font-mono text-amber-600">
                       {r["52w_low"] != null ? `$${r["52w_low"].toFixed(2)}` : <span className="text-gray-700">—</span>}
                     </td>
                   </>
