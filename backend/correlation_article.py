@@ -252,8 +252,8 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
     # Pair 7: earnings vs screener
     if "earnings" in sources and "screener" in sources:
         earnings_data = sources["earnings"]
-        beats = earnings_data.get("beats_count", 0)
-        misses = earnings_data.get("misses_count", 0)
+        beats = len(earnings_data.get("beats", []))
+        misses = len(earnings_data.get("misses", []))
         breadth = sources["screener"].get("breadth_pct", 0)
 
         earnings_signal = 1.0 if beats > misses else (-1.0 if misses > beats else 0.0)
@@ -275,7 +275,8 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
 
     # Pair 8: earnings vs news
     if "earnings" in sources and "news" in sources:
-        earnings_movers = sources["earnings"].get("top_movers", [])
+        earnings_data = sources["earnings"]
+        earnings_movers = earnings_data.get("beats", []) + earnings_data.get("misses", [])
         news_movers = sources["news"].get("top_movers", [])
 
         earnings_symbols = set(e.get("symbol", "") for e in earnings_movers)
@@ -423,7 +424,7 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
         leaders_1y_names = set(l.get("industry", "").lower() for l in leaders_1y[:5])
 
         overlap = len(leaders_1d_names & leaders_1y_names)
-        score = _normalize_signal(overlap, 0, 5)
+        score = _normalize_signal(overlap, 0, max(len(leaders_1d_names), len(leaders_1y_names), 1))
         signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.3 else "neutral")
 
         top_1d = [l.get("industry") for l in leaders_1d[:3]]
@@ -512,7 +513,11 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
     if "signals" in sources and "earnings" in sources:
         buy_symbols = set(b.get("symbol", "") for b in sources["signals"].get("buys", []))
         sell_symbols = set(s.get("symbol", "") for s in sources["signals"].get("sells", []))
-        earnings_movers = set(e.get("symbol", "") for e in sources["earnings"].get("top_movers", []))
+        earnings_data = sources["earnings"]
+        earnings_movers = set(
+            e.get("symbol", "")
+            for e in earnings_data.get("beats", []) + earnings_data.get("misses", [])
+        )
 
         buys_with_earnings = len(buy_symbols & earnings_movers)
         sells_with_earnings = len(sell_symbols & earnings_movers)
@@ -672,9 +677,11 @@ def _build_article_prompt(
 
     # Earnings context
     earnings = sources.get("earnings", {})
-    beats = earnings.get("beats_count", 0)
-    misses = earnings.get("misses_count", 0)
-    earnings_movers = [e.get("symbol", "") for e in earnings.get("top_movers", [])[:3]]
+    beats_list = earnings.get("beats", [])
+    misses_list = earnings.get("misses", [])
+    beats = len(beats_list)
+    misses = len(misses_list)
+    earnings_movers = [e.get("symbol", "") for e in (beats_list + misses_list)[:3]]
     context_section += f"- Earnings: {beats} beats / {misses} misses, movers: {', '.join(earnings_movers) or 'none'}\n"
 
     # Technical signals context (NEW)
@@ -697,7 +704,7 @@ TECHNICAL SIGNALS (54 ETFs across 13 periods):
     # Industry returns context (NEW)
     ir = sources.get("industry_returns", {})
     leaders_1d = ir.get("leaders", {}).get("1d", [])
-    laggards_1d = ir.get("leaders", {}).get("1d", [])  # Will use laggards below
+    laggards_1d = ir.get("laggards", {}).get("1d", [])
     leaders_1m = ir.get("leaders", {}).get("1m", [])
     leaders_1y = ir.get("leaders", {}).get("1y", [])
     laggards_1m = ir.get("laggards", {}).get("1m", [])
@@ -706,6 +713,7 @@ TECHNICAL SIGNALS (54 ETFs across 13 periods):
     industry_section = f"""
 INDUSTRY RETURNS (54 ETFs, {len(ir.get('periods_available', []))} periods available):
 - Today's leaders: {', '.join(f"{l.get('industry', '?')} ({l.get('return', 0):+.1f}%)" for l in leaders_1d[:3]) or 'n/a'}
+- Today's laggards: {', '.join(f"{l.get('industry', '?')} ({l.get('return', 0):+.1f}%)" for l in laggards_1d[:3]) or 'n/a'}
 - 1-month leaders: {', '.join(f"{l.get('industry', '?')} ({l.get('return', 0):+.1f}%)" for l in leaders_1m[:3]) or 'n/a'}
 - 1-year leaders: {', '.join(f"{l.get('industry', '?')} ({l.get('return', 0):+.1f}%)" for l in leaders_1y[:3]) or 'n/a'}
 - 1-month laggards: {', '.join(f"{l.get('industry', '?')} ({l.get('return', 0):+.1f}%)" for l in laggards_1m[:3]) or 'n/a'}
