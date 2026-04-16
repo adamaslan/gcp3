@@ -957,7 +957,7 @@ async def _generate_title_and_slug(
             if ":" in line
         }
         title = lines.get("TITLE", "").strip()
-        slug = lines.get("SLUG", "").strip().lower().replace(" ", "-")
+        slug = lines.get("SLUG", "").strip().strip("\"'").lower().replace(" ", "-")
         # Validate: non-empty, reasonable length
         if title and slug and len(title) <= 120 and len(slug) <= 80:
             logger.info("correlation_article: Gemini title=%s slug=%s", title, slug)

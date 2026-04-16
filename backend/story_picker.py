@@ -7,10 +7,7 @@ and generates a focused 300-word article grounded entirely in that one relations
 Complements daily_correlation (5-pair overview) — this article goes deep on one story.
 """
 import logging
-import os
 from datetime import date, datetime, timedelta, timezone
-
-import httpx
 
 from correlation_article import (
     CorrelationResult,
@@ -106,8 +103,8 @@ _SOURCE_KEY_MAP = {
 
 def _build_story_prompt(pair: CorrelationResult, sources: dict) -> str:
     """Build the Gemini prompt for the Story Picker article."""
-    source_a_key = _SOURCE_KEY_MAP.get(pair.source_a, pair.source_a.replace("-", "_"))
-    source_b_key = _SOURCE_KEY_MAP.get(pair.source_b, pair.source_b.replace("-", "_"))
+    source_a_key = next((v for k, v in _SOURCE_KEY_MAP.items() if pair.source_a.startswith(k)), pair.source_a.replace("-", "_"))
+    source_b_key = next((v for k, v in _SOURCE_KEY_MAP.items() if pair.source_b.startswith(k)), pair.source_b.replace("-", "_"))
 
     source_a_summary = _source_summary(source_a_key, sources)
     source_b_summary = _source_summary(source_b_key, sources)
