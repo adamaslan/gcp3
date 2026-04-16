@@ -5,7 +5,8 @@ from datetime import date
 
 import httpx
 
-from data_client import finnhub_get, get_cache, set_cache
+from data_client import finnhub_get
+from firestore import get_cache, set_cache
 
 logger = logging.getLogger(__name__)
 

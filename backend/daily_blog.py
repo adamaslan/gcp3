@@ -153,11 +153,11 @@ async def _call_gemini(prompt: str) -> str:
 
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.0-flash:generateContent?key={api_key}"
+        "gemini-2.0-flash:generateContent"
     )
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     async with httpx.AsyncClient(timeout=45) as client:
-        resp = await client.post(url, json=payload)
+        resp = await client.post(url, json=payload, headers={"x-goog-api-key": api_key})
         resp.raise_for_status()
         return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
 
