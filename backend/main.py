@@ -55,7 +55,8 @@ async def timed_stage(name: str, stages: dict, completed: list, failed: list):
         failed.append(name)
 
 
-app = FastAPI(title="GCP3 Finance API", version="2.0.0")
+APP_VERSION = "2.1.0"
+app = FastAPI(title="GCP3 Finance API", version=APP_VERSION)
 
 app.add_middleware(
     CORSMiddleware,
@@ -68,7 +69,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "version": "2.1.0", "tools": 12}
+    return {"status": "ok", "version": APP_VERSION, "tools": 12}
 
 
 @app.get("/debug/status")
@@ -372,16 +373,21 @@ async def refresh_premarket(request: Request) -> dict:
 
     # Lightweight endpoints only — no heavy computation
     t0 = time.perf_counter()
-    try:
-        await asyncio.gather(
-            get_morning_brief(),
-            get_news_sentiment(),
-            get_macro_pulse(),
-        )
-        stages["lightweight_data"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
-    except Exception as exc:
-        logger.warning("refresh/premarket error: %s", exc)
-        stages["lightweight_data"] = {"status": "error", "detail": str(exc)}
+    pm_names = ["morning_brief", "news_sentiment", "macro_pulse"]
+    pm_results = await asyncio.gather(
+        get_morning_brief(),
+        get_news_sentiment(),
+        get_macro_pulse(),
+        return_exceptions=True,
+    )
+    pm_errors = [f"{n}: {r}" for n, r in zip(pm_names, pm_results) if isinstance(r, Exception)]
+    if pm_errors:
+        logger.warning("refresh/premarket partial errors: %s", pm_errors)
+    stages["lightweight_data"] = {
+        "status": "ok" if not pm_errors else ("error" if len(pm_errors) == len(pm_names) else "partial"),
+        "ms": round((time.perf_counter() - t0) * 1000),
+        **({"errors": pm_errors} if pm_errors else {}),
+    }
 
     total_ms = round((time.perf_counter() - overall_start) * 1000)
     logger.info("POST /refresh/premarket complete total_ms=%d", total_ms)
@@ -393,9 +399,18 @@ async def refresh_premarket(request: Request) -> dict:
 
 
 # ── POST /refresh/all — Morning full warm-up (Cloud Scheduler, 9:35 AM ET) ───
+# DEPRECATED: Use /refresh/fetch (9:30 AM) + /refresh/bake (9:45 AM) instead.
+# This monolithic endpoint duplicates API calls made by the fetch/bake pipeline,
+# burning Finnhub quota and Gemini quota twice. Remove from Cloud Scheduler once
+# fetch/bake is confirmed stable. Keep endpoint callable for manual fallback only.
 @app.post("/refresh/all")
 async def refresh_all(request: Request) -> dict:
-    """Full cache warm-up in dependency order. Called by Cloud Scheduler at 9:35 AM ET Mon-Fri.
+    """Full cache warm-up in dependency order.
+
+    DEPRECATED: Prefer /refresh/fetch + /refresh/bake (checkpoint-based pipeline).
+    This endpoint doubles API usage when both pipelines run simultaneously.
+    Retained for manual fallback only — remove gcp3-ai-summary-refresh scheduler
+    job once fetch/bake pipeline is confirmed stable.
 
     Stages:
         0  Firestore readers — validate pipeline data is present (zero API cost)
@@ -406,47 +421,65 @@ async def refresh_all(request: Request) -> dict:
         5  AI synthesis — must run last; aggregates all prior warm caches
     """
     _verify_scheduler(request)
-    logger.info("POST /refresh/all started")
+    logger.warning(
+        "DEPRECATED: POST /refresh/all called — this pipeline doubles API usage vs "
+        "fetch/bake. Remove gcp3-ai-summary-refresh scheduler job to eliminate duplicate calls."
+    )
     stages: dict[str, dict] = {}
     overall_start = time.perf_counter()
 
     # Stage 0 — Firestore readers
     t0 = time.perf_counter()
-    try:
-        await asyncio.gather(
-            get_technical_signals(),
-            get_market_summary(),
-        )
-        stages["firestore_readers"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
-    except Exception as exc:
-        logger.warning("refresh/all stage 0 error: %s", exc)
-        stages["firestore_readers"] = {"status": "error", "detail": str(exc)}
+    s0_names = ["technical_signals", "market_summary"]
+    s0_results = await asyncio.gather(
+        get_technical_signals(),
+        get_market_summary(),
+        return_exceptions=True,
+    )
+    s0_errors = [f"{n}: {r}" for n, r in zip(s0_names, s0_results) if isinstance(r, Exception)]
+    if s0_errors:
+        logger.warning("refresh/all stage 0 partial errors: %s", s0_errors)
+    stages["firestore_readers"] = {
+        "status": "ok" if not s0_errors else ("error" if len(s0_errors) == len(s0_names) else "partial"),
+        "ms": round((time.perf_counter() - t0) * 1000),
+        **({"errors": s0_errors} if s0_errors else {}),
+    }
 
     # Stage 1 — Independent market data (concurrent)
     t0 = time.perf_counter()
-    try:
-        await asyncio.gather(
-            get_morning_brief(),
-            get_macro_pulse(),
-            get_earnings_radar(),
-            get_news_sentiment(),
-        )
-        stages["market_data"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
-    except Exception as exc:
-        logger.warning("refresh/all stage 1 error: %s", exc)
-        stages["market_data"] = {"status": "error", "detail": str(exc)}
+    s1_names = ["morning_brief", "macro_pulse", "earnings_radar", "news_sentiment"]
+    s1_results = await asyncio.gather(
+        get_morning_brief(),
+        get_macro_pulse(),
+        get_earnings_radar(),
+        get_news_sentiment(),
+        return_exceptions=True,
+    )
+    s1_errors = [f"{n}: {r}" for n, r in zip(s1_names, s1_results) if isinstance(r, Exception)]
+    if s1_errors:
+        logger.warning("refresh/all stage 1 partial errors: %s", s1_errors)
+    stages["market_data"] = {
+        "status": "ok" if not s1_errors else ("error" if len(s1_errors) == len(s1_names) else "partial"),
+        "ms": round((time.perf_counter() - t0) * 1000),
+        **({"errors": s1_errors} if s1_errors else {}),
+    }
 
     # Stage 2 — Sector rotation + screener (concurrent)
     t0 = time.perf_counter()
-    try:
-        await asyncio.gather(
-            get_sector_rotation(),
-            get_screener_data(),
-        )
-        stages["sector_screener"] = {"status": "ok", "ms": round((time.perf_counter() - t0) * 1000)}
-    except Exception as exc:
-        logger.warning("refresh/all stage 2 error: %s", exc)
-        stages["sector_screener"] = {"status": "error", "detail": str(exc)}
+    s2_names = ["sector_rotation", "screener"]
+    s2_results = await asyncio.gather(
+        get_sector_rotation(),
+        get_screener_data(),
+        return_exceptions=True,
+    )
+    s2_errors = [f"{n}: {r}" for n, r in zip(s2_names, s2_results) if isinstance(r, Exception)]
+    if s2_errors:
+        logger.warning("refresh/all stage 2 partial errors: %s", s2_errors)
+    stages["sector_screener"] = {
+        "status": "ok" if not s2_errors else ("error" if len(s2_errors) == len(s2_names) else "partial"),
+        "ms": round((time.perf_counter() - t0) * 1000),
+        **({"errors": s2_errors} if s2_errors else {}),
+    }
 
     # Stage 3 — Industry (isolated: 50 Finnhub + 10 Alpha Vantage batches)
     t0 = time.perf_counter()

@@ -6,7 +6,8 @@ from datetime import date
 
 import httpx
 
-from data_client import finnhub_get, get_cache, set_cache
+from data_client import finnhub_get
+from firestore import get_cache, set_cache
 
 logger = logging.getLogger(__name__)
 
@@ -80,12 +81,12 @@ async def _gemini_rotation_analysis(ranked: list[dict]) -> str:
     prompt = _build_rotation_prompt(ranked)
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.0-flash:generateContent?key={api_key}"
+        "gemini-2.0-flash:generateContent"
     )
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     try:
         async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.post(url, json=payload)
+            resp = await client.post(url, json=payload, headers={"x-goog-api-key": api_key})
             resp.raise_for_status()
             text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
             logger.info("sector_rotation: Gemini response received (%d chars)", len(text))

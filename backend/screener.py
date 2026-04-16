@@ -8,7 +8,8 @@ Data resolution chain:
 import logging
 from datetime import date
 
-from data_client import get_cache, get_quotes, set_cache
+from data_client import get_quotes
+from firestore import get_cache, set_cache
 
 logger = logging.getLogger(__name__)
 

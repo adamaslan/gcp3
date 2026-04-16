@@ -99,11 +99,11 @@ async def get_ai_summary() -> dict:
         logger.info("ai_summary: calling Gemini gemini-2.0-flash")
         url = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"gemini-2.0-flash:generateContent?key={api_key}"
+            "gemini-2.0-flash:generateContent"
         )
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(url, json=payload)
+            resp = await client.post(url, json=payload, headers={"x-goog-api-key": api_key})
             resp.raise_for_status()
             brief_text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
         logger.info("ai_summary: Gemini response received (%d chars)", len(brief_text))

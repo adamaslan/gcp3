@@ -270,29 +270,47 @@ def _yf_bulk_sync(symbols: list[str]) -> dict[str, dict]:
 
 
 # ── Alpha Vantage ─────────────────────────────────────────────────────────────
+# Rate counter is stored in Firestore so it is shared across all Cloud Run
+# instances. Without this, each of the 5 instances tracks its own counter,
+# collectively allowing 5× the daily quota (100 calls against a 25-call limit).
+# Doc key: gcp3_cache/av_call_counter:{YYYY-MM-DD}
+# Fields:  count (int), date (str), updated_at (datetime)
 
-_av_call_count: int = 0
-_av_call_date: date = date.today()
-
-
-def _av_reset_if_new_day() -> None:
-    global _av_call_count, _av_call_date
-    today = date.today()
-    if today != _av_call_date:
-        _av_call_count = 0
-        _av_call_date = today
+def _av_counter_key() -> str:
+    return f"av_call_counter:{date.today()}"
 
 
 def av_remaining_calls() -> int:
-    """How many Alpha Vantage calls remain today (soft limit: 20 of 25)."""
-    _av_reset_if_new_day()
-    return max(0, _AV_DAILY_LIMIT - _av_call_count)
+    """How many Alpha Vantage calls remain today (soft limit: 20 of 25).
+
+    Reads from Firestore to get the cross-instance count. Returns the full
+    budget if Firestore is unavailable (fail-open to avoid blocking all AV calls).
+    """
+    try:
+        doc = _fs().collection("gcp3_cache").document(_av_counter_key()).get()
+        count = doc.to_dict().get("count", 0) if doc.exists else 0
+        return max(0, _AV_DAILY_LIMIT - count)
+    except Exception as exc:
+        logger.warning("alphavantage: failed to read call counter from Firestore: %s — assuming budget available", exc)
+        return _AV_DAILY_LIMIT
 
 
 def _av_increment() -> None:
-    global _av_call_count
-    _av_reset_if_new_day()
-    _av_call_count += 1
+    """Atomically increment the cross-instance AV call counter in Firestore."""
+    try:
+        key = _av_counter_key()
+        ref = _fs().collection("gcp3_cache").document(key)
+        # Firestore atomic increment — safe under concurrent Cloud Run instances
+        ref.set(
+            {
+                "count": firestore.Increment(1),
+                "date": str(date.today()),
+                "updated_at": datetime.now(timezone.utc),
+            },
+            merge=True,
+        )
+    except Exception as exc:
+        logger.warning("alphavantage: failed to increment call counter in Firestore: %s", exc)
 
 
 async def _av_fixed_window(
