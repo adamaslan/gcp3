@@ -2,6 +2,7 @@ import Link from "next/link";
 import { DailyBlog } from "@/components/DailyBlog";
 import { BlogReview } from "@/components/BlogReview";
 import { CorrelationArticle } from "@/components/CorrelationArticle";
+import { StoryArticle } from "@/components/StoryArticle";
 
 export const revalidate = 14400;
 
@@ -25,7 +26,7 @@ export default async function ContentPage({
   const { tab } = await searchParams;
   const data = await getData();
 
-  const tabs = ["blog", "review", "correlation"] as const;
+  const tabs = ["blog", "review", "correlation", "story"] as const;
   type Tab = (typeof tabs)[number];
   const activeTab: Tab = tabs.includes(tab as Tab) ? (tab as Tab) : "blog";
 
@@ -39,6 +40,7 @@ export default async function ContentPage({
             { id: "blog", label: "Blog" },
             { id: "review", label: "Review" },
             { id: "correlation", label: "Correlations" },
+            { id: "story", label: "Story" },
           ] as { id: Tab; label: string }[]
         ).map(({ id, label }) => (
           <Link
@@ -67,6 +69,9 @@ export default async function ContentPage({
           )}
           {activeTab === "correlation" && data.correlation && !data.correlation.error && (
             <CorrelationArticle data={data.correlation} />
+          )}
+          {activeTab === "story" && data.story && !data.story.error && (
+            <StoryArticle data={data.story} />
           )}
         </>
       )}

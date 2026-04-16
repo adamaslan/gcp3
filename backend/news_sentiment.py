@@ -126,5 +126,5 @@ async def get_news_sentiment() -> dict:
         "ai_narrative": narrative,
     }
 
-    set_cache(cache_key, result, ttl_hours=1)
+    set_cache(cache_key, result, ttl_hours=8)
     return result
