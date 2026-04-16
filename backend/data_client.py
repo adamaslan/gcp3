@@ -34,7 +34,7 @@ data = await finnhub_get(client, "/news", {"category": "general"})
 
 # AV analytics batch (enrichment, not quotes)
 analytics = await av_analytics_batch(["IGV", "SOXX", ...], range_="1month")
-av_calls_left = av_remaining_calls()
+av_calls_left = await av_remaining_calls()
 """
 import asyncio
 import logging
@@ -43,6 +43,7 @@ import random
 import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
+from google.cloud.firestore import AsyncClient
 
 import httpx
 import yfinance as yf
@@ -280,15 +281,20 @@ def _av_counter_key() -> str:
     return f"av_call_counter:{date.today()}"
 
 
-def av_remaining_calls() -> int:
+async def av_remaining_calls() -> int:
     """How many Alpha Vantage calls remain today (soft limit: 20 of 25).
 
     Reads from Firestore to get the cross-instance count. Returns the full
     budget if Firestore is unavailable (fail-open to avoid blocking all AV calls).
+    Uses async Firestore client to avoid blocking the event loop.
     """
     try:
-        doc = _fs().collection("gcp3_cache").document(_av_counter_key()).get()
-        count = doc.to_dict().get("count", 0) if doc.exists else 0
+        loop = asyncio.get_event_loop()
+        # Run the synchronous Firestore call in a thread pool to avoid blocking
+        def _read_counter():
+            doc = _fs().collection("gcp3_cache").document(_av_counter_key()).get()
+            return doc.to_dict().get("count", 0) if doc.exists else 0
+        count = await loop.run_in_executor(None, _read_counter)
         return max(0, _AV_DAILY_LIMIT - count)
     except Exception as exc:
         logger.warning("alphavantage: failed to read call counter from Firestore: %s — assuming budget available", exc)
@@ -322,7 +328,7 @@ async def _av_fixed_window(
     api_key = os.environ.get("ALPHA_VANTAGE_KEY")
     if not api_key:
         raise RuntimeError("ALPHA_VANTAGE_KEY not set")
-    if av_remaining_calls() <= 0:
+    if await av_remaining_calls() <= 0:
         raise RuntimeError("Alpha Vantage daily quota exhausted")
 
     _av_increment()
@@ -374,14 +380,15 @@ async def av_analytics_batch(
         return {}
 
     batches = [symbols[i: i + _AV_SYMBOLS_PER_CALL] for i in range(0, len(symbols), _AV_SYMBOLS_PER_CALL)]
+    quota_remaining = await av_remaining_calls()
     logger.info(
         "alphavantage: %d symbols → %d batches range=%s quota_remaining=%d",
-        len(symbols), len(batches), range_, av_remaining_calls(),
+        len(symbols), len(batches), range_, quota_remaining,
     )
     all_results: dict[str, dict] = {}
     async with httpx.AsyncClient() as client:
         for batch in batches:
-            if av_remaining_calls() <= 0:
+            if await av_remaining_calls() <= 0:
                 logger.warning("alphavantage: quota exhausted mid-run — skipping remaining batches")
                 break
             try:

@@ -18,6 +18,7 @@ Data sources (9 total):
 import asyncio
 import logging
 import os
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 
@@ -957,7 +958,7 @@ async def _generate_title_and_slug(
             if ":" in line
         }
         title = lines.get("TITLE", "").strip()
-        slug = lines.get("SLUG", "").strip().strip("\"'").lower().replace(" ", "-")
+        slug = re.sub(r'[^a-z0-9-]', '', lines.get("SLUG", "").strip().strip("\"'").lower().replace(" ", "-"))
         # Validate: non-empty, reasonable length
         if title and slug and len(title) <= 120 and len(slug) <= 80:
             logger.info("correlation_article: Gemini title=%s slug=%s", title, slug)
