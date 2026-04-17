@@ -1,10 +1,35 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { DailyBlog } from "@/components/DailyBlog";
 import { BlogReview } from "@/components/BlogReview";
 import { CorrelationArticle } from "@/components/CorrelationArticle";
 import { StoryArticle } from "@/components/StoryArticle";
+import { buildOgImageUrl } from "@/lib/og";
 
 export const revalidate = 14400;
+
+export const metadata: Metadata = {
+  title: "Content",
+  description: "Daily blog insights, AI-written market stories, cross-asset correlation deep dives, and blog review — updated throughout the trading day.",
+  openGraph: {
+    title: "Content | Nuwrrrld Financial",
+    description: "Daily blog · AI market stories · Cross-asset correlations · Blog review.",
+    images: [
+      {
+        url: buildOgImageUrl("Market Content", "Daily blog · AI market stories · Cross-asset correlations"),
+        width: 1200,
+        height: 630,
+        alt: "Content — Nuwrrrld Financial",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Content | Nuwrrrld Financial",
+    description: "Daily blog · AI market stories · Cross-asset correlations · Blog review.",
+    images: [buildOgImageUrl("Market Content", "Daily blog · AI market stories · Cross-asset correlations")],
+  },
+};
 
 async function getData() {
   const base = process.env.BACKEND_URL;
