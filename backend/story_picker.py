@@ -37,8 +37,14 @@ def _pick_extreme_pair(all_pairs: list[CorrelationResult]) -> CorrelationResult 
     )
 
 
-def _source_summary(source_key: str, sources: dict) -> str:
-    """Extract a human-readable one-line summary of a data source for the prompt."""
+def _source_summary(source_key: str, sources: dict, period_suffix: str = "") -> str:
+    """Extract a human-readable one-line summary of a data source for the prompt.
+
+    Args:
+        source_key: The key to lookup in sources dict (e.g., "industry_returns", "macro")
+        sources: The sources dictionary from correlation results
+        period_suffix: For industry_returns, the time period (e.g., "1d", "1y") to extract
+    """
     data = sources.get(source_key, {})
     if not data:
         return "data unavailable"
@@ -70,9 +76,11 @@ def _source_summary(source_key: str, sources: dict) -> str:
         misses = len(data.get("misses", []))
         return f"{beats} earnings beats / {misses} misses"
     if source_key == "industry_returns":
-        leaders_1d = data.get("leaders", {}).get("1d", [])
-        top = [f"{l.get('industry', '?')} ({l.get('return', 0):+.1f}%)" for l in leaders_1d[:3]]
-        return f"Today's top industries: {', '.join(top) or 'n/a'}"
+        # Use the period suffix if provided, otherwise default to 1d
+        period = period_suffix or "1d"
+        leaders = data.get("leaders", {}).get(period, [])
+        top = [f"{l.get('industry', '?')} ({l.get('return', 0):+.1f}%)" for l in leaders[:3]]
+        return f"{period.upper()} top industries: {', '.join(top) or 'n/a'}"
     if source_key == "signals":
         sig = data.get("signal_summary", {})
         return (
@@ -103,11 +111,24 @@ _SOURCE_KEY_MAP = {
 
 def _build_story_prompt(pair: CorrelationResult, sources: dict) -> str:
     """Build the Gemini prompt for the Story Picker article."""
+    # Extract base key and period suffix from source names
     source_a_key = next((v for k, v in _SOURCE_KEY_MAP.items() if pair.source_a.startswith(k)), pair.source_a.replace("-", "_"))
     source_b_key = next((v for k, v in _SOURCE_KEY_MAP.items() if pair.source_b.startswith(k)), pair.source_b.replace("-", "_"))
 
-    source_a_summary = _source_summary(source_a_key, sources)
-    source_b_summary = _source_summary(source_b_key, sources)
+    # Extract period suffix for industry_returns (e.g., "1d", "1y" from "industry-returns-1d")
+    source_a_period = ""
+    source_b_period = ""
+    if source_a_key == "industry_returns" and "-" in pair.source_a:
+        parts = pair.source_a.split("-")
+        if len(parts) > 2:
+            source_a_period = parts[-1]  # e.g., "1d" from "industry-returns-1d"
+    if source_b_key == "industry_returns" and "-" in pair.source_b:
+        parts = pair.source_b.split("-")
+        if len(parts) > 2:
+            source_b_period = parts[-1]  # e.g., "1y" from "industry-returns-1y"
+
+    source_a_summary = _source_summary(source_a_key, sources, source_a_period)
+    source_b_summary = _source_summary(source_b_key, sources, source_b_period)
 
     signal_description = {
         "divergence": f"strong DIVERGENCE (score: {pair.score:.2f}) — the two sources are pointing in opposite directions",
