@@ -471,7 +471,7 @@ async def seed_etf_history() -> dict[str, int]:
             raw = None
             for attempt in range(3):
                 try:
-                    raw = await asyncio.get_event_loop().run_in_executor(
+                    raw = await asyncio.get_running_loop().run_in_executor(
                         None,
                         lambda e=etf, p=period: yf.download(
                             e, period=p, auto_adjust=True, progress=False, threads=False
@@ -480,7 +480,7 @@ async def seed_etf_history() -> dict[str, int]:
                     break  # Success, exit retry loop
                 except Exception as exc:
                     if attempt < 2:
-                        wait_seconds = 2 ** attempt  # 1s, 2s, 4s
+                        wait_seconds = 2 ** attempt  # 1s, 2s
                         logger.warning("seed_etf_history: %s attempt %d failed, retrying in %ds: %s",
                                      etf, attempt+1, wait_seconds, exc)
                         await asyncio.sleep(wait_seconds)
