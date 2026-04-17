@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SignInButton, UserButton, useUser } from "@clerk/nextjs";
 
 const NAV_LINKS = [
   { href: "/market-overview", label: "Market" },
@@ -11,6 +12,32 @@ const NAV_LINKS = [
   { href: "/macro", label: "Macro" },
   { href: "/content", label: "Content" },
 ];
+
+function AuthControl() {
+  const { isSignedIn, isLoaded } = useUser();
+
+  if (!isLoaded) return null;
+
+  if (isSignedIn) {
+    return (
+      <UserButton
+        appearance={{
+          elements: {
+            avatarBox: "w-8 h-8",
+          },
+        }}
+      />
+    );
+  }
+
+  return (
+    <SignInButton mode="modal">
+      <button className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-md transition-colors">
+        Sign in
+      </button>
+    </SignInButton>
+  );
+}
 
 export function NavBar() {
   const pathname = usePathname();
@@ -33,6 +60,9 @@ export function NavBar() {
           </Link>
         );
       })}
+      <div className="ml-auto shrink-0 flex items-center pl-3 py-2">
+        <AuthControl />
+      </div>
     </nav>
   );
 }
