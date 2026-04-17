@@ -17,6 +17,7 @@ from sector_rotation import get_sector_rotation
 from macro_pulse import get_macro_pulse
 from screener import get_screener_data
 from news_sentiment import get_news_sentiment
+from massive_client import get_snapshots
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +125,10 @@ INSTRUCTIONS:
 
 
 async def _gather_market_snapshot() -> dict:
-    """Fetch all 5 live data sources concurrently and extract key fields."""
+    """Fetch all live data sources concurrently and extract key fields.
+
+    Includes Massive top movers for enriched Gemini context.
+    """
     morning, rotation, macro, screener, news = await asyncio.gather(
         get_morning_brief(),
         get_sector_rotation(),
@@ -132,6 +136,25 @@ async def _gather_market_snapshot() -> dict:
         get_screener_data(),
         get_news_sentiment(),
     )
+
+    # Get top movers from screener for Massive enrichment
+    top_movers = [g.get("symbol", "") for g in screener.get("gainers", [])[:5]]
+    massive_movers = {}
+    try:
+        if top_movers:
+            snapshots = await get_snapshots(top_movers)
+            for sym in top_movers:
+                if sym in snapshots:
+                    snap = snapshots[sym]
+                    massive_movers[sym] = {
+                        "change_pct": snap.get("dp"),
+                        "rsi": snap.get("rsi"),
+                        "week52_high": snap.get("high_52week"),
+                        "week52_low": snap.get("low_52week"),
+                    }
+    except Exception as exc:
+        logger.warning("market_snapshot massive movers failed: %s", exc)
+
     return {
         "tone": morning.get("market_tone", "unknown"),
         "avg_change_pct": morning.get("avg_change_pct", 0),
@@ -140,8 +163,9 @@ async def _gather_market_snapshot() -> dict:
         "laggards": [r.get("sector", "") for r in rotation.get("laggards", [])],
         "breadth_pct": screener.get("breadth_pct", 0),
         "news_sentiment": news.get("overall_sentiment", "neutral"),
-        "top_gainers": [g.get("symbol", "") for g in screener.get("gainers", [])[:5]],
+        "top_gainers": top_movers,
         "top_losers": [l.get("symbol", "") for l in screener.get("losers", [])[:5]],
+        "massive_movers": massive_movers,
     }
 
 

@@ -6,6 +6,7 @@ from datetime import date, timedelta
 import httpx
 
 from data_client import finnhub_get, get_cache, set_cache
+from massive_client import get_corporate_actions
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ async def get_earnings_radar() -> dict:
         logger.info("earnings_radar cache hit key=%s", cache_key)
         return cached
 
-    logger.info("earnings_radar cache miss — fetching %d symbols", len(TRACKED))
+    logger.info("earnings_radar cache miss — fetching %d symbols from Finnhub + Massive", len(TRACKED))
 
     async with httpx.AsyncClient(timeout=20) as client:
         results = await asyncio.gather(*[_fetch_earnings_calendar(client, s) for s in TRACKED])
@@ -86,6 +87,26 @@ async def get_earnings_radar() -> dict:
     beats = [r for r in with_surprise if r["surprise"] > 0]
     misses = [r for r in with_surprise if r["surprise"] < 0]
 
+    # Enrich with Massive corporate actions (upcoming dividends, splits)
+    massive_events = []
+    try:
+        today_str = str(date.today())
+        end_date = str(date.today() + timedelta(days=30))
+        actions = await get_corporate_actions(today_str, end_date)
+        # Filter to tracked symbols only
+        tracked_set = set(TRACKED)
+        for action in actions:
+            if action.get("ticker") in tracked_set:
+                massive_events.append({
+                    "ticker": action.get("ticker"),
+                    "ex_dividend_date": action.get("ex_dividend_date"),
+                    "amount": action.get("amount"),
+                    "type": action.get("type", "dividend"),
+                })
+        logger.debug("earnings_radar massive events: %d found in next 30 days", len(massive_events))
+    except Exception as exc:
+        logger.warning("earnings_radar massive enrichment failed: %s", exc)
+
     result = {
         "date": str(date.today()),
         "tracked": len(TRACKED),
@@ -94,6 +115,7 @@ async def get_earnings_radar() -> dict:
         "misses": sorted(misses, key=lambda x: x["surprise"])[:5],
         "beat_rate_pct": round(len(beats) / len(with_surprise) * 100) if with_surprise else 0,
         "ai_outlook": _ai_earnings_outlook(records),
+        "massive_events": massive_events,
     }
 
     set_cache(cache_key, result, ttl_hours=6)
