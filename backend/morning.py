@@ -7,6 +7,7 @@ import httpx
 
 from data_client import finnhub_get
 from firestore import get_cache, set_cache
+from massive_client import get_snapshots
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ async def get_morning_brief() -> dict:
         logger.info("morning_brief cache hit key=%s", cache_key)
         return cached
 
-    logger.info("morning_brief cache miss key=%s — fetching from Finnhub", cache_key)
+    logger.info("morning_brief cache miss key=%s — fetching from Finnhub + Massive", cache_key)
 
     async def fetch_index(client, name, symbol):
         try:
@@ -48,11 +49,28 @@ async def get_morning_brief() -> dict:
     avg_change = sum(v["change_pct"] for v in valid) / len(valid) if valid else 0
     tone = "bullish" if avg_change > 0.5 else "bearish" if avg_change < -0.5 else "neutral"
 
+    # Enrich with Massive snapshots (52w high/low, RSI)
+    massive_rsi = {}
+    try:
+        snapshots = await get_snapshots(list(INDICES.values()))
+        for name, symbol in INDICES.items():
+            if symbol in snapshots:
+                snap = snapshots[symbol]
+                massive_rsi[symbol] = {
+                    "rsi": snap.get("rsi"),
+                    "high_52week": snap.get("high_52week"),
+                    "low_52week": snap.get("low_52week"),
+                }
+                logger.debug("morning_brief massive: %s = %s", symbol, massive_rsi[symbol])
+    except Exception as exc:
+        logger.warning("morning_brief massive enrichment failed: %s", exc)
+
     result = {
         "date": str(date.today()),
         "market_tone": tone,
         "avg_change_pct": round(avg_change, 2),
         "indices": indices,
+        "massive_rsi": massive_rsi,
         "summary": (
             f"Markets are {tone} today with an average move of {avg_change:+.2f}% "
             f"across major indices."

@@ -24,6 +24,7 @@ import httpx
 import pandas as pd
 
 from data_client import av_analytics_batch, av_remaining_calls, finnhub_get, get_cache, get_quote, set_cache
+from massive_client import get_snapshots
 import etf_store
 
 logger = logging.getLogger(__name__)
@@ -266,7 +267,7 @@ async def get_industry_data(enrich_av: bool = False) -> dict:
                 )
             ]
             av_quota_needed = (len(valid_etfs) + 4) // 5  # ceil div
-            if av_remaining_calls() >= av_quota_needed:
+            if await av_remaining_calls() >= av_quota_needed:
                 logger.info(
                     "industry: enriching %d ETFs with AV analytics (%d calls needed)",
                     len(valid_etfs),
@@ -284,9 +285,10 @@ async def get_industry_data(enrich_av: bool = False) -> dict:
                 except Exception as exc:
                     logger.error("industry: AV analytics enrichment failed: %s", exc)
             else:
+                av_remaining = await av_remaining_calls()
                 logger.info(
                     "industry: skipping AV analytics — only %d calls remain (need %d)",
-                    av_remaining_calls(),
+                    av_remaining,
                     av_quota_needed,
                 )
 
@@ -308,6 +310,26 @@ async def get_industry_data(enrich_av: bool = False) -> dict:
         t_returns_ms = round((time.monotonic() - t_returns_start) * 1000)
         logger.info("industry_data: attach_stored_returns_done ms=%d", t_returns_ms)
 
+        # Step 4: Enrich with Massive snapshots (52w high/low, RSI)
+        massive_snapshot = {}
+        try:
+            snapshots = await get_snapshots(all_etfs)
+            for industry, data in industries.items():
+                etf = data.get("etf")
+                if etf and etf in snapshots and "error" not in data:
+                    snap = snapshots[etf]
+                    data["week52_high"] = snap.get("high_52week")
+                    data["week52_low"] = snap.get("low_52week")
+                    data["rsi"] = snap.get("rsi")
+                    massive_snapshot[etf] = {
+                        "week52_high": snap.get("high_52week"),
+                        "week52_low": snap.get("low_52week"),
+                        "rsi": snap.get("rsi"),
+                    }
+                    logger.debug("industry_data massive: %s = %s", etf, massive_snapshot[etf])
+        except Exception as exc:
+            logger.warning("industry_data massive enrichment failed: %s", exc)
+
         result = {
             "date": str(date.today()),
             "quotes_as_of": datetime.now(timezone.utc).isoformat(),
@@ -317,6 +339,7 @@ async def get_industry_data(enrich_av: bool = False) -> dict:
             "by_sector": by_sector,
             "leaders": ranked[:5],
             "laggards": ranked[-5:],
+            "massive_snapshot": massive_snapshot,
         }
 
         if ranked:

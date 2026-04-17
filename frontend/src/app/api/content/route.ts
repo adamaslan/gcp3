@@ -8,7 +8,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   const rawType = req.nextUrl.searchParams.get("type");
-  const ALLOWED_TYPES = ["blog", "correlation", "story"] as const;
+  const ALLOWED_TYPES = ["blog", "review", "correlation", "story"] as const;
   type ContentType = typeof ALLOWED_TYPES[number];
   const type = ALLOWED_TYPES.includes(rawType as ContentType) ? (rawType as ContentType) : null;
   const url = `${BACKEND}/content${type ? `?type=${type}` : ""}`;

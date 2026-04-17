@@ -4,12 +4,14 @@ Data resolution chain:
   1. Finnhub — real-time intraday quotes (primary)
   2. yfinance bulk download — free fallback for any symbols Finnhub fails
      (single yf.download() call covers all failed symbols at once)
+  3. Massive — fundamentals enrichment (P/E, short interest)
 """
 import logging
 from datetime import date
 
 from data_client import get_quotes
 from firestore import get_cache, set_cache
+from massive_client import get_snapshots
 
 logger = logging.getLogger(__name__)
 
@@ -54,12 +56,31 @@ async def get_screener_data() -> dict:
         logger.info("screener cache hit key=%s", cache_key)
         return cached
 
-    logger.info("screener cache miss — fetching %d symbols", len(WATCHLIST))
+    logger.info("screener cache miss — fetching %d symbols from Finnhub + Massive", len(WATCHLIST))
 
     # get_quotes handles Finnhub concurrent + yfinance bulk fallback internally
     raw_quotes = await get_quotes(WATCHLIST)
     quotes = {sym: {**q, "symbol": sym, "signal": _ai_signal(q)} for sym, q in raw_quotes.items()}
     valid = list(quotes.values())
+
+    # Enrich with Massive fundamentals (P/E, short interest)
+    massive_fundamentals = {}
+    try:
+        snapshots = await get_snapshots(WATCHLIST)
+        for sym in WATCHLIST:
+            if sym in snapshots:
+                snap = snapshots[sym]
+                massive_fundamentals[sym] = {
+                    "pe_ratio": snap.get("pe_ratio"),
+                    "short_interest": snap.get("short_interest"),
+                    "market_cap": snap.get("market_cap"),
+                }
+                if sym in quotes:
+                    quotes[sym]["pe_ratio"] = snap.get("pe_ratio")
+                    quotes[sym]["short_interest"] = snap.get("short_interest")
+                logger.debug("screener massive: %s = %s", sym, massive_fundamentals[sym])
+    except Exception as exc:
+        logger.warning("screener massive enrichment failed: %s", exc)
 
     ranked = sorted(valid, key=lambda x: x.get("change_pct", 0), reverse=True)
     gainers = ranked[:10]
@@ -94,6 +115,7 @@ async def get_screener_data() -> dict:
             "finnhub": sum(1 for q in quotes.values() if q.get("source") == "finnhub"),
             "yfinance": sum(1 for q in quotes.values() if q.get("source") == "yfinance"),
         },
+        "massive_fundamentals": massive_fundamentals,
     }
 
     set_cache(cache_key, result, ttl_hours=1)
