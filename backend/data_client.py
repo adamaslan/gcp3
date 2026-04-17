@@ -43,7 +43,6 @@ import random
 import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
-from google.cloud.firestore import AsyncClient
 
 import httpx
 import yfinance as yf
@@ -286,10 +285,10 @@ async def av_remaining_calls() -> int:
 
     Reads from Firestore to get the cross-instance count. Returns the full
     budget if Firestore is unavailable (fail-open to avoid blocking all AV calls).
-    Uses async Firestore client to avoid blocking the event loop.
+    Runs the synchronous Firestore call in a thread pool to avoid blocking the event loop.
     """
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         # Run the synchronous Firestore call in a thread pool to avoid blocking
         def _read_counter():
             doc = _fs().collection("gcp3_cache").document(_av_counter_key()).get()
@@ -415,7 +414,7 @@ async def get_quote(symbol: str, client: httpx.AsyncClient | None = None) -> dic
             logger.warning("data_client: Finnhub failed for %s (%s) — trying yfinance", symbol, fh_exc)
             async with _YF_SEMAPHORE:
                 await asyncio.sleep(random.uniform(_YF_DELAY_MIN, _YF_DELAY_MAX))
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 return await loop.run_in_executor(_YF_EXECUTOR, _yf_quote_sync, symbol)
 
     if client is not None:
@@ -453,7 +452,7 @@ async def get_quotes(
                 # acquire semaphore once, add a single randomized delay.
                 async with _YF_SEMAPHORE:
                     await asyncio.sleep(random.uniform(_YF_DELAY_MIN, _YF_DELAY_MAX))
-                    loop = asyncio.get_event_loop()
+                    loop = asyncio.get_running_loop()
                     yf_quotes = await loop.run_in_executor(_YF_EXECUTOR, _yf_bulk_sync, failed)
                 results.update(yf_quotes)
                 still_failed = [s for s in failed if s not in yf_quotes]

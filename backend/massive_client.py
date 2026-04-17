@@ -6,6 +6,8 @@ All calls are sequential with automatic 12s spacing — multiple concurrent call
 
 Data returned is EOD (end-of-day) only on free tier — intraday quotes come
 from Finnhub; Massive adds technicals, 52-week ranges, and corporate actions.
+
+Connection pooling: single persistent httpx.AsyncClient reused across all requests.
 """
 import asyncio
 import logging
@@ -17,16 +19,29 @@ import httpx
 logger = logging.getLogger(__name__)
 
 MASSIVE_API_KEY = os.environ.get("MASSIVE_API_KEY", "")
-_BASE = "https://api.polygon.io/v2"  # Polygon.io standard endpoint — Massive is Polygon-compatible
+# Polygon.io API versions differ by endpoint
+_BASE_V1 = "https://api.polygon.io/v1"
+_BASE_V2 = "https://api.polygon.io/v2"
+_BASE_V3 = "https://api.polygon.io/v3"
+
 _RATE_LOCK = asyncio.Semaphore(1)
 _LAST_CALL: float = 0.0
+_HTTP_CLIENT: httpx.AsyncClient | None = None
 
 
-async def _get(path: str, params: dict | None = None) -> dict:
+def _get_http_client() -> httpx.AsyncClient:
+    """Get or create a persistent HTTP client for connection pooling."""
+    global _HTTP_CLIENT
+    if _HTTP_CLIENT is None or _HTTP_CLIENT.is_closed:
+        _HTTP_CLIENT = httpx.AsyncClient(timeout=15)
+    return _HTTP_CLIENT
+
+
+async def _get(url: str, params: dict | None = None) -> dict:
     """Single-flight rate-limited GET. Enforces 12s minimum between calls.
 
     Args:
-        path: API path (e.g., "/snapshot/locale/us/markets/stocks/tickers")
+        url: Full API URL with version (e.g., "https://api.polygon.io/v2/snapshot/...")
         params: Query parameters (excluding apiKey, which is auto-added)
 
     Returns:
@@ -51,25 +66,25 @@ async def _get(path: str, params: dict | None = None) -> dict:
             await asyncio.sleep(wait)
 
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                url = f"{_BASE}{path}"
-                full_params = {"apiKey": MASSIVE_API_KEY, **(params or {})}
-                logger.debug("massive_get: %s params=%s", path, {k: v for k, v in full_params.items() if k != "apiKey"})
+            client = _get_http_client()
+            full_params = {"apiKey": MASSIVE_API_KEY, **(params or {})}
+            logger.debug("massive_get: %s params=%s", url, {k: v for k, v in full_params.items() if k != "apiKey"})
 
-                response = await client.get(url, params=full_params)
-                response.raise_for_status()
+            response = await client.get(url, params=full_params)
+            response.raise_for_status()
 
-                _LAST_CALL = loop.time()
-                return response.json()
+            _LAST_CALL = loop.time()
+            return response.json()
         except httpx.HTTPError as exc:
-            logger.error("massive_get %s failed: %s", path, exc)
+            logger.error("massive_get %s failed: %s", url, exc)
             raise
 
 
 async def get_snapshots(tickers: list[str]) -> dict:
-    """Batch snapshot for up to 250 tickers in one call.
+    """Batch snapshot for tickers, handling >250 via automatic batching.
 
     Returns quote, 52-week high/low, volume, and other fields per ticker.
+    Automatically batches requests for >250 tickers (API limit 250 per call).
 
     Args:
         tickers: List of ticker symbols (e.g., ["SPY", "QQQ", "AAPL"])
@@ -92,18 +107,25 @@ async def get_snapshots(tickers: list[str]) -> dict:
     if not tickers:
         return {}
 
-    try:
-        data = await _get(
-            "/snapshot/locale/us/markets/stocks/tickers",
-            {"tickers": ",".join(tickers[:250])},  # API limit 250 per call
-        )
+    BATCH_SIZE = 250
+    results = {}
 
-        # Reindex by ticker symbol for easy lookup
-        results = {}
-        for ticker_data in data.get("results", []):
-            ticker = ticker_data.get("ticker", "")
-            if ticker:
-                results[ticker] = ticker_data
+    try:
+        # Process tickers in batches of 250 (API limit per call)
+        for i in range(0, len(tickers), BATCH_SIZE):
+            batch = tickers[i : i + BATCH_SIZE]
+            logger.debug("snapshots: batch %d/%d size=%d", i // BATCH_SIZE + 1, (len(tickers) + BATCH_SIZE - 1) // BATCH_SIZE, len(batch))
+
+            data = await _get(
+                f"{_BASE_V2}/snapshot/locale/us/markets/stocks/tickers",
+                {"tickers": ",".join(batch)},
+            )
+
+            # Reindex by ticker symbol for easy lookup
+            for ticker_data in data.get("results", []):
+                ticker = ticker_data.get("ticker", "")
+                if ticker:
+                    results[ticker] = ticker_data
 
         missing = set(tickers) - set(results.keys())
         if missing:
@@ -135,7 +157,8 @@ async def get_technical_indicators(ticker: str, indicator: str = "rsi", window: 
     """
     try:
         params = {"window": window, "series_type": "close"}
-        data = await _get(f"/indicators/{indicator}/{ticker}", params)
+        url = f"{_BASE_V1}/indicators/{indicator}/{ticker}"
+        data = await _get(url, params)
         return data.get("results", {})
     except Exception as exc:
         logger.error("technical_indicators %s %s failed: %s", ticker, indicator, exc)
@@ -162,8 +185,9 @@ async def get_corporate_actions(from_date: str, to_date: str) -> list[dict]:
         ...     print(f"{action['ticker']}: {action['ex_dividend_date']}")
     """
     try:
+        url = f"{_BASE_V3}/reference/dividends"
         data = await _get(
-            "/reference/dividends",
+            url,
             {"ex_dividend_date.gte": from_date, "ex_dividend_date.lte": to_date},
         )
         return data.get("results", [])

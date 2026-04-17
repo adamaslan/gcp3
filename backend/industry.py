@@ -267,7 +267,7 @@ async def get_industry_data(enrich_av: bool = False) -> dict:
                 )
             ]
             av_quota_needed = (len(valid_etfs) + 4) // 5  # ceil div
-            if av_remaining_calls() >= av_quota_needed:
+            if await av_remaining_calls() >= av_quota_needed:
                 logger.info(
                     "industry: enriching %d ETFs with AV analytics (%d calls needed)",
                     len(valid_etfs),
@@ -285,9 +285,10 @@ async def get_industry_data(enrich_av: bool = False) -> dict:
                 except Exception as exc:
                     logger.error("industry: AV analytics enrichment failed: %s", exc)
             else:
+                av_remaining = await av_remaining_calls()
                 logger.info(
                     "industry: skipping AV analytics — only %d calls remain (need %d)",
-                    av_remaining_calls(),
+                    av_remaining,
                     av_quota_needed,
                 )
 
