@@ -1,9 +1,34 @@
+import type { Metadata } from "next";
 import { MorningBrief } from "@/components/MorningBrief";
 import { AiSummary } from "@/components/AiSummary";
 import { NewsSentiment } from "@/components/NewsSentiment";
 import { MarketSummary } from "@/components/MarketSummary";
+import { buildOgImageUrl } from "@/lib/og";
 
 export const revalidate = 900;
+
+export const metadata: Metadata = {
+  title: "Market Overview",
+  description: "Morning brief (SPY, QQQ, IWM, DIA), AI summary, news sentiment, and 7-day market history — updated every 15 minutes.",
+  openGraph: {
+    title: "Market Overview | Nuwrrrld Financial",
+    description: "Morning brief (SPY, QQQ, IWM, DIA), AI summary, news sentiment, and 7-day market history.",
+    images: [
+      {
+        url: buildOgImageUrl("Market Overview", "Morning brief · AI summary · News sentiment · 7-day market history"),
+        width: 1200,
+        height: 630,
+        alt: "Market Overview — Nuwrrrld Financial",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Market Overview | Nuwrrrld Financial",
+    description: "Morning brief (SPY, QQQ, IWM, DIA), AI summary, news sentiment, and 7-day market history.",
+    images: [buildOgImageUrl("Market Overview", "Morning brief · AI summary · News sentiment · 7-day market history")],
+  },
+};
 
 async function getData() {
   const base = process.env.BACKEND_URL;
