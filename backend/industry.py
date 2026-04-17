@@ -454,44 +454,61 @@ async def seed_etf_history() -> dict[str, int]:
         batches.append((delta_etfs, "3mo", "yfinance_delta"))
 
     for etfs, period, source in batches:
-        try:
-            raw = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda e=etfs, p=period: yf.download(
-                    e, period=p, auto_adjust=True, progress=False, threads=False
-                ),
-            )
-        except Exception as exc:
-            logger.error("seed_etf_history: batch download failed (%s): %s", period, exc)
-            for etf in etfs:
-                results[etf] = 0
-            continue
+        # yfinance has aggressive rate limiting on batch downloads.
+        # Download individual ETFs or very small batches (2-3) with delays between.
+        logger.info("seed_etf_history: downloading %d ETFs individually (period=%s) to avoid rate limits",
+                   len(etfs), period)
 
-        if raw.empty:
-            logger.warning("seed_etf_history: batch download returned no data (%s)", period)
-            for etf in etfs:
-                results[etf] = 0
-            continue
+        for etf_idx, etf in enumerate(etfs):
+            # Rate-limit ourselves: wait 0.5s between downloads
+            if etf_idx > 0:
+                await asyncio.sleep(0.5)
 
-        # yf.download returns MultiIndex (field, ticker) for multiple tickers,
-        # or flat columns for a single ticker. Normalise to a per-ticker DataFrame.
-        if isinstance(raw.columns, pd.MultiIndex):
-            close = raw.xs("Close", axis=1, level=0)
-            volume = raw.xs("Volume", axis=1, level=0)
-        else:
-            # Single ticker — wrap into DataFrames with the ticker as column name
-            close = raw[["Close"]].rename(columns={"Close": etfs[0]})
-            volume = raw[["Volume"]].rename(columns={"Volume": etfs[0]})
-        for etf in etfs:
-            if etf not in close.columns:
-                logger.warning("seed_etf_history: no data for %s in batch", etf)
+            logger.debug("seed_etf_history: fetching %s (%d/%d, period=%s)",
+                        etf, etf_idx+1, len(etfs), period)
+
+            # Retry up to 3 times with exponential backoff
+            raw = None
+            for attempt in range(3):
+                try:
+                    raw = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda e=etf, p=period: yf.download(
+                            e, period=p, auto_adjust=True, progress=False, threads=False
+                        ),
+                    )
+                    break  # Success, exit retry loop
+                except Exception as exc:
+                    if attempt < 2:
+                        wait_seconds = 2 ** attempt  # 1s, 2s, 4s
+                        logger.warning("seed_etf_history: %s attempt %d failed, retrying in %ds: %s",
+                                     etf, attempt+1, wait_seconds, exc)
+                        await asyncio.sleep(wait_seconds)
+                    else:
+                        logger.error("seed_etf_history: %s failed after 3 attempts: %s",
+                                   etf, exc)
+                        raw = None
+
+            if raw is None or raw.empty:
                 results[etf] = 0
                 continue
-            hist = pd.DataFrame({
-                "adjusted_close": close[etf],
-                "volume": volume[etf]
-            }).dropna()
+
+            # Single-ETF download returns a flat DataFrame with Close, Volume, etc.
             try:
+                # Extract Close and Volume columns (handling both Series and DataFrame)
+                if isinstance(raw, pd.DataFrame):
+                    close_series = raw["Close"]
+                    volume_series = raw["Volume"]
+                else:
+                    # If single column (Series), this shouldn't happen but handle it
+                    close_series = raw
+                    volume_series = pd.Series([0] * len(raw), index=raw.index)
+
+                hist = pd.DataFrame({
+                    "adjusted_close": close_series,
+                    "volume": volume_series
+                }).dropna()
+
                 if source == "yfinance_seed":
                     rows = etf_store.store_history(etf, hist, source=source)
                 else:
