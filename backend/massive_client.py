@@ -71,6 +71,21 @@ async def _get(url: str, params: dict | None = None) -> dict:
             logger.debug("massive_get: %s params=%s", url, {k: v for k, v in full_params.items() if k != "apiKey"})
 
             response = await client.get(url, params=full_params)
+
+            if response.status_code == 403:
+                # 403 means the key is invalid or this endpoint requires a higher plan tier.
+                # Log clearly so the fix is obvious in Cloud Run logs.
+                logger.error(
+                    "massive_client: 403 Forbidden for %s — check MASSIVE_API_KEY in Secret Manager "
+                    "and verify the Polygon.io subscription tier supports this endpoint",
+                    url,
+                )
+                raise httpx.HTTPStatusError(
+                    f"403 Forbidden — Polygon key invalid or plan tier insufficient for {url}",
+                    request=response.request,
+                    response=response,
+                )
+
             response.raise_for_status()
 
             _LAST_CALL = loop.time()

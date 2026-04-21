@@ -61,17 +61,25 @@ export default async function ContentPage({
         <div className="h-64 bg-gray-800 rounded animate-pulse" />
       ) : (
         <>
-          {activeTab === "blog" && data.blog && !data.blog.error && (
-            <DailyBlog data={data.blog} />
+          {activeTab === "blog" && (
+            data.blog?.error
+              ? <div className="p-6 rounded-xl border border-yellow-800/40 bg-yellow-950/10 text-yellow-400 text-sm">Blog generation temporarily unavailable — AI writer hit a rate limit. Check back soon.</div>
+              : data.blog && <DailyBlog data={data.blog} />
           )}
-          {activeTab === "review" && data.review && !data.review.error && (
-            <BlogReview data={data.review} />
+          {activeTab === "review" && (
+            data.review?.error
+              ? <div className="p-6 rounded-xl border border-yellow-800/40 bg-yellow-950/10 text-yellow-400 text-sm">{data.review.error}</div>
+              : data.review && <BlogReview data={data.review} />
           )}
-          {activeTab === "correlation" && data.correlation && !data.correlation.error && (
-            <CorrelationArticle data={data.correlation} />
+          {activeTab === "correlation" && (
+            data.correlation?.error
+              ? <div className="p-6 rounded-xl border border-yellow-800/40 bg-yellow-950/10 text-yellow-400 text-sm">Correlation analysis temporarily unavailable — AI writer hit a rate limit. Check back soon.</div>
+              : data.correlation && <CorrelationArticle data={data.correlation} />
           )}
-          {activeTab === "story" && data.story && !data.story.error && (
-            <StoryArticle data={data.story} />
+          {activeTab === "story" && (
+            data.story?.error
+              ? <div className="p-6 rounded-xl border border-yellow-800/40 bg-yellow-950/10 text-yellow-400 text-sm">Story generation temporarily unavailable. Check back soon.</div>
+              : data.story && <StoryArticle data={data.story} />
           )}
         </>
       )}

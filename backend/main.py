@@ -781,6 +781,9 @@ async def refresh_bake(request: Request) -> dict:
         stages["ai_summary"] = {"status": "error", "detail": str(exc)}
         stages_failed.append("ai_summary")
 
+    # 4s gap — Gemini free-tier RPM limit; consecutive calls from B2-B6 hit 429 without it
+    await asyncio.sleep(4)
+
     # Stage B3 — daily blog
     t0 = time.perf_counter()
     blog_generated = False
@@ -796,6 +799,7 @@ async def refresh_bake(request: Request) -> dict:
 
     # Stage B4 — blog review (gated on B3)
     if blog_generated:
+        await asyncio.sleep(4)
         t0 = time.perf_counter()
         try:
             await refresh_blog_review()
@@ -809,6 +813,7 @@ async def refresh_bake(request: Request) -> dict:
         stages["blog_review"] = {"status": "skipped", "detail": "Stage B3 did not produce a blog"}
 
     # Stage B5 — correlation article
+    await asyncio.sleep(4)
     t0 = time.perf_counter()
     try:
         await refresh_correlation_article()
@@ -820,6 +825,7 @@ async def refresh_bake(request: Request) -> dict:
         stages_failed.append("correlation_article")
 
     # Stage B6 — story picker (single most extreme pair)
+    await asyncio.sleep(4)
     t0 = time.perf_counter()
     try:
         await refresh_story_article()
