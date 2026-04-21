@@ -1,9 +1,13 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { NavBar } from "@/components/NavBar";
+
+import { ClerkProvider } from "@clerk/nextjs";
+
 import { buildOgImageUrl } from "@/lib/og";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://nuwrrrld.com";
+
 
 const siteDescription =
   "Nuwrrrld Financial — 15 free real-time market intelligence tools: AI summary, morning brief, stock screener, sector rotation, earnings radar, macro pulse, news sentiment, portfolio analyzer, and more.";
@@ -67,11 +71,13 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className="bg-gray-950 text-gray-100 min-h-screen">
-        <NavBar />
-        <main className="max-w-5xl mx-auto px-4 py-5 sm:px-6 sm:py-8">{children}</main>
-      </body>
-    </html>
+    <ClerkProvider>
+      <html lang="en">
+        <body className="bg-gray-950 text-gray-100 min-h-screen">
+          <NavBar />
+          <main className="max-w-5xl mx-auto px-4 py-5 sm:px-6 sm:py-8">{children}</main>
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }
