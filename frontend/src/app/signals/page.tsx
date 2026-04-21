@@ -1,6 +1,31 @@
+import type { Metadata } from "next";
 import { TechnicalSignals } from "@/components/TechnicalSignals";
+import { buildOgImageUrl } from "@/lib/og";
 
 export const revalidate = 3600;
+
+export const metadata: Metadata = {
+  title: "Technical Signals",
+  description: "BUY/HOLD/SELL signals from the MCP analysis pipeline, ranked by confidence with bull/bear counts across 40+ large-cap stocks.",
+  openGraph: {
+    title: "Technical Signals | Nuwrrrld Financial",
+    description: "BUY/HOLD/SELL signals ranked by confidence · Bull/bear counts · 40+ large-cap stocks.",
+    images: [
+      {
+        url: buildOgImageUrl("Technical Signals", "BUY/HOLD/SELL signals · Ranked by confidence · Bull/bear counts"),
+        width: 1200,
+        height: 630,
+        alt: "Technical Signals — Nuwrrrld Financial",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Technical Signals | Nuwrrrld Financial",
+    description: "BUY/HOLD/SELL signals ranked by confidence · Bull/bear counts · 40+ large-cap stocks.",
+    images: [buildOgImageUrl("Technical Signals", "BUY/HOLD/SELL signals · Ranked by confidence · Bull/bear counts")],
+  },
+};
 
 async function getData() {
   const base = process.env.BACKEND_URL;

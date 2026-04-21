@@ -61,8 +61,8 @@ export async function GET(request: Request): Promise<ImageResponse | Response> {
         </div>
       ),
       {
-        width: 1024,
-        height: 541,
+        width: 1200,
+        height: 630,
       }
     );
 
