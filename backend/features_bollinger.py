@@ -54,7 +54,7 @@ def compute_bollinger(
         return None
 
     sma = closes.rolling(period).mean()
-    rolling_std = closes.rolling(period).std(ddof=0)
+    rolling_std = closes.rolling(period).std()
     upper = sma + stddev_mult * rolling_std
     lower = sma - stddev_mult * rolling_std
 

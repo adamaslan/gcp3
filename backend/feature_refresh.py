@@ -31,10 +31,10 @@ from screener import WATCHLIST as INTRADAY_UNIVERSE
 
 
 def _is_market_hours() -> bool:
-    """Check if current UTC time is within US market hours (ET 9:30–16:00 approx)."""
-    now_utc = datetime.now(timezone.utc)
-    # UTC offset for ET: -4 (EDT) or -5 (EST); approximate with -4
-    hour_et = (now_utc.hour - 4) % 24
+    """Check if current UTC time is within US market hours (ET 9:30–16:00)."""
+    from zoneinfo import ZoneInfo
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    hour_et = now_et.hour
     return MARKET_OPEN_HOUR_ET <= hour_et < MARKET_CLOSE_HOUR_ET
 
 

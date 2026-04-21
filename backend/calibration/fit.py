@@ -1,12 +1,13 @@
 """Confidence calibration via Platt scaling (Weakness #2).
 
-Nightly refit; model persisted to GCS gs://gcp3-calibration/v{N}.pkl.
+Nightly refit; model persisted to GCS gs://gcp3-calibration/v{N}.json.
 """
 from __future__ import annotations
 
+import dataclasses
+import json
 import logging
 import math
-import pickle
 from dataclasses import dataclass
 from typing import Any
 
@@ -148,9 +149,9 @@ def _persist_to_gcs(model: CalibrationModel, version: int) -> None:
         from google.cloud import storage  # type: ignore
         client = storage.Client()
         bucket = client.bucket(GCS_BUCKET)
-        blob = bucket.blob(f"v{version}.pkl")
-        blob.upload_from_string(pickle.dumps(model))
-        logger.info("calibration_model_saved gcs=gs://%s/v%d.pkl", GCS_BUCKET, version)
+        blob = bucket.blob(f"v{version}.json")
+        blob.upload_from_string(json.dumps(dataclasses.asdict(model)), content_type="application/json")
+        logger.info("calibration_model_saved gcs=gs://%s/v%d.json", GCS_BUCKET, version)
     except Exception as e:
         logger.warning("calibration_gcs_persist_failed error=%s", e)
 
@@ -161,9 +162,9 @@ def load_from_gcs(version: int) -> CalibrationModel | None:
         from google.cloud import storage  # type: ignore
         client = storage.Client()
         bucket = client.bucket(GCS_BUCKET)
-        blob = bucket.blob(f"v{version}.pkl")
-        data = blob.download_as_bytes()
-        return pickle.loads(data)
+        blob = bucket.blob(f"v{version}.json")
+        data = json.loads(blob.download_as_bytes())
+        return CalibrationModel(**data)
     except Exception as e:
         logger.warning("calibration_gcs_load_failed version=%d error=%s", version, e)
         return None

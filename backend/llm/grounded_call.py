@@ -24,9 +24,6 @@ MIN_RECENT_CITATION_HOURS = 48
 MIN_DISTINCT_DOMAINS = 2
 
 
-@dataclass_like = None  # avoid runtime dataclass import issue — use plain class
-
-
 class GroundedResult:
     def __init__(
         self,

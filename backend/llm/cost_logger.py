@@ -18,7 +18,10 @@ logger = logging.getLogger(__name__)
 FREE_TIER_DAILY_BUDGET_USD = 0.50
 ALERT_THRESHOLDS = (0.50, 0.80, 0.95)
 
-# In-memory daily accumulator (resets at UTC midnight via _ensure_day_reset)
+_FIRESTORE_KEY_PREFIX = "llm_cost:"
+
+# In-memory daily accumulator — seeded from Firestore on first access per day
+# so daily totals survive Cloud Run instance restarts and scale-to-zero.
 _daily_state: dict[str, Any] = {
     "date": None,
     "total_cost_usd": 0.0,
@@ -26,6 +29,43 @@ _daily_state: dict[str, Any] = {
     "endpoints": {},  # endpoint -> {"cost_usd": float, "calls": int}
     "alerted_thresholds": set(),
 }
+
+
+def _firestore_key(today: str) -> str:
+    return f"{_FIRESTORE_KEY_PREFIX}{today}"
+
+
+def _load_from_firestore(today: str) -> None:
+    """Seed in-memory state from Firestore if a record exists for today."""
+    try:
+        from firestore import get_cache
+        stored = get_cache(_firestore_key(today))
+        if stored and stored.get("date") == today:
+            _daily_state.update({
+                "date": stored["date"],
+                "total_cost_usd": stored.get("total_cost_usd", 0.0),
+                "call_count": stored.get("call_count", 0),
+                "endpoints": stored.get("endpoints", {}),
+                "alerted_thresholds": set(stored.get("alerted_thresholds", [])),
+            })
+    except Exception as e:
+        logger.warning("cost_logger_firestore_load_failed error=%s", e)
+
+
+def _persist_to_firestore() -> None:
+    """Write current daily state to Firestore (fire-and-forget; never raises)."""
+    try:
+        from firestore import set_cache
+        payload = {
+            "date": _daily_state["date"],
+            "total_cost_usd": _daily_state["total_cost_usd"],
+            "call_count": _daily_state["call_count"],
+            "endpoints": _daily_state["endpoints"],
+            "alerted_thresholds": list(_daily_state["alerted_thresholds"]),
+        }
+        set_cache(_firestore_key(_daily_state["date"]), payload, ttl_hours=26)
+    except Exception as e:
+        logger.warning("cost_logger_firestore_write_failed error=%s", e)
 
 
 def _ensure_day_reset() -> None:
@@ -38,6 +78,7 @@ def _ensure_day_reset() -> None:
             "endpoints": {},
             "alerted_thresholds": set(),
         })
+        _load_from_firestore(today)
 
 
 def log_llm_call(
@@ -110,6 +151,7 @@ def log_llm_call(
                 FREE_TIER_DAILY_BUDGET_USD,
             )
 
+    _persist_to_firestore()
     return request_id
 
 
