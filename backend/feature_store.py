@@ -31,6 +31,16 @@ _TTL: dict[str, int] = {
     "earnings_surprise": 86_400,
 }
 
+# yfinance history period per signal timeframe for OHLCV-based features
+_TF_HISTORY_PERIOD: dict[str, str] = {
+    "1D": "3mo",
+    "5D": "3mo",
+    "1M": "6mo",
+    "3M": "1y",
+    "6M": "2y",
+    "1Y": "5y",
+}
+
 _FEATURE_MODULES: dict[str, str] = {
     "bollinger": "features_bollinger",
     "volume": "features_volume",
@@ -48,36 +58,39 @@ _FEATURE_MODULES: dict[str, str] = {
 }
 
 
-async def _compute_feature(feature_name: str, ticker: str, as_of: date) -> Any:
+async def _compute_feature(
+    feature_name: str, ticker: str, as_of: date, timeframe: str = "1D"
+) -> Any:
     """Dispatch to the appropriate feature module."""
     try:
+        yf_period = _TF_HISTORY_PERIOD.get(timeframe, "3mo")
+
         if feature_name == "bollinger":
             import yfinance as yf
-            import pandas as pd
             from features_bollinger import compute_bollinger
-            hist = yf.Ticker(ticker).history(period="3mo")
+            hist = yf.Ticker(ticker).history(period=yf_period)
             closes = hist["Close"].dropna()
-            result = compute_bollinger(closes, timeframe="1D")
+            result = compute_bollinger(closes, timeframe=timeframe)
             return result.__dict__ if result else FEATURE_UNAVAILABLE
 
         if feature_name == "volume":
             import yfinance as yf
             from features_volume import compute_volume_zscore
-            hist = yf.Ticker(ticker).history(period="3mo")
+            hist = yf.Ticker(ticker).history(period=yf_period)
             result = compute_volume_zscore(hist["Volume"].dropna())
             return result.__dict__ if result else FEATURE_UNAVAILABLE
 
         if feature_name == "rsi":
             import yfinance as yf
             from features_rsi import compute_rsi
-            hist = yf.Ticker(ticker).history(period="3mo")
+            hist = yf.Ticker(ticker).history(period=yf_period)
             result = compute_rsi(hist["Close"].dropna())
             return result.__dict__ if result else FEATURE_UNAVAILABLE
 
         if feature_name == "macd":
             import yfinance as yf
             from features_macd import compute_macd
-            hist = yf.Ticker(ticker).history(period="6mo")
+            hist = yf.Ticker(ticker).history(period=yf_period)
             result = compute_macd(hist["Close"].dropna())
             return result.__dict__ if result else FEATURE_UNAVAILABLE
 
@@ -113,6 +126,7 @@ async def get_features(
     ticker: str,
     as_of_date: date,
     feature_names: list[str],
+    timeframe: str = "1D",
 ) -> dict[str, Any]:
     """Fetch features for a ticker, using Firestore cache where possible.
 
@@ -120,6 +134,8 @@ async def get_features(
         ticker: Stock symbol.
         as_of_date: Date context for cache keying.
         feature_names: List of feature group names to fetch.
+        timeframe: Signal timeframe (1D/5D/1M/3M/6M/1Y). Controls history window
+            for OHLCV-based features so indicators match the analysis period.
 
     Returns:
         Dict mapping feature_name -> feature data or FEATURE_UNAVAILABLE sentinel.
@@ -129,12 +145,12 @@ async def get_features(
 
     # Check cache for each feature
     for name in feature_names:
-        cache_key = f"feature:{name}:{ticker}:{as_of_date.isoformat()}"
+        cache_key = f"feature:{name}:{ticker}:{timeframe}:{as_of_date.isoformat()}"
         try:
             from firestore import get_cache
             cached = get_cache(cache_key)
             if cached is not None:
-                logger.debug("feature_cache_hit feature=%s ticker=%s", name, ticker)
+                logger.debug("feature_cache_hit feature=%s ticker=%s tf=%s", name, ticker, timeframe)
                 results[name] = cached
                 continue
         except Exception:
@@ -146,23 +162,23 @@ async def get_features(
 
     # Compute missing features concurrently
     computed = await asyncio.gather(
-        *[_compute_feature(name, ticker, as_of_date) for name in missing],
+        *[_compute_feature(name, ticker, as_of_date, timeframe) for name in missing],
         return_exceptions=True,
     )
 
     for name, value in zip(missing, computed):
         if isinstance(value, Exception):
-            logger.error("feature_gather_exception feature=%s ticker=%s error=%s", name, ticker, value)
+            logger.error("feature_gather_exception feature=%s ticker=%s tf=%s error=%s", name, ticker, timeframe, value)
             results[name] = FEATURE_UNAVAILABLE
         else:
             results[name] = value
             if value is not FEATURE_UNAVAILABLE and value != FEATURE_UNAVAILABLE:
                 ttl = _TTL.get(name, 3_600)
-                cache_key = f"feature:{name}:{ticker}:{as_of_date.isoformat()}"
+                cache_key = f"feature:{name}:{ticker}:{timeframe}:{as_of_date.isoformat()}"
                 try:
                     from firestore import set_cache
                     set_cache(cache_key, value, ttl_seconds=ttl)
                 except Exception as e:
-                    logger.warning("feature_cache_write_failed feature=%s error=%s", name, e)
+                    logger.warning("feature_cache_write_failed feature=%s tf=%s error=%s", name, timeframe, e)
 
     return results

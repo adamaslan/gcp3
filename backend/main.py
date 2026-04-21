@@ -1148,12 +1148,19 @@ async def ticker_signal_matrix(ticker: str, request: Request) -> dict:
         from feature_store import get_features
         from signals.multi_timeframe import build_timeframe_matrix
 
-        all_features = await get_features(
-            ticker, _date.today(),
-            ["bollinger", "volume", "rsi", "macd", "sector_relative"],
+        timeframes = ["1D", "5D", "1M", "3M", "6M", "1Y"]
+        feature_names = ["bollinger", "volume", "rsi", "macd", "sector_relative"]
+        tf_results = await asyncio.gather(
+            *[get_features(ticker, _date.today(), feature_names, timeframe=tf) for tf in timeframes],
+            return_exceptions=True,
         )
-        # Use same features across all timeframes for now; feature_store will differentiate later
-        features_by_tf = {tf: {**all_features, "change_pct": 0.0} for tf in ["1D", "5D", "1M", "3M", "6M", "1Y"]}
+        features_by_tf = {}
+        for tf, result in zip(timeframes, tf_results):
+            if isinstance(result, Exception):
+                logger.error("GET /signals/%s feature fetch failed tf=%s error=%s", ticker, tf, result)
+                features_by_tf[tf] = {"change_pct": 0.0}
+            else:
+                features_by_tf[tf] = {**result, "change_pct": 0.0}
         matrix = await build_timeframe_matrix(ticker, features_by_tf)
         return matrix.model_dump()
     except Exception as exc:

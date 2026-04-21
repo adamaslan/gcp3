@@ -74,10 +74,7 @@ def compute_correlation_summary(
     # Regime flag: decoupling if market corr dropped > 2σ vs its own 90d history
     regime_flag = "normal"
     if len(ticker_returns) >= 90:
-        roll_corr_90d = [
-            float(ticker_returns.iloc[i - 30 : i].corr(spy_returns.iloc[i - 30 : i]))
-            for i in range(30, len(ticker_returns))
-        ]
+        roll_corr_90d = ticker_returns.rolling(window=30).corr(spy_returns).dropna()
         if len(roll_corr_90d) >= 5:
             hist_mean = float(np.mean(roll_corr_90d[:-1]))
             hist_std = float(np.std(roll_corr_90d[:-1]))

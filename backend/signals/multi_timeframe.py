@@ -124,7 +124,8 @@ async def _compute_single_timeframe(
         features_block=_features_block(features),
     )
 
-    result = structured_generate(
+    result = await asyncio.to_thread(
+        structured_generate,
         prompt=prompt,
         schema=Signal,
         endpoint="signals",
