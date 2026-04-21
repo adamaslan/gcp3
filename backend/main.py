@@ -1148,19 +1148,34 @@ async def ticker_signal_matrix(ticker: str, request: Request) -> dict:
         from feature_store import get_features
         from signals.multi_timeframe import build_timeframe_matrix
 
+        import yfinance as yf
+
         timeframes = ["1D", "5D", "1M", "3M", "6M", "1Y"]
         feature_names = ["bollinger", "volume", "rsi", "macd", "sector_relative"]
+
+        # Fetch 2 years of daily closes once; slice per timeframe to compute period returns
+        _tf_lookback = {"1D": 2, "5D": 7, "1M": 23, "3M": 65, "6M": 130, "1Y": 253}
+        ticker_obj = yf.Ticker(ticker)
+        hist_2y = await asyncio.to_thread(ticker_obj.history, period="2y")
+        closes_2y = hist_2y["Close"].dropna()
+
+        def _period_return(closes, lookback: int) -> float:
+            if len(closes) < lookback + 1:
+                return 0.0
+            return round((float(closes.iloc[-1]) / float(closes.iloc[-lookback - 1]) - 1) * 100, 4)
+
         tf_results = await asyncio.gather(
             *[get_features(ticker, _date.today(), feature_names, timeframe=tf) for tf in timeframes],
             return_exceptions=True,
         )
         features_by_tf = {}
         for tf, result in zip(timeframes, tf_results):
+            change_pct = _period_return(closes_2y, _tf_lookback.get(tf, 2))
             if isinstance(result, Exception):
                 logger.error("GET /signals/%s feature fetch failed tf=%s error=%s", ticker, tf, result)
-                features_by_tf[tf] = {"change_pct": 0.0}
+                features_by_tf[tf] = {"change_pct": change_pct}
             else:
-                features_by_tf[tf] = {**result, "change_pct": 0.0}
+                features_by_tf[tf] = {**result, "change_pct": change_pct}
         matrix = await build_timeframe_matrix(ticker, features_by_tf)
         return matrix.model_dump()
     except Exception as exc:

@@ -10,6 +10,8 @@ import logging
 from datetime import date
 from typing import Any
 
+from firestore import get_cache, set_cache
+
 logger = logging.getLogger(__name__)
 
 FEATURE_UNAVAILABLE = "feature_unavailable"
@@ -68,7 +70,8 @@ async def _compute_feature(
         if feature_name == "bollinger":
             import yfinance as yf
             from features_bollinger import compute_bollinger
-            hist = yf.Ticker(ticker).history(period=yf_period)
+            ticker_obj = yf.Ticker(ticker)
+            hist = await asyncio.to_thread(ticker_obj.history, period=yf_period)
             closes = hist["Close"].dropna()
             result = compute_bollinger(closes, timeframe=timeframe)
             return result.__dict__ if result else FEATURE_UNAVAILABLE
@@ -76,21 +79,24 @@ async def _compute_feature(
         if feature_name == "volume":
             import yfinance as yf
             from features_volume import compute_volume_zscore
-            hist = yf.Ticker(ticker).history(period=yf_period)
+            ticker_obj = yf.Ticker(ticker)
+            hist = await asyncio.to_thread(ticker_obj.history, period=yf_period)
             result = compute_volume_zscore(hist["Volume"].dropna())
             return result.__dict__ if result else FEATURE_UNAVAILABLE
 
         if feature_name == "rsi":
             import yfinance as yf
             from features_rsi import compute_rsi
-            hist = yf.Ticker(ticker).history(period=yf_period)
+            ticker_obj = yf.Ticker(ticker)
+            hist = await asyncio.to_thread(ticker_obj.history, period=yf_period)
             result = compute_rsi(hist["Close"].dropna())
             return result.__dict__ if result else FEATURE_UNAVAILABLE
 
         if feature_name == "macd":
             import yfinance as yf
             from features_macd import compute_macd
-            hist = yf.Ticker(ticker).history(period=yf_period)
+            ticker_obj = yf.Ticker(ticker)
+            hist = await asyncio.to_thread(ticker_obj.history, period=yf_period)
             result = compute_macd(hist["Close"].dropna())
             return result.__dict__ if result else FEATURE_UNAVAILABLE
 
@@ -147,7 +153,6 @@ async def get_features(
     for name in feature_names:
         cache_key = f"feature:{name}:{ticker}:{timeframe}:{as_of_date.isoformat()}"
         try:
-            from firestore import get_cache
             cached = get_cache(cache_key)
             if cached is not None:
                 logger.debug("feature_cache_hit feature=%s ticker=%s tf=%s", name, ticker, timeframe)
@@ -172,11 +177,10 @@ async def get_features(
             results[name] = FEATURE_UNAVAILABLE
         else:
             results[name] = value
-            if value is not FEATURE_UNAVAILABLE and value != FEATURE_UNAVAILABLE:
+            if value != FEATURE_UNAVAILABLE:
                 ttl = _TTL.get(name, 3_600)
                 cache_key = f"feature:{name}:{ticker}:{timeframe}:{as_of_date.isoformat()}"
                 try:
-                    from firestore import set_cache
                     set_cache(cache_key, value, ttl_seconds=ttl)
                 except Exception as e:
                     logger.warning("feature_cache_write_failed feature=%s tf=%s error=%s", name, timeframe, e)

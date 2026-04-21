@@ -197,7 +197,7 @@ class AgentLoop:
                 system_instruction=system,
             )
             chat = gemini_model.start_chat(history=history[:-1])
-            response = chat.send_message(history[-1]["parts"][0] if history else "")
+            response = await chat.send_message_async(history[-1]["parts"][0] if history else "")
             return response.text or ""
         except Exception as e:
             logger.error("agent_llm_call_failed error=%s", e)

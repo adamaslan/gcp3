@@ -74,10 +74,11 @@ def compute_breadth(
     pct_above_50 = float((today["close"] > today["ma_50"]).sum() / total)
     pct_above_200 = float((today["close"] > today["ma_200"]).sum() / total)
 
-    # Historical breadth for EMAs (by date)
+    # Historical breadth for EMAs (by date) — vectorized, no per-group lambda
     breadth_by_date = (
-        daily_universe.groupby("date")
-        .apply(lambda df: (df["close"] > df["ma_50"]).sum() / len(df))
+        (daily_universe["close"] > daily_universe["ma_50"])
+        .groupby(daily_universe["date"])
+        .mean()
         .sort_index()
     )
     ema_5 = float(breadth_by_date.ewm(span=5, adjust=False).mean().iloc[-1])
@@ -85,10 +86,13 @@ def compute_breadth(
     mom_5 = float(breadth_by_date.ewm(span=5, adjust=False).mean().diff().iloc[-1])
     mom_20 = float(breadth_by_date.ewm(span=20, adjust=False).mean().diff().iloc[-1])
 
-    # Advances / declines for McClellan
-    adv_dec_by_date = daily_universe.groupby("date").apply(
-        lambda df: (df["advancers"].sum() - df["decliners"].sum()) / len(df)
-    ).sort_index()
+    # Advances / declines for McClellan — vectorized
+    adv_dec_by_date = (
+        (daily_universe["advancers"].astype(float) - daily_universe["decliners"].astype(float))
+        .groupby(daily_universe["date"])
+        .mean()
+        .sort_index()
+    )
 
     mcclellan = float(
         adv_dec_by_date.ewm(span=19, adjust=False).mean().iloc[-1]
