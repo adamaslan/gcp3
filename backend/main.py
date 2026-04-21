@@ -32,6 +32,8 @@ from data_client import fh_429_stats
 from market_calendar import trading_date, is_trading_day
 from datetime import date, datetime, timezone
 from contextlib import asynccontextmanager
+from llm.cost_logger import get_daily_stats, top_endpoints_by_cost
+from calibration.fit import load_from_gcs
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -1123,4 +1125,115 @@ async def content(
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
         logger.exception("GET /content failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+
+
+# ── /signals/{ticker} — Multi-timeframe signal matrix ────────────────────────
+@app.get("/signals/{ticker}")
+async def ticker_signal_matrix(ticker: str, request: Request) -> dict:
+    """Per-ticker multi-timeframe signal matrix (Weakness #3).
+
+    Returns TimeframeMatrix with signals for 1D/5D/1M/3M/6M/1Y timeframes,
+    alignment score, and divergence pattern.
+    """
+    logger.info("GET /signals/%s from %s", ticker, request.client)
+    try:
+        from datetime import date as _date
+        from feature_store import get_features
+        from signals.multi_timeframe import build_timeframe_matrix
+
+        all_features = await get_features(
+            ticker, _date.today(),
+            ["bollinger", "volume", "rsi", "macd", "sector_relative"],
+        )
+        # Use same features across all timeframes for now; feature_store will differentiate later
+        features_by_tf = {tf: {**all_features, "change_pct": 0.0} for tf in ["1D", "5D", "1M", "3M", "6M", "1Y"]}
+        matrix = await build_timeframe_matrix(ticker, features_by_tf)
+        return matrix.model_dump()
+    except Exception as exc:
+        logger.exception("GET /signals/%s failed: %s", ticker, exc)
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+
+
+# ── /debug/calibration — Calibration reliability diagram data ────────────────
+@app.get("/debug/calibration")
+async def debug_calibration(request: Request) -> dict:
+    """Latest calibration model metadata from GCS."""
+    logger.info("GET /debug/calibration from %s", request.client)
+    try:
+        model = load_from_gcs(version=1)
+        if model is None:
+            return {"status": "no_model", "detail": "No calibration model found in GCS"}
+        return {
+            "status": "ok",
+            "version": model.version,
+            "n_samples": model.n_samples,
+            "ece_before": model.ece_before,
+            "ece_after": model.ece_after,
+            "A": model.A,
+            "B": model.B,
+        }
+    except Exception as exc:
+        logger.exception("GET /debug/calibration failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+
+
+# ── /debug/costs — Daily LLM cost stats ──────────────────────────────────────
+@app.get("/debug/costs")
+async def debug_costs(request: Request) -> dict:
+    """Today's LLM cost breakdown by endpoint."""
+    logger.info("GET /debug/costs from %s", request.client)
+    try:
+        stats = get_daily_stats()
+        top = top_endpoints_by_cost(n=5)
+        return {"daily_stats": stats, "top_endpoints": top}
+    except Exception as exc:
+        logger.exception("GET /debug/costs failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+
+
+# ── /debug/evals — Latest eval run report ────────────────────────────────────
+@app.get("/debug/evals")
+async def debug_evals(request: Request) -> dict:
+    """Run a quick baseline eval over the last 20 screener signals and return results."""
+    logger.info("GET /debug/evals from %s", request.client)
+    try:
+        from evals.harness import EvalHarness
+        from evals.variants.baseline_rule import BaselineRuleVariant
+        from evals.metrics import PredictionRecord
+        import hashlib, math
+
+        # Fetch recent screener quotes and build dummy eval records (no forward returns yet)
+        screener_data = await get_screener_data()
+        quotes = list(screener_data.get("quotes", {}).values())[:20]
+
+        records: list[PredictionRecord] = []
+        variant = BaselineRuleVariant()
+        for q in quotes:
+            rec = variant.predict(q.get("symbol", "?"), date.today(), {
+                "change_pct": q.get("change_pct", 0),
+                "price": q.get("price", 0),
+                "high": q.get("high", q.get("price", 0)),
+                "low": q.get("low", q.get("price", 0)),
+                "forward_return_5d": 0.0,
+                "regime": "unknown",
+            })
+            records.append(rec)
+
+        if not records:
+            return {"status": "no_records", "detail": "No screener quotes available"}
+
+        harness = EvalHarness(records=records)
+        result = harness.run_variant(variant)
+        return {
+            "status": "ok",
+            "variant": result.variant_name,
+            "n_records": result.n_records,
+            "note": "forward_return_5d=0 for all — schema/consistency metrics only until prediction ledger is populated",
+            "schema_validity_rate": result.schema_validity_rate,
+            "consistency": result.consistency,
+            "run_at": result.run_at,
+        }
+    except Exception as exc:
+        logger.exception("GET /debug/evals failed: %s", exc)
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
