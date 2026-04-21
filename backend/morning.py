@@ -21,7 +21,15 @@ INDICES = {
 
 async def _fetch_quote(client: httpx.AsyncClient, symbol: str) -> dict:
     d = await finnhub_get(client, "/quote", {"symbol": symbol})
-    return {"price": d["c"], "change": round(d["d"], 2), "change_pct": round(d["dp"], 2)}
+    return {
+        "price": d["c"],
+        "change": round(d["d"], 2),
+        "change_pct": round(d["dp"], 2),
+        "open": round(d["o"], 2),
+        "prev_close": round(d["pc"], 2),
+        "high": round(d["h"], 2),
+        "low": round(d["l"], 2),
+    }
 
 
 async def get_morning_brief() -> dict:
