@@ -213,15 +213,15 @@ async def compute_returns() -> dict:
     return {"status": "ok", "industries": len(industries)}
 
 
-async def get_industry_data(enrich_av: bool = False) -> dict:
+async def get_industry_data(enrich_av: bool = False, force: bool = False) -> dict:
     cache_key = f"industry_data:{date.today()}"
-    if cached := get_cache(cache_key):
+    if not force and (cached := get_cache(cache_key)):
         logger.info("industry_data: cache_hit key=%s", cache_key)
         return cached
 
     async with _INDUSTRY_LOCK:
         # Re-check cache after acquiring lock (another coroutine may have built it)
-        if cached := get_cache(cache_key):
+        if not force and (cached := get_cache(cache_key)):
             logger.info("industry_data: cache_hit key=%s (post-lock)", cache_key)
             return cached
 
@@ -292,18 +292,6 @@ async def get_industry_data(enrich_av: bool = False) -> dict:
                     av_quota_needed,
                 )
 
-        # Rankings (only entries with valid quote data)
-        ranked = sorted(
-            [{"industry": k, **v} for k, v in industries.items() if "change_pct" in v],
-            key=lambda x: x["change_pct"],
-            reverse=True,
-        )
-
-        # Group by sector, maintaining rank order within each sector
-        by_sector: dict[str, list] = {}
-        for row in ranked:
-            by_sector.setdefault(row["sector"], []).append(row)
-
         # Step 3: attach multi-period returns from permanent ETF store + persist to industry_cache
         t_returns_start = time.monotonic()
         _attach_stored_returns(industries)
@@ -329,6 +317,18 @@ async def get_industry_data(enrich_av: bool = False) -> dict:
                     logger.debug("industry_data massive: %s = %s", etf, massive_snapshot[etf])
         except Exception as exc:
             logger.warning("industry_data massive enrichment failed: %s", exc)
+
+        # Build rankings after all enrichment so rows include returns + 52W data
+        ranked = sorted(
+            [{"industry": k, **v} for k, v in industries.items() if "change_pct" in v],
+            key=lambda x: x["change_pct"],
+            reverse=True,
+        )
+
+        # Group by sector, maintaining rank order within each sector
+        by_sector: dict[str, list] = {}
+        for row in ranked:
+            by_sector.setdefault(row["sector"], []).append(row)
 
         result = {
             "date": str(date.today()),
@@ -379,6 +379,14 @@ def _attach_stored_returns(industries: dict) -> None:
                 batch = db.batch()
                 ops = 0
 
+    # Load existing industry_cache docs as fallback for industries with no etf_store history
+    cached_docs: dict[str, dict] = {}
+    try:
+        for doc in db.collection("industry_cache").stream():
+            cached_docs[doc.id] = doc.to_dict()
+    except Exception as exc:
+        logger.warning("industry: could not pre-load industry_cache for fallback: %s", exc)
+
     # Deduplicate ETFs (multiple industries may share one ETF)
     etf_returns: dict[str, dict | None] = {}
     for data in industries.values():
@@ -394,6 +402,15 @@ def _attach_stored_returns(industries: dict) -> None:
                                if not k.endswith("_high") and not k.endswith("_low")}
             data["52w_high"] = returns.get("52w_high")
             data["52w_low"] = returns.get("52w_low")
+        elif industry in cached_docs:
+            # etf_store has no history yet — use what's already in industry_cache
+            cached = cached_docs[industry]
+            if cached.get("returns"):
+                data["returns"] = cached["returns"]
+            if cached.get("52w_high") is not None:
+                data["52w_high"] = cached["52w_high"]
+            if cached.get("52w_low") is not None:
+                data["52w_low"] = cached["52w_low"]
 
         # Persist to industry_cache for industry_returns.py
         doc_ref = db.collection("industry_cache").document(industry)
