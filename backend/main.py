@@ -190,6 +190,23 @@ def _compact_quotes(data: dict) -> dict:
 
 
 # ── Admin: Precompute returns from etf_store → industry_cache ────────────────
+@app.post("/admin/refresh-industry-cache")
+async def refresh_industry_cache(request: Request) -> dict:
+    """Force-rebuild the industry_data cache, pulling 52W + returns from industry_cache.
+
+    Bypasses the 24-hour cache TTL so that newly seeded ETF history or
+    updated industry_cache documents are reflected immediately on /industry-intel.
+    """
+    _verify_scheduler(request)
+    logger.info("POST /admin/refresh-industry-cache triggered")
+    try:
+        result = await get_industry_data(enrich_av=False, force=True)
+        return {"industries": len(result.get("rankings", [])), "date": result.get("date")}
+    except Exception as exc:
+        logger.exception("POST /admin/refresh-industry-cache failed: %s", exc)
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
 @app.post("/admin/compute-returns")
 async def compute_returns_endpoint(request: Request) -> dict:
     """Precompute multi-period returns from stored ETF history into industry_cache.
