@@ -15,16 +15,30 @@ from massive_client import get_snapshots
 
 logger = logging.getLogger(__name__)
 
-# Representative large-caps across sectors
+# High-conviction tickers across 54 ETFs (from tickers3.csv)
 WATCHLIST: list[str] = [
-    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "AVGO", "ORCL", "ADBE",
-    "JPM", "BAC", "GS", "MS", "BLK",
-    "JNJ", "UNH", "LLY", "PFE", "ABBV",
-    "XOM", "CVX", "COP", "SLB",
-    "PG", "KO", "PEP", "WMT", "COST",
-    "BA", "CAT", "GE", "HON", "LMT",
-    "DIS", "NFLX", "SPOT", "CMCSA",
-    "GLD", "SLV", "TLT", "HYG",
+    "AA", "AAL", "AAPL", "ABB", "ABBV", "ABNB", "ABT", "ACN", "ADBE", "ADM",
+    "ADYEN", "AGNC", "AKAM", "ALB", "ALL", "AMD", "AMGN", "AMZN", "AVGO", "AXP",
+    "BA", "BAC", "BDX", "BE", "BG", "BHP", "BIDU", "BKNG", "BMY", "BPOP",
+    "C", "CB", "CCJ", "CEG", "CF", "CHWY", "COHR", "COP", "CORT", "COST",
+    "CRM", "CRWD", "CSX", "CTVA", "CURLF", "CVNA", "CVS", "CVX", "CYPSW", "DAL",
+    "DE", "DFS", "DHI", "DHR", "DIS", "DLR", "DOCN", "DUK", "EA", "ELV",
+    "ELVN", "EMR", "EQIX", "ETN", "ETSY", "EW", "EXPE", "EXR", "F", "FANUY",
+    "FCX", "FIGS", "FIS", "FRPT", "FSLR", "FTNT", "GE", "GILD", "GM", "GO",
+    "GOOG", "GOOGL", "GTBIF", "HCA", "HD", "HON", "HSYCF", "HWM", "IDXX", "INTC",
+    "INTU", "IPGP", "ISRG", "JNJ", "JPM", "JWN", "KARKF", "KDXHF", "KO", "KR",
+    "KUASF", "KYCCF", "LEN", "LIN", "LLY", "LOW", "LQDT", "LUV", "LVS", "LYV",
+    "MA", "MAR", "MCD", "MDLZ", "META", "MOD", "MOS", "MRK", "MSFT", "MSLOF",
+    "MT", "MU", "MUSA", "NEE", "NEM", "NFLX", "NHNCF", "NLY", "NPIFF", "NSC",
+    "NTDOY", "NTES", "NUE", "NVDA", "NVR", "NXE", "NYCB", "OC", "OGN", "OKLO",
+    "OKTA", "ONTO", "ORCL", "OROVY", "PANW", "PCRFY", "PEP", "PFE", "PG", "PGR",
+    "PHM", "PINS", "PL", "PLD", "PM", "PSA", "PYPL", "REGN", "RF", "RIO",
+    "RITM", "RKLB", "RTNTF", "RTX", "SATS", "SEGXF", "SHOP", "SHW", "SLB", "SNAP",
+    "SNOW", "SO", "SPOT", "SQ", "SSDIY", "STLD", "STWD", "SYK", "TCEHY", "TCNNF",
+    "TER", "TM", "TMO", "TMUS", "TOL", "TRV", "TRVI", "TSEM", "TSLA", "TSN",
+    "TT", "TXN", "UAL", "UEC", "UNH", "UNP", "UPS", "UUUU", "V", "VALE",
+    "VICI", "VRNOF", "VRTX", "VSAT", "VZ", "WELL", "WFC", "WMT", "WSM", "X",
+    "XOM", "ZBRA", "ZIM", "ZION", "ZM", "ZTS"
 ]
 
 
