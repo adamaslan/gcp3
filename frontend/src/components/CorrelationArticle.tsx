@@ -84,7 +84,7 @@ export function CorrelationArticle({ data }: { data: CorrelationArticleData }) {
       <div className="p-3 rounded-lg border border-amber-800/30 bg-amber-950/10">
         <p className="text-xs text-amber-400/80">
           <span className="font-semibold">Breadth note (pairs 3, 7):</span>{" "}
-          These pairs use <em>screener breadth</em> — buy vs sell signals across an 80-stock
+          These pairs use <em>screener breadth</em> — buy vs sell signals across a 216-stock
           cross-sector watchlist. Pairs 9 and 12 now use <em>ETF breadth</em> — the percentage of
           the 54 industry ETFs with positive returns today, the same universe as the technical signals.
           The screener breadth signal is binarised (positive → +1, negative → −1); ETF breadth is

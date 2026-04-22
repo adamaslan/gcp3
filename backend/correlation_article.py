@@ -208,7 +208,7 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
             data_b={"sentiment": sentiment}
         ))
 
-    # Pair 3: macro vs screener breadth (regime vs 80-stock cross-sector breadth)
+    # Pair 3: macro vs screener breadth (regime vs 216-stock cross-sector breadth)
     if "macro" in sources and "screener" in sources:
         breadth_pct = sources["screener"].get("breadth_pct", 0)
         regime = sources["macro"].get("ai_regime", "").lower()
@@ -307,7 +307,7 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
             data_b={"top_movers": top_movers[:3]}
         ))
 
-    # Pair 7: earnings vs screener breadth (beat/miss ratio vs 80-stock breadth)
+    # Pair 7: earnings vs screener breadth (beat/miss ratio vs 216-stock breadth)
     if "earnings" in sources and "screener" in sources:
         earnings_data = sources["earnings"]
         beats = len(earnings_data.get("beats", []))
@@ -791,7 +791,7 @@ def _build_article_prompt(
 - Market tone: {sources.get('morning', {}).get('market_tone', 'unknown')}
 - Macro regime: {sources.get('macro', {}).get('ai_regime', 'unknown')}
 - ETF breadth (54 industries): {etf_breadth_ctx:+.1f}% ({etf_pos_ctx}/{etf_total_ctx} ETFs positive today)
-- Screener breadth (80-stock cross-sector): {sources.get('screener', {}).get('breadth_pct', 0):+.1f}%
+- Screener breadth (216-stock cross-sector): {sources.get('screener', {}).get('breadth_pct', 0):+.1f}%
 - News sentiment: {sources.get('news', {}).get('overall_sentiment', 'neutral')}
 """
 
