@@ -47,18 +47,18 @@ const SOURCE_BADGE: Record<string, string> = {
 };
 
 function QuoteRow({ q, rank }: { q: Quote; rank: number }) {
+  const priceStr = q.price != null ? `$${q.price.toFixed(2)}` : "—";
+  const rangeStr = q.high != null && q.low != null ? `${q.low.toFixed(2)}–${q.high.toFixed(2)}` : "—";
   return (
     <tr className="border-t border-gray-800/60 hover:bg-gray-900/40">
       <td className="px-2 py-2 text-gray-600 text-xs">{rank}</td>
       <td className="px-2 py-2 font-mono text-blue-400 font-semibold">{q.symbol}</td>
-      <td className="px-2 py-2 text-right text-gray-300">${q.price?.toFixed(2)}</td>
-      <td className="px-2 py-2 text-right text-gray-500 text-xs font-mono hidden sm:table-cell">
-        {q.high !== undefined && q.low !== undefined ? `${q.low.toFixed(2)}–${q.high.toFixed(2)}` : "—"}
-      </td>
+      <td className="px-2 py-2 text-right text-gray-300">{priceStr}</td>
+      <td className="px-2 py-2 text-right text-gray-500 text-xs font-mono hidden sm:table-cell">{rangeStr}</td>
       <td className="px-2 py-2 text-right"><Pct v={q.change_pct} /></td>
       <td className="px-2 py-2 text-center">
         <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${SIGNAL_BADGE[q.signal] ?? SIGNAL_BADGE.hold}`}>
-          {q.signal?.replace("_", " ")}
+          {q.signal?.replace("_", " ") ?? "—"}
         </span>
       </td>
       <td className="px-2 py-2 text-center hidden sm:table-cell">
@@ -125,7 +125,7 @@ export function Screener({ data }: { data: ScreenerData }) {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Stock Screener</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{data.total_screened} symbols screened · {data.date}</p>
+          <p className="text-sm text-gray-500 mt-0.5">{Object.values(data.quotes).filter(q => !q.error).length} of {data.total_screened} symbols screened · {data.date}</p>
         </div>
         <div className="flex gap-1 bg-gray-900 rounded-lg p-1">
           {(["gainers", "losers", "all"] as const).map((v) => (
@@ -150,9 +150,10 @@ export function Screener({ data }: { data: ScreenerData }) {
         </div>
         <p className="text-sm text-gray-300">{data.ai_regime}</p>
         <p className="text-xs text-gray-500 mt-2">
-          Breadth = (buy signals − sell signals) ÷ {data.total_screened} stocks screened, expressed as a percentage.
-          Universe: {data.total_screened} hand-picked large-cap stocks (tech-heavy). This is{" "}
-          <em>watchlist breadth</em>, not market-wide breadth — small- and mid-cap moves are not captured.
+          Breadth = (buy signals − sell signals) ÷ total screened, expressed as a percentage.
+          Universe: 216 stocks — 4 representative constituents from each of the 54 industry ETFs tracked by
+          Technical Signals, deduplicated. Coverage spans all sectors equally (cybersecurity, biotech, energy,
+          industrials, shipping, cannabis, quantum, etc.) — no sector overweighting.{" "}
           Signals use intraday momentum thresholds: strong buy (&gt;3% + top of range), buy (&gt;1.5% or &gt;0.5% near highs),
           sell (&lt;−1.5% or &lt;−0.5% near lows), strong sell (&lt;−3% + bottom of range).
           Position-in-range = (price − day low) ÷ (day high − day low) and is most reliable late in the session.

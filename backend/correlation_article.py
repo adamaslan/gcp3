@@ -17,6 +17,7 @@ Data sources (9 total):
 """
 import asyncio
 import logging
+import math
 import os
 import re
 from dataclasses import dataclass
@@ -82,14 +83,18 @@ async def _gather_all_sources() -> dict:
 
 
 def _compute_correlation_score(signal_a: float, signal_b: float) -> float:
-    """Compute correlation between two normalized signals (-1 to +1).
+    """Compute a graded correlation between two continuous signals in [-1, 1].
+
+    Uses tanh of the product so that:
+    - Both signals near ±1 and agreeing → score approaches ±0.76 (tanh(1))
+    - Weak signals (near 0) → score compresses toward 0 even if direction matches
+    - Hard ±1 inputs are impossible unless the underlying magnitudes actually
+      justify them — the caller must pass continuous values, not ±1 flags.
 
     Returns:
-        -1.0 (strong divergence) to +1.0 (strong agreement)
+        float in (-1.0, +1.0), never reaching the extremes under realistic inputs.
     """
-    # Simple dot product: if both point the same direction, score is high
-    # Normalize to [-1, 1] range
-    return signal_a * signal_b
+    return round(math.tanh(signal_a * signal_b * 2.0), 3)
 
 
 def _normalize_signal(value: float, min_val: float, max_val: float) -> float:
@@ -98,6 +103,42 @@ def _normalize_signal(value: float, min_val: float, max_val: float) -> float:
         return 0.0
     normalized = 2 * (value - min_val) / (max_val - min_val) - 1
     return max(-1.0, min(1.0, normalized))
+
+
+def _jaccard(set_a: set, set_b: set) -> float:
+    """Jaccard similarity in [0, 1]. Empty sets → 0."""
+    union = set_a | set_b
+    if not union:
+        return 0.0
+    return len(set_a & set_b) / len(union)
+
+
+def _regime_strength(regime_text: str, supporting_val: float, strong_threshold: float) -> float:
+    """Return a continuous directional signal for a text regime label.
+
+    Args:
+        regime_text: Lower-cased regime string (e.g. 'risk-on', 'bearish').
+        supporting_val: A numeric value that should corroborate the label
+            (e.g. breadth_pct for a risk-on label, buy_ratio for bullish).
+        strong_threshold: Absolute value of supporting_val above which the
+            signal is considered strong (scales the output toward ±1).
+
+    Returns:
+        Float in [-1, 1] where sign comes from the label and magnitude comes
+        from how strongly the supporting_val backs it up.
+    """
+    if "risk-on" in regime_text or "bullish" in regime_text:
+        direction = 1.0
+    elif "risk-off" in regime_text or "bearish" in regime_text:
+        direction = -1.0
+    else:
+        direction = 0.0
+
+    if direction == 0.0:
+        return 0.0
+
+    magnitude = min(abs(supporting_val) / max(strong_threshold, 1e-6), 1.0)
+    return direction * (0.3 + 0.7 * magnitude)  # floor of 0.3 when label is set
 
 
 def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
@@ -110,17 +151,20 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
         rotation_data = sources["rotation"]
 
         regime = macro_data.get("ai_regime", "").lower()
-        regime_signal = 1.0 if "risk-on" in regime else (-1.0 if "risk-off" in regime else 0.0)
+        # Use screener breadth as the numeric backer for the regime label
+        screener_breadth = sources.get("screener", {}).get("breadth_pct", 0)
+        regime_signal = _regime_strength(regime, screener_breadth, strong_threshold=30)
 
         leaders = rotation_data.get("leaders", [])
-        laggards = rotation_data.get("laggards", [])
         defensive_sectors = {"utilities", "consumer staples", "real estate", "health care"}
         defensive_leader_count = sum(1 for l in leaders if l.get("sector", "").lower() in defensive_sectors)
-
-        offense_signal = 1.0 if len(leaders) > defensive_leader_count else (-1.0 if defensive_leader_count > len(leaders) / 2 else 0.0)
+        offensive_leader_count = len(leaders) - defensive_leader_count
+        total_leaders = max(len(leaders), 1)
+        # Continuous: +1 = fully offensive, -1 = fully defensive
+        offense_signal = (offensive_leader_count - defensive_leader_count) / total_leaders
 
         score = _compute_correlation_score(regime_signal, offense_signal)
-        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.5 else "neutral")
+        signal_type = "agreement" if score > 0.3 else ("divergence" if score < -0.3 else "neutral")
 
         results.append(CorrelationResult(
             pair_id="macro-vs-rotation",
@@ -128,9 +172,9 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
             source_b="sector-rotation",
             score=score,
             signal=signal_type,
-            summary=f"Macro regime {regime} vs sector leadership pattern",
+            summary=f"Macro regime {regime} vs sector leadership ({offensive_leader_count} offensive / {defensive_leader_count} defensive leaders)",
             data_a={"regime": regime},
-            data_b={"leaders": len(leaders), "defensive_leading": defensive_leader_count > len(leaders) / 2}
+            data_b={"leaders": len(leaders), "offensive": offensive_leader_count, "defensive": defensive_leader_count}
         ))
 
     # Pair 2: macro vs news
@@ -139,13 +183,19 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
         news_data = sources["news"]
 
         regime = macro_data.get("ai_regime", "").lower()
-        regime_signal = 1.0 if "risk-on" in regime else (-1.0 if "risk-off" in regime else 0.0)
+        screener_breadth = sources.get("screener", {}).get("breadth_pct", 0)
+        regime_signal = _regime_strength(regime, screener_breadth, strong_threshold=30)
 
         sentiment = news_data.get("overall_sentiment", "neutral").lower()
-        sentiment_signal = 1.0 if "positive" in sentiment else (-1.0 if "negative" in sentiment else 0.0)
+        # Use sentiment score if available, else derive from label
+        sentiment_score = news_data.get("sentiment_score", None)
+        if sentiment_score is not None:
+            sentiment_signal = max(-1.0, min(1.0, float(sentiment_score)))
+        else:
+            sentiment_signal = _regime_strength(sentiment, abs(screener_breadth), strong_threshold=20)
 
         score = _compute_correlation_score(regime_signal, sentiment_signal)
-        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.5 else "neutral")
+        signal_type = "agreement" if score > 0.3 else ("divergence" if score < -0.3 else "neutral")
 
         results.append(CorrelationResult(
             pair_id="macro-vs-news",
@@ -158,16 +208,18 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
             data_b={"sentiment": sentiment}
         ))
 
-    # Pair 3: macro vs screener (regime vs breadth)
+    # Pair 3: macro vs screener breadth (regime vs 80-stock cross-sector breadth)
     if "macro" in sources and "screener" in sources:
         breadth_pct = sources["screener"].get("breadth_pct", 0)
         regime = sources["macro"].get("ai_regime", "").lower()
 
-        regime_signal = 1.0 if "risk-on" in regime else (-1.0 if "risk-off" in regime else 0.0)
-        breadth_signal = 1.0 if breadth_pct > 0 else (-1.0 if breadth_pct < 0 else 0.0)
+        # Continuous regime signal backed by breadth magnitude
+        regime_signal = _regime_strength(regime, breadth_pct, strong_threshold=30)
+        # Continuous breadth signal: scale ±100% → ±1
+        breadth_signal = _normalize_signal(breadth_pct, -100, 100)
 
         score = _compute_correlation_score(regime_signal, breadth_signal)
-        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.5 else "neutral")
+        signal_type = "agreement" if score > 0.3 else ("divergence" if score < -0.3 else "neutral")
 
         results.append(CorrelationResult(
             pair_id="macro-vs-screener",
@@ -205,16 +257,21 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
             data_b={"gainer_sectors": list(gainer_sectors)[:3]}
         ))
 
-    # Pair 5: rotation vs news
+    # Pair 5: rotation vs news (sector leaders vs news-mentioned sectors)
     if "rotation" in sources and "news" in sources:
-        leader_sectors = [l.get("sector", "") for l in sources["rotation"].get("leaders", [])]
-        top_movers = sources["news"].get("top_movers", [])[:3]
-        mover_symbols = [m.get("symbol", "") for m in top_movers]
+        leader_sectors = set(l.get("sector", "").lower() for l in sources["rotation"].get("leaders", []))
+        laggard_sectors = set(l.get("sector", "").lower() for l in sources["rotation"].get("laggards", []))
+        # Extract sectors mentioned in news movers
+        news_movers = sources["news"].get("top_movers", [])[:10]
+        mover_symbols = [m.get("symbol", "") for m in news_movers]
+        news_sectors = set(m.get("sector", "").lower() for m in news_movers if m.get("sector"))
 
-        # Check if news-driven movers' sectors align with rotation leaders
-        # (simplified: just check if there's overlap in mentions)
-        score = _normalize_signal(len(top_movers), 0, 5)
-        signal_type = "agreement" if score > 0.3 else "neutral"
+        leader_overlap = _jaccard(leader_sectors, news_sectors) if news_sectors else 0.0
+        laggard_overlap = _jaccard(laggard_sectors, news_sectors) if news_sectors else 0.0
+        # Positive if news aligns with leaders, negative if news aligns with laggards
+        net = leader_overlap - laggard_overlap
+        score = round(max(-1.0, min(1.0, net * 2)), 3)
+        signal_type = "agreement" if score > 0.2 else ("divergence" if score < -0.2 else "neutral")
 
         results.append(CorrelationResult(
             pair_id="rotation-vs-news",
@@ -222,9 +279,9 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
             source_b="news-sentiment",
             score=score,
             signal=signal_type,
-            summary=f"Sector leaders vs news-driven movers",
-            data_a={"leaders": leader_sectors[:3]},
-            data_b={"top_movers": mover_symbols}
+            summary=f"Sector leaders vs news-driven movers (leader overlap: {leader_overlap:.2f}, laggard overlap: {laggard_overlap:.2f})",
+            data_a={"leaders": list(leader_sectors)[:3]},
+            data_b={"top_movers": mover_symbols[:3]}
         ))
 
     # Pair 6: screener vs news
@@ -250,18 +307,21 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
             data_b={"top_movers": top_movers[:3]}
         ))
 
-    # Pair 7: earnings vs screener
+    # Pair 7: earnings vs screener breadth (beat/miss ratio vs 80-stock breadth)
     if "earnings" in sources and "screener" in sources:
         earnings_data = sources["earnings"]
         beats = len(earnings_data.get("beats", []))
         misses = len(earnings_data.get("misses", []))
+        total_earnings = beats + misses or 1
         breadth = sources["screener"].get("breadth_pct", 0)
 
-        earnings_signal = 1.0 if beats > misses else (-1.0 if misses > beats else 0.0)
-        breadth_signal = 1.0 if breadth > 0 else (-1.0 if breadth < 0 else 0.0)
+        # Continuous: net beat ratio in [-1, 1]
+        earnings_signal = (beats - misses) / total_earnings
+        # Continuous breadth signal
+        breadth_signal = _normalize_signal(breadth, -100, 100)
 
         score = _compute_correlation_score(earnings_signal, breadth_signal)
-        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.5 else "neutral")
+        signal_type = "agreement" if score > 0.3 else ("divergence" if score < -0.3 else "neutral")
 
         results.append(CorrelationResult(
             pair_id="earnings-vs-screener",
@@ -269,23 +329,28 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
             source_b="screener",
             score=score,
             signal=signal_type,
-            summary=f"Earnings: {beats} beats vs {misses} misses, Breadth: {breadth:+.1f}%",
-            data_a={"beats": beats, "misses": misses},
+            summary=f"Earnings: {beats} beats vs {misses} misses ({earnings_signal:+.2f} ratio), Breadth: {breadth:+.1f}%",
+            data_a={"beats": beats, "misses": misses, "ratio": round(earnings_signal, 2)},
             data_b={"breadth_pct": breadth}
         ))
 
-    # Pair 8: earnings vs news
+    # Pair 8: earnings vs news (Jaccard overlap + directional agreement)
     if "earnings" in sources and "news" in sources:
         earnings_data = sources["earnings"]
-        earnings_movers = earnings_data.get("beats", []) + earnings_data.get("misses", [])
+        beats = earnings_data.get("beats", [])
+        misses = earnings_data.get("misses", [])
         news_movers = sources["news"].get("top_movers", [])
 
-        earnings_symbols = set(e.get("symbol", "") for e in earnings_movers)
+        beat_symbols = set(e.get("symbol", "") for e in beats)
+        miss_symbols = set(e.get("symbol", "") for e in misses)
         news_symbols = set(n.get("symbol", "") for n in news_movers)
 
-        overlap = len(earnings_symbols & news_symbols)
-        score = _normalize_signal(overlap, 0, max(len(earnings_symbols), len(news_symbols), 1))
-        signal_type = "agreement" if score > 0.3 else "neutral"
+        # Beats appearing in news = agreement; misses appearing in news = divergence
+        beat_news_overlap = _jaccard(beat_symbols, news_symbols)
+        miss_news_overlap = _jaccard(miss_symbols, news_symbols)
+        net_jaccard = beat_news_overlap - miss_news_overlap
+        score = round(max(-1.0, min(1.0, net_jaccard * 3)), 3)
+        signal_type = "agreement" if score > 0.2 else ("divergence" if score < -0.2 else "neutral")
 
         results.append(CorrelationResult(
             pair_id="earnings-vs-news",
@@ -293,43 +358,52 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
             source_b="news-sentiment",
             score=score,
             signal=signal_type,
-            summary=f"Earnings and news movers overlap: {overlap} stocks",
-            data_a={"earnings_movers": list(earnings_symbols)[:3]},
+            summary=f"Earnings/news overlap: {len(beat_symbols & news_symbols)} beats, {len(miss_symbols & news_symbols)} misses in news",
+            data_a={"earnings_movers": list(beat_symbols | miss_symbols)[:3]},
             data_b={"news_movers": list(news_symbols)[:3]}
         ))
 
-    # Pair 9: morning vs screener
-    if "morning" in sources and "screener" in sources:
+    # Pair 9: morning vs ETF-breadth (% of 54 industry ETFs positive today)
+    if "morning" in sources and "industry_returns" in sources:
         morning_tone = sources["morning"].get("market_tone", "neutral").lower()
-        breadth = sources["screener"].get("breadth_pct", 0)
+        leaders_1d = sources["industry_returns"].get("leaders", {}).get("1d", [])
+        laggards_1d = sources["industry_returns"].get("laggards", {}).get("1d", [])
+        etf_positive = sum(1 for e in leaders_1d if e.get("return", 0) > 0)
+        etf_negative = sum(1 for e in laggards_1d if e.get("return", 0) < 0)
+        etf_total = etf_positive + etf_negative or 1
+        etf_breadth_pct = round((etf_positive - etf_negative) / etf_total * 100, 1)
 
-        tone_signal = 1.0 if "bullish" in morning_tone else (-1.0 if "bearish" in morning_tone else 0.0)
-        breadth_signal = 1.0 if breadth > 0 else (-1.0 if breadth < 0 else 0.0)
+        # Tone signal backed by ETF breadth magnitude
+        tone_signal = _regime_strength(morning_tone, etf_breadth_pct, strong_threshold=40)
+        # Continuous ETF breadth
+        breadth_signal = _normalize_signal(etf_breadth_pct, -100, 100)
 
         score = _compute_correlation_score(tone_signal, breadth_signal)
-        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.5 else "neutral")
+        signal_type = "agreement" if score > 0.3 else ("divergence" if score < -0.3 else "neutral")
 
         results.append(CorrelationResult(
-            pair_id="morning-vs-screener",
+            pair_id="morning-vs-etf-breadth",
             source_a="morning-brief",
-            source_b="screener",
+            source_b="industry-returns",
             score=score,
             signal=signal_type,
-            summary=f"Market tone {morning_tone} vs breadth {breadth:+.1f}%",
+            summary=f"Market tone {morning_tone} vs ETF breadth {etf_breadth_pct:+.1f}% ({etf_positive}/{etf_total} ETFs positive)",
             data_a={"tone": morning_tone},
-            data_b={"breadth_pct": breadth}
+            data_b={"etf_breadth_pct": etf_breadth_pct, "etf_positive": etf_positive, "etf_total": etf_total}
         ))
 
     # Pair 10: morning vs macro
     if "morning" in sources and "macro" in sources:
         tone = sources["morning"].get("market_tone", "neutral").lower()
         regime = sources["macro"].get("ai_regime", "").lower()
+        screener_breadth = sources.get("screener", {}).get("breadth_pct", 0)
 
-        tone_signal = 1.0 if "bullish" in tone else (-1.0 if "bearish" in tone else 0.0)
-        regime_signal = 1.0 if "risk-on" in regime else (-1.0 if "risk-off" in regime else 0.0)
+        # Both signals backed by screener breadth as corroborating magnitude
+        tone_signal = _regime_strength(tone, screener_breadth, strong_threshold=30)
+        regime_signal = _regime_strength(regime, screener_breadth, strong_threshold=30)
 
         score = _compute_correlation_score(tone_signal, regime_signal)
-        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.5 else "neutral")
+        signal_type = "agreement" if score > 0.3 else ("divergence" if score < -0.3 else "neutral")
 
         results.append(CorrelationResult(
             pair_id="morning-vs-macro",
@@ -349,12 +423,19 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
         sig_summary = sources["signals"].get("signal_summary", {})
         sig_regime = sig_summary.get("ai_regime", "Mixed").lower()
         macro_regime = sources["macro"].get("ai_regime", "").lower()
+        buys = sig_summary.get("buy_count", 0)
+        sells = sig_summary.get("sell_count", 0)
+        total_sig = buys + sells or 1
+        screener_breadth = sources.get("screener", {}).get("breadth_pct", 0)
 
-        sig_signal = 1.0 if "bullish" in sig_regime else (-1.0 if "bearish" in sig_regime else 0.0)
-        macro_signal = 1.0 if "risk-on" in macro_regime else (-1.0 if "risk-off" in macro_regime else 0.0)
+        # Signal regime backed by actual buy/sell ratio
+        buy_ratio_pct = (buys - sells) / total_sig * 100
+        sig_signal = _regime_strength(sig_regime, buy_ratio_pct, strong_threshold=40)
+        # Macro regime backed by screener breadth
+        macro_signal = _regime_strength(macro_regime, screener_breadth, strong_threshold=30)
 
         score = _compute_correlation_score(sig_signal, macro_signal)
-        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.5 else "neutral")
+        signal_type = "agreement" if score > 0.3 else ("divergence" if score < -0.3 else "neutral")
 
         results.append(CorrelationResult(
             pair_id="signals-vs-macro",
@@ -362,34 +443,39 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
             source_b="macro-pulse",
             score=score,
             signal=signal_type,
-            summary=f"Technical regime {sig_regime} vs macro regime {macro_regime}",
-            data_a={"regime": sig_regime, "buys": sig_summary.get("buy_count", 0), "sells": sig_summary.get("sell_count", 0)},
+            summary=f"Technical regime {sig_regime} ({buys} BUY/{sells} SELL) vs macro regime {macro_regime}",
+            data_a={"regime": sig_regime, "buys": buys, "sells": sells, "buy_ratio_pct": round(buy_ratio_pct, 1)},
             data_b={"regime": macro_regime}
         ))
 
-    # Pair 12: signals BUY/SELL ratio vs screener breadth
-    if "signals" in sources and "screener" in sources:
+    # Pair 12: signals BUY/SELL ratio vs ETF-breadth (same 54-ETF universe as signals)
+    if "signals" in sources and "industry_returns" in sources:
         sig_summary = sources["signals"].get("signal_summary", {})
         buys = sig_summary.get("buy_count", 0)
         sells = sig_summary.get("sell_count", 0)
         total_sig = buys + sells or 1
-        breadth = sources["screener"].get("breadth_pct", 0)
+        leaders_1d = sources["industry_returns"].get("leaders", {}).get("1d", [])
+        laggards_1d = sources["industry_returns"].get("laggards", {}).get("1d", [])
+        etf_positive = sum(1 for e in leaders_1d if e.get("return", 0) > 0)
+        etf_negative = sum(1 for e in laggards_1d if e.get("return", 0) < 0)
+        etf_total = etf_positive + etf_negative or 1
+        etf_breadth_pct = round((etf_positive - etf_negative) / etf_total * 100, 1)
 
         buy_ratio_signal = _normalize_signal(buys - sells, -total_sig, total_sig)
-        breadth_signal = 1.0 if breadth > 0 else (-1.0 if breadth < 0 else 0.0)
+        etf_breadth_signal = _normalize_signal(etf_breadth_pct, -100, 100)
 
-        score = _compute_correlation_score(buy_ratio_signal, breadth_signal)
+        score = _compute_correlation_score(buy_ratio_signal, etf_breadth_signal)
         signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.5 else "neutral")
 
         results.append(CorrelationResult(
-            pair_id="signals-vs-screener",
+            pair_id="signals-vs-etf-breadth",
             source_a="technical-signals",
-            source_b="screener",
+            source_b="industry-returns",
             score=score,
             signal=signal_type,
-            summary=f"Signals {buys} BUY / {sells} SELL vs breadth {breadth:+.1f}%",
+            summary=f"Signals {buys} BUY / {sells} SELL vs ETF breadth {etf_breadth_pct:+.1f}% ({etf_positive}/{etf_total} ETFs positive)",
             data_a={"buys": buys, "sells": sells},
-            data_b={"breadth_pct": breadth}
+            data_b={"etf_breadth_pct": etf_breadth_pct, "etf_positive": etf_positive, "etf_total": etf_total}
         ))
 
     # Pair 13: industry returns leaders vs rotation leaders
@@ -446,12 +532,17 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
     if "market_summary" in sources and "morning" in sources:
         trend = sources["market_summary"].get("trend", "Stable").lower()
         tone = sources["morning"].get("market_tone", "neutral").lower()
+        avg_score = float(sources["market_summary"].get("avg_sentiment_score", 0))
+        screener_breadth = sources.get("screener", {}).get("breadth_pct", 0)
 
-        trend_signal = 1.0 if "improv" in trend else (-1.0 if "deterior" in trend else 0.0)
-        tone_signal = 1.0 if "bullish" in tone else (-1.0 if "bearish" in tone else 0.0)
+        # Trend signal backed by 7-day avg sentiment score magnitude
+        trend_signal = _regime_strength(trend.replace("improv", "bullish").replace("deterior", "bearish"),
+                                        avg_score * 50, strong_threshold=30)
+        # Tone signal backed by today's screener breadth
+        tone_signal = _regime_strength(tone, screener_breadth, strong_threshold=30)
 
         score = _compute_correlation_score(trend_signal, tone_signal)
-        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.5 else "neutral")
+        signal_type = "agreement" if score > 0.3 else ("divergence" if score < -0.3 else "neutral")
 
         results.append(CorrelationResult(
             pair_id="trend-vs-morning",
@@ -459,21 +550,28 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
             source_b="morning-brief",
             score=score,
             signal=signal_type,
-            summary=f"7-day trend {trend} vs today's tone {tone}",
-            data_a={"trend": trend, "avg_score": sources["market_summary"].get("avg_sentiment_score", 0)},
+            summary=f"7-day trend {trend} (avg score {avg_score:+.2f}) vs today's tone {tone}",
+            data_a={"trend": trend, "avg_score": avg_score},
             data_b={"tone": tone}
         ))
 
     # Pair 16: market_summary trend vs signals regime
     if "market_summary" in sources and "signals" in sources:
         trend = sources["market_summary"].get("trend", "Stable").lower()
-        sig_regime = sources["signals"].get("signal_summary", {}).get("ai_regime", "Mixed").lower()
+        sig_summary_16 = sources["signals"].get("signal_summary", {})
+        sig_regime = sig_summary_16.get("ai_regime", "Mixed").lower()
+        avg_score = float(sources["market_summary"].get("avg_sentiment_score", 0))
+        buys_16 = sig_summary_16.get("buy_count", 0)
+        sells_16 = sig_summary_16.get("sell_count", 0)
+        total_16 = buys_16 + sells_16 or 1
+        buy_ratio_pct_16 = (buys_16 - sells_16) / total_16 * 100
 
-        trend_signal = 1.0 if "improv" in trend else (-1.0 if "deterior" in trend else 0.0)
-        sig_signal = 1.0 if "bullish" in sig_regime else (-1.0 if "bearish" in sig_regime else 0.0)
+        trend_signal = _regime_strength(trend.replace("improv", "bullish").replace("deterior", "bearish"),
+                                        avg_score * 50, strong_threshold=30)
+        sig_signal = _regime_strength(sig_regime, buy_ratio_pct_16, strong_threshold=40)
 
         score = _compute_correlation_score(trend_signal, sig_signal)
-        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.5 else "neutral")
+        signal_type = "agreement" if score > 0.3 else ("divergence" if score < -0.3 else "neutral")
 
         results.append(CorrelationResult(
             pair_id="trend-vs-signals",
@@ -481,9 +579,9 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
             source_b="technical-signals",
             score=score,
             signal=signal_type,
-            summary=f"7-day trend {trend} vs signals regime {sig_regime}",
-            data_a={"trend": trend},
-            data_b={"regime": sig_regime}
+            summary=f"7-day trend {trend} (avg score {avg_score:+.2f}) vs signals regime {sig_regime} ({buy_ratio_pct_16:+.0f}% net buy)",
+            data_a={"trend": trend, "avg_score": avg_score},
+            data_b={"regime": sig_regime, "buy_ratio_pct": round(buy_ratio_pct_16, 1)}
         ))
 
     # Pair 17: signals vs rotation (BUY sectors vs leading sectors)
@@ -540,24 +638,36 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
     # Pair 19: industry returns 1m leaders vs news sentiment
     if "industry_returns" in sources and "news" in sources:
         ir_leaders_1m = sources["industry_returns"].get("leaders", {}).get("1m", [])
-        top_leader = ir_leaders_1m[0] if ir_leaders_1m else {}
-        top_leader_return = top_leader.get("return", 0)
-        sentiment = sources["news"].get("overall_sentiment", "neutral").lower()
+        ir_laggards_1m = sources["industry_returns"].get("laggards", {}).get("1m", [])
+        # Use top-3 average return, not just top-1, to smooth out outliers
+        top_returns = [l.get("return", 0) for l in ir_leaders_1m[:3]]
+        bottom_returns = [l.get("return", 0) for l in ir_laggards_1m[:3]]
+        avg_leader_return = sum(top_returns) / max(len(top_returns), 1)
+        avg_laggard_return = sum(bottom_returns) / max(len(bottom_returns), 1)
+        spread = avg_leader_return - avg_laggard_return  # wider spread = clearer trend
 
-        leader_signal = 1.0 if top_leader_return > 5 else (-1.0 if top_leader_return < -5 else 0.0)
-        sentiment_signal = 1.0 if "positive" in sentiment else (-1.0 if "negative" in sentiment else 0.0)
+        sentiment = sources["news"].get("overall_sentiment", "neutral").lower()
+        sentiment_score = sources["news"].get("sentiment_score", None)
+        if sentiment_score is not None:
+            sentiment_signal = max(-1.0, min(1.0, float(sentiment_score)))
+        else:
+            sentiment_signal = _regime_strength(sentiment, spread, strong_threshold=10)
+
+        # Leader signal: continuous, scaled by avg return magnitude (cap at ±20% = full signal)
+        leader_signal = _normalize_signal(avg_leader_return, -20, 20)
 
         score = _compute_correlation_score(leader_signal, sentiment_signal)
-        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.5 else "neutral")
+        signal_type = "agreement" if score > 0.3 else ("divergence" if score < -0.3 else "neutral")
 
+        top_leader = ir_leaders_1m[0] if ir_leaders_1m else {}
         results.append(CorrelationResult(
             pair_id="industry-leaders-vs-news",
             source_a="industry-returns",
             source_b="news-sentiment",
             score=score,
             signal=signal_type,
-            summary=f"Top industry {top_leader.get('industry', '?')} ({top_leader_return:+.1f}% 1m) vs news {sentiment}",
-            data_a={"top_industry": top_leader.get("industry"), "return_1m": top_leader_return},
+            summary=f"Top industry leaders avg {avg_leader_return:+.1f}% 1m (spread {spread:+.1f}%) vs news {sentiment}",
+            data_a={"top_industry": top_leader.get("industry"), "avg_leader_return": round(avg_leader_return, 2), "spread": round(spread, 2)},
             data_b={"sentiment": sentiment}
         ))
 
@@ -669,10 +779,19 @@ def _build_article_prompt(
     )
 
     # Core market context (original 6 sources)
+    ir = sources.get("industry_returns", {})
+    leaders_1d_ctx = ir.get("leaders", {}).get("1d", [])
+    laggards_1d_ctx = ir.get("laggards", {}).get("1d", [])
+    etf_pos_ctx = sum(1 for e in leaders_1d_ctx if e.get("return", 0) > 0)
+    etf_neg_ctx = sum(1 for e in laggards_1d_ctx if e.get("return", 0) < 0)
+    etf_total_ctx = etf_pos_ctx + etf_neg_ctx or 1
+    etf_breadth_ctx = round((etf_pos_ctx - etf_neg_ctx) / etf_total_ctx * 100, 1)
+
     context_section = f"""
 - Market tone: {sources.get('morning', {}).get('market_tone', 'unknown')}
 - Macro regime: {sources.get('macro', {}).get('ai_regime', 'unknown')}
-- Breadth: {sources.get('screener', {}).get('breadth_pct', 0):+.1f}%
+- ETF breadth (54 industries): {etf_breadth_ctx:+.1f}% ({etf_pos_ctx}/{etf_total_ctx} ETFs positive today)
+- Screener breadth (80-stock cross-sector): {sources.get('screener', {}).get('breadth_pct', 0):+.1f}%
 - News sentiment: {sources.get('news', {}).get('overall_sentiment', 'neutral')}
 """
 

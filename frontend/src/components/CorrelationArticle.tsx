@@ -83,13 +83,12 @@ export function CorrelationArticle({ data }: { data: CorrelationArticleData }) {
       {/* Breadth methodology note */}
       <div className="p-3 rounded-lg border border-amber-800/30 bg-amber-950/10">
         <p className="text-xs text-amber-400/80">
-          <span className="font-semibold">Breadth note (pairs 3, 7, 9, 12):</span>{" "}
-          These pairs use <em>screener breadth</em> — the percentage of buy vs sell signals across a 44-stock
-          large-cap watchlist (tech-heavy: NVDA, AAPL, MSFT, GOOGL, etc.). This is{" "}
-          <em>not</em> the same as the 54-ETF universe used by all other pairs. A day where only mega-cap tech
-          rallies can show positive screener breadth while the majority of industry ETFs are negative.
-          The breadth signal is also binarised (positive → +1, negative → −1), so a razor-thin reading
-          scores identically to a strong broad rally.
+          <span className="font-semibold">Breadth note (pairs 3, 7):</span>{" "}
+          These pairs use <em>screener breadth</em> — buy vs sell signals across an 80-stock
+          cross-sector watchlist. Pairs 9 and 12 now use <em>ETF breadth</em> — the percentage of
+          the 54 industry ETFs with positive returns today, the same universe as the technical signals.
+          The screener breadth signal is binarised (positive → +1, negative → −1); ETF breadth is
+          continuous, so a 60% positive reading scores differently from 90%.
         </p>
       </div>
 

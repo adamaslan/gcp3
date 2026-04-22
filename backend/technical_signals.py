@@ -24,62 +24,62 @@ ETF_UNIVERSE: list[str] = [
     etf for sector in INDUSTRIES.values() for etf in sector.values()
 ]
 
-# 4 primary constituent stocks per ETF (representative holdings)
+# 4 representative constituents per ETF — sourced from docs/tickers3.csv
 ETF_CONSTITUENTS: dict[str, list[str]] = {
-    "IGV":  ["MSFT", "ADBE", "NXPI", "SNPS"],
-    "SOXX": ["NVDA", "ASML", "AMD", "QCOM"],
-    "CLOU": ["MSFT", "CRM", "ADBE", "INTU"],
-    "HACK": ["CRWD", "OKTA", "DDOG", "PANW"],
-    "BOTZ": ["NVDA", "MSFT", "TSLA", "ASML"],
-    "FDN":  ["GOOGL", "META", "MSFT", "AMZN"],
-    "XLK":  ["AAPL", "MSFT", "NVDA", "INTC"],
-    "VOX":  ["VZ", "T", "TMUS", "CMCSA"],
-    "IBB":  ["AMGN", "GILD", "VRTX", "REGN"],
-    "XPH":  ["JNJ", "PFE", "AZN", "BMY"],
-    "IHF":  ["UNH", "ELV", "CVS", "HCA"],
-    "IHI":  ["TMO", "ABT", "ISRG", "DXCM"],
-    "XLV":  ["LLY", "UNH", "JNJ", "ABBV"],
-    "VHT":  ["LLY", "UNH", "JNJ", "TMO"],
-    "KBE":  ["JPM", "BAC", "WFC", "GS"],
-    "KIE":  ["BRK", "PGR", "TRV", "AIG"],
-    "PFM":  ["BLK", "AMP", "BEN", "AMG"],
-    "FINX": ["SQ", "PYPL", "COIN", "UPST"],
-    "REM":  ["RITM", "AGNC", "NLY", "MFA"],
-    "IPAY": ["MA", "V", "AXP", "DFS"],
-    "KRE":  ["WAL", "HBAN", "PNC", "FITB"],
-    "XRT":  ["AMZN", "TJX", "MCD", "LOW"],
-    "IBUY": ["AMZN", "EBAY", "SHOP", "MELI"],
-    "XLP":  ["WMT", "PG", "KO", "COST"],
-    "ESPO": ["ATVI", "EA", "TTWO", "RBLX"],
-    "PAWZ": ["ZTS", "IDXX", "CHWY", "TRUP"],
-    "PBJ":  ["MCD", "SBUX", "YUM", "DPZ"],
-    "CARZ": ["TSLA", "F", "GM", "TM"],
-    "LUXE": ["CPRI", "RL", "LULU", "EL"],
-    "XLB":  ["LIN", "APD", "SHW", "CTVA"],
-    "LIT":  ["ALB", "SQM", "LAC", "CBAK"],
-    "XME":  ["SCCO", "FCX", "RIO", "BHP"],
-    "URA":  ["CCJ", "SPRWF", "DNN", "LEU"],
-    "XLE":  ["XOM", "CVX", "COP", "MPC"],
-    "ICLN": ["PLUG", "SEDG", "ENPH", "RUN"],
-    "SLX":  ["X", "SCCO", "CMC", "RS"],
-    "ITA":  ["BA", "RTX", "LMT", "GD"],
-    "ITB":  ["DHI", "LEN", "PHM", "TOL"],
-    "ROBO": ["ISRG", "NDSN", "AXON", "ABB"],
-    "FTXR": ["FDX", "UPS", "ODFL", "XPO"],
-    "UFO":  ["RKLB", "LHX", "LMT", "RTX"],
-    "JETS": ["DAL", "UAL", "AAL", "SWA"],
-    "BOAT": ["ZIM", "MATX", "GOGL", "DAC"],
-    "IYR":  ["PSA", "SELF", "CCI", "STOR"],
-    "PAVE": ["BIP", "KMI", "NEP", "APD"],
-    "XHB":  ["DHI", "LEN", "KBH", "LGIH"],
-    "INDS": ["ARE", "STWD", "PLD", "WELL"],
-    "PBS":  ["CMCSA", "PARA", "FOXA", "LBRDA"],
-    "PEJ":  ["DIS", "NFLX", "FOXA", "WBD"],
-    "SOCL": ["META", "SNAP", "PINS", "GOOGL"],
-    "XLU":  ["NEE", "D", "SO", "AEP"],
-    "DBA":  ["DE", "ADM", "TSN", "CTVA"],
-    "MSOS": ["CURLF", "GTBIF", "TCNNF", "SNDL"],
-    "ESGU": ["AAPL", "MSFT", "NVDA", "GOOGL"],
+    "HACK":  ["PANW", "CRWD", "FTNT", "OKTA"],
+    "BOTZ":  ["ABB", "FANUY", "KYCCF", "ISRG"],
+    "FDN":   ["AMZN", "META", "NFLX", "BKNG"],
+    "XLK":   ["MSFT", "AAPL", "NVDA", "AVGO"],
+    "VOX":   ["GOOGL", "DIS", "TMUS", "VZ"],
+    "IBB":   ["GILD", "AMGN", "VRTX", "REGN"],
+    "IGV":   ["CRM", "ORCL", "ADBE", "INTU"],
+    "SOXX":  ["AMD", "TXN", "INTC", "MU"],
+    "CLOU":  ["AKAM", "DOCN", "ZM", "SNOW"],
+    "XPH":   ["ELVN", "OGN", "CORT", "TRVI"],
+    "IHF":   ["UNH", "CVS", "HCA", "ELV"],
+    "IHI":   ["ABT", "SYK", "BDX", "EW"],
+    "XLV":   ["LLY", "JNJ", "ABBV", "MRK"],
+    "VHT":   ["PFE", "TMO", "DHR", "BMY"],
+    "KBE":   ["JPM", "BAC", "WFC", "C"],
+    "KIE":   ["PGR", "TRV", "ALL", "CB"],
+    "PFM":   ["COST", "PEP", "LIN", "MCD"],
+    "FINX":  ["SQ", "PYPL", "ADYEN", "FIS"],
+    "REM":   ["NLY", "AGNC", "STWD", "RITM"],
+    "IPAY":  ["MA", "V", "AXP", "DFS"],
+    "KRE":   ["NYCB", "ZION", "BPOP", "RF"],
+    "XRT":   ["CVNA", "MUSA", "GO", "JWN"],
+    "IBUY":  ["FIGS", "LQDT", "SHOP", "ETSY"],
+    "XLP":   ["WMT", "PG", "KO", "PM"],
+    "ESPO":  ["TCEHY", "NTES", "NTDOY", "EA"],
+    "PAWZ":  ["CHWY", "FRPT", "IDXX", "ZTS"],
+    "CARZ":  ["TSLA", "F", "GM", "TM"],
+    "PBJ":   ["CTVA", "ADM", "KR", "MDLZ"],
+    "XLB":   ["NEM", "FCX", "NUE", "SHW"],
+    "LIT":   ["RIO", "ALB", "SSDIY", "PCRFY"],
+    "XME":   ["UEC", "STLD", "X", "AA"],
+    "URA":   ["CCJ", "OKLO", "NXE", "UUUU"],
+    "XLE":   ["XOM", "CVX", "COP", "SLB"],
+    "ICLN":  ["BE", "FSLR", "NPIFF", "CYPSW"],
+    "SLX":   ["BHP", "VALE", "RTNTF", "MT"],
+    "ITA":   ["GE", "RTX", "BA", "HWM"],
+    "ITB":   ["DHI", "PHM", "LEN", "NVR"],
+    "ROBO":  ["HSYCF", "IPGP", "KDXHF", "ZBRA"],
+    "FTXR":  ["UNP", "CSX", "NSC", "UPS"],
+    "UFO":   ["PL", "VSAT", "RKLB", "SATS"],
+    "JETS":  ["DAL", "AAL", "UAL", "LUV"],
+    "BOAT":  ["MSLOF", "KARKF", "OROVY", "ZIM"],
+    "IYR":   ["WELL", "PLD", "EQIX", "DLR"],
+    "PAVE":  ["DE", "ETN", "TT", "EMR"],
+    "XHB":   ["MOD", "OC", "WSM", "TOL"],
+    "INDS":  ["EXR", "PSA", "SEGXF", "VICI"],
+    "PBS":   ["GOOG", "BIDU", "SPOT", "LYV"],
+    "PEJ":   ["EXPE", "ABNB", "MAR", "LVS"],
+    "SOCL":  ["NHNCF", "KUASF", "PINS", "SNAP"],
+    "XLU":   ["NEE", "SO", "DUK", "CEG"],
+    "DBA":   ["BG", "TSN", "CF", "MOS"],
+    "MSOS":  ["CURLF", "TCNNF", "GTBIF", "VRNOF"],
+    "ESGU":  ["HD", "LOW", "ACN", "HON"],
+    "QTUM":  ["TER", "COHR", "TSEM", "ONTO"],
 }
 
 # Deduplicated full signal universe: 54 ETFs + ~216 unique constituent stocks
@@ -97,13 +97,16 @@ _ACTION_ORDER = {"BUY": 0, "HOLD": 1, "SELL": 2}
 def _score_etf(row: dict, rank_1d: int, total: int) -> dict:
     """Derive BUY/HOLD/SELL + signals list from an industry_cache row.
 
-    Args:
-        row: One industry from get_industry_returns() — has 'returns', '52w_high', '52w_low'
-        rank_1d: This ETF's rank by 1d return among all 54 (1 = best)
-        total: Total number of ETFs being ranked
+    Each signal carries:
+      - signal: short label
+      - detail: one-sentence explanation of what this signal means and why it matters
+      - strength: BULLISH / BEARISH / NEUTRAL
+      - value: the raw number driving the signal
+      - weight: how much this signal contributes to the confluence score (1–3)
+      - category: momentum / trend / mean_reversion / relative_strength / structure
 
-    Returns:
-        Dict shaped to match the TickerData interface the TechnicalSignals component expects.
+    Confluence score = weighted sum of (bullish - bearish) / max_possible_weighted_sum,
+    scaled to [-1, 1], then rounded to 2 dp.
     """
     returns: dict = row.get("returns") or {}
     r1d  = returns.get("1d")
@@ -111,111 +114,258 @@ def _score_etf(row: dict, rank_1d: int, total: int) -> dict:
     r1m  = returns.get("1m")
     r3m  = returns.get("3m")
     r1y  = returns.get("1y")
+    r6m  = returns.get("6m")
     high = row.get("52w_high")
     low  = row.get("52w_low")
+    name = row.get("industry", row.get("etf", "?"))
 
     signals: list[dict] = []
-    bullish = 0
-    bearish = 0
+    weighted_bull = 0.0
+    weighted_bear = 0.0
+    max_weight = 0.0
 
-    # Momentum: 1d + 1w + 1m agreement
-    if r1d is not None and r1w is not None and r1m is not None:
-        if r1d > 0 and r1w > 0 and r1m > 0:
-            signals.append({"signal": "Momentum bullish (1d+1w+1m positive)", "strength": "BULLISH", "value": r1m, "category": "momentum"})
-            bullish += 1
-        elif r1d < 0 and r1w < 0 and r1m < 0:
-            signals.append({"signal": "Momentum bearish (1d+1w+1m negative)", "strength": "BEARISH", "value": r1m, "category": "momentum"})
-            bearish += 1
+    def _add(signal: str, detail: str, strength: str, value: float, weight: float, category: str) -> None:
+        nonlocal weighted_bull, weighted_bear, max_weight
+        signals.append({
+            "signal": signal,
+            "detail": detail,
+            "strength": strength,
+            "value": value,
+            "weight": weight,
+            "category": category,
+        })
+        max_weight += weight
+        if strength == "BULLISH":
+            weighted_bull += weight
+        elif strength == "BEARISH":
+            weighted_bear += weight
+
+    # ── Signal 1: Short-term momentum (1d + 1w agreement) — weight 1 ──────────
+    if r1d is not None and r1w is not None:
+        if r1d > 0 and r1w > 0:
+            _add(
+                f"Short-term momentum bullish (1d {r1d:+.2f}%, 1w {r1w:+.1f}%)",
+                f"{name} is up both today and this week, suggesting near-term buying pressure is sustained rather than a one-day event.",
+                "BULLISH", r1d, 1, "momentum",
+            )
+        elif r1d < 0 and r1w < 0:
+            _add(
+                f"Short-term momentum bearish (1d {r1d:+.2f}%, 1w {r1w:+.1f}%)",
+                f"{name} is down both today and this week, indicating consistent near-term selling pressure across multiple sessions.",
+                "BEARISH", r1d, 1, "momentum",
+            )
         else:
-            signals.append({"signal": "Momentum mixed", "strength": "NEUTRAL", "value": r1m, "category": "momentum"})
+            _add(
+                f"Short-term momentum mixed (1d {r1d:+.2f}%, 1w {r1w:+.1f}%)",
+                f"Today's move conflicts with the weekly direction — neither buyers nor sellers have sustained control this week.",
+                "NEUTRAL", r1d, 1, "momentum",
+            )
 
-    # Trend: 1y direction
+    # ── Signal 2: Medium-term momentum (1m + 3m agreement) — weight 2 ─────────
+    if r1m is not None and r3m is not None:
+        if r1m > 0 and r3m > 2:
+            _add(
+                f"Medium-term momentum bullish (1m {r1m:+.1f}%, 3m {r3m:+.1f}%)",
+                f"Both the 1-month and 3-month returns are positive, confirming that this sector's uptrend has multi-week conviction behind it.",
+                "BULLISH", r1m, 2, "momentum",
+            )
+        elif r1m < 0 and r3m < -2:
+            _add(
+                f"Medium-term momentum bearish (1m {r1m:+.1f}%, 3m {r3m:+.1f}%)",
+                f"Both 1-month and 3-month returns are negative, signaling sustained sector weakness that has persisted across a full quarter.",
+                "BEARISH", r1m, 2, "momentum",
+            )
+        else:
+            _add(
+                f"Medium-term momentum neutral (1m {r1m:+.1f}%, 3m {r3m:+.1f}%)",
+                f"The 1-month and 3-month returns diverge or are near zero, suggesting the sector is in a consolidation or rotation phase.",
+                "NEUTRAL", r1m, 2, "momentum",
+            )
+
+    # ── Signal 3: Long-term trend (1y) — weight 2 ─────────────────────────────
     if r1y is not None:
-        if r1y > 10:
-            signals.append({"signal": f"Long-term uptrend ({r1y:+.1f}% 1y)", "strength": "BULLISH", "value": r1y, "category": "trend"})
-            bullish += 1
-        elif r1y < -10:
-            signals.append({"signal": f"Long-term downtrend ({r1y:+.1f}% 1y)", "strength": "BEARISH", "value": r1y, "category": "trend"})
-            bearish += 1
+        if r1y > 15:
+            _add(
+                f"Strong long-term uptrend ({r1y:+.1f}% 1y)",
+                f"A {r1y:+.1f}% annual return places {name} well above S&P 500 average, indicating structural tailwinds that have persisted for at least a year.",
+                "BULLISH", r1y, 2, "trend",
+            )
+        elif r1y > 0:
+            _add(
+                f"Moderate long-term uptrend ({r1y:+.1f}% 1y)",
+                f"{name} has gained over the past year, but at a pace that suggests steady rather than aggressive sector rotation into this space.",
+                "BULLISH", r1y, 1, "trend",
+            )
+        elif r1y < -15:
+            _add(
+                f"Strong long-term downtrend ({r1y:+.1f}% 1y)",
+                f"A {r1y:+.1f}% annual loss indicates deep structural weakness — investors have been consistently exiting this sector for over a year.",
+                "BEARISH", r1y, 2, "trend",
+            )
+        elif r1y < 0:
+            _add(
+                f"Moderate long-term downtrend ({r1y:+.1f}% 1y)",
+                f"{name} is negative on a 1-year basis, but the moderate loss suggests the sector is drifting lower rather than in full breakdown.",
+                "BEARISH", r1y, 1, "trend",
+            )
         else:
-            signals.append({"signal": f"Trend flat ({r1y:+.1f}% 1y)", "strength": "NEUTRAL", "value": r1y, "category": "trend"})
+            _add(
+                f"Long-term trend flat ({r1y:+.1f}% 1y)",
+                f"Near-zero 1-year return means the sector has neither broken out nor broken down over the past year — range-bound, awaiting a catalyst.",
+                "NEUTRAL", r1y, 1, "trend",
+            )
 
-    # Pullback in uptrend (1d red but 1y bullish)
+    # ── Signal 4: Pullback / counter-trend (1d vs 1y) — weight 2 ─────────────
     if r1d is not None and r1y is not None:
-        if r1d < 0 and r1y > 10:
-            signals.append({"signal": f"Pullback in uptrend ({r1d:+.2f}% today, {r1y:+.1f}% 1y)", "strength": "BULLISH", "value": r1d, "category": "moving_average"})
-            bullish += 1
-        elif r1d > 0 and r1y < -10:
-            signals.append({"signal": f"Counter-trend bounce ({r1d:+.2f}% today, {r1y:+.1f}% 1y)", "strength": "BEARISH", "value": r1d, "category": "moving_average"})
-            bearish += 1
+        if r1d < -1 and r1y > 15:
+            _add(
+                f"Pullback in strong uptrend (today {r1d:+.2f}%, 1y {r1y:+.1f}%)",
+                f"Today's dip in an otherwise strong uptrend is a classic mean-reversion setup — the long-term trend remains intact and a single red day rarely breaks it.",
+                "BULLISH", r1d, 2, "mean_reversion",
+            )
+        elif r1d < -0.5 and r1y > 0:
+            _add(
+                f"Minor pullback in uptrend (today {r1d:+.2f}%, 1y {r1y:+.1f}%)",
+                f"Today's decline is modest within a positive annual trend. Not yet a meaningful entry signal, but worth monitoring if weakness continues.",
+                "NEUTRAL", r1d, 1, "mean_reversion",
+            )
+        elif r1d > 1 and r1y < -15:
+            _add(
+                f"Counter-trend bounce in downtrend (today {r1d:+.2f}%, 1y {r1y:+.1f}%)",
+                f"A single-day rally in a structurally weak sector is likely a technical bounce, not a trend reversal. Risk of fading this move is elevated.",
+                "BEARISH", r1d, 2, "mean_reversion",
+            )
 
-    # 52-week range position
-    if high and low and high > low:
-        # We don't have current price in industry_cache, use 1y return as proxy:
-        # if 1y is strong positive, likely near high
-        if r1y is not None:
-            if r1y > 20:
-                signals.append({"signal": f"Near 52w high (52w range: {low:.0f}–{high:.0f})", "strength": "BULLISH", "value": high, "category": "trend"})
-                bullish += 1
-            elif r1y < -20:
-                signals.append({"signal": f"Near 52w low (52w range: {low:.0f}–{high:.0f})", "strength": "BEARISH", "value": low, "category": "trend"})
-                bearish += 1
+    # ── Signal 5: 52-week range position — weight 3 ───────────────────────────
+    if high is not None and low is not None and high > low and r1y is not None:
+        range_pct = high - low
+        # Estimate current price position using 1y return as proxy
+        estimated_pos = 0.5 + (r1y / 200.0)  # rough: 0% 1y ≈ midpoint
+        estimated_pos = max(0.0, min(1.0, estimated_pos))
+        if r1y > 25 or estimated_pos > 0.75:
+            _add(
+                f"Trading near 52-week high (range ${low:.0f}–${high:.0f}, {range_pct/high*100:.0f}% spread)",
+                f"Strong 1-year performance suggests {name} is near the top of its annual range. Momentum players are rewarded; mean-reversion risk increases.",
+                "BULLISH", high, 3, "structure",
+            )
+        elif r1y < -25 or estimated_pos < 0.25:
+            _add(
+                f"Trading near 52-week low (range ${low:.0f}–${high:.0f}, {range_pct/high*100:.0f}% spread)",
+                f"Deep annual losses place {name} near the bottom of its range. Cheap in price-history terms, but momentum is structurally negative — a value trap risk exists.",
+                "BEARISH", low, 3, "structure",
+            )
 
-    # Relative strength: top/bottom third among 54 ETFs by 1d return
-    top_third = total // 3
-    bottom_third = total - top_third
-    if rank_1d <= top_third:
-        signals.append({"signal": f"Relative strength: top {top_third} today (rank #{rank_1d})", "strength": "BULLISH", "value": float(rank_1d), "category": "trend_strength"})
-        bullish += 1
-    elif rank_1d > bottom_third:
-        signals.append({"signal": f"Relative weakness: bottom {total - bottom_third} today (rank #{rank_1d})", "strength": "BEARISH", "value": float(rank_1d), "category": "trend_strength"})
-        bearish += 1
+    # ── Signal 6: Relative strength vs 54-ETF universe — weight 2 ────────────
+    top_decile = max(1, total // 10)
+    top_third  = max(1, total // 3)
+    bot_decile = total - top_decile
+    bot_third  = total - top_third
+    if rank_1d <= top_decile:
+        _add(
+            f"Top-decile relative strength today (rank #{rank_1d} of {total})",
+            f"{name} is in the top 10% of the 54-ETF universe by today's return — institutional rotators are actively moving money into this sector right now.",
+            "BULLISH", float(rank_1d), 2, "relative_strength",
+        )
+    elif rank_1d <= top_third:
+        _add(
+            f"Above-average relative strength today (rank #{rank_1d} of {total})",
+            f"{name} is outperforming the majority of industry ETFs today, suggesting relative buying interest even if the absolute return is modest.",
+            "BULLISH", float(rank_1d), 1, "relative_strength",
+        )
+    elif rank_1d > bot_decile:
+        _add(
+            f"Bottom-decile relative weakness today (rank #{rank_1d} of {total})",
+            f"{name} is in the bottom 10% of the ETF universe — active underperformance at this level often signals sector-specific headwinds, not just market-wide selling.",
+            "BEARISH", float(rank_1d), 2, "relative_strength",
+        )
+    elif rank_1d > bot_third:
+        _add(
+            f"Below-average relative strength today (rank #{rank_1d} of {total})",
+            f"{name} is lagging most industry ETFs today. Persistent relative weakness can precede outright selling as rotators move to stronger sectors.",
+            "BEARISH", float(rank_1d), 1, "relative_strength",
+        )
 
-    # Medium-term momentum: 3m
-    if r3m is not None:
-        if r3m > 5:
-            signals.append({"signal": f"3-month momentum strong ({r3m:+.1f}%)", "strength": "BULLISH", "value": r3m, "category": "momentum"})
-            bullish += 1
-        elif r3m < -5:
-            signals.append({"signal": f"3-month momentum weak ({r3m:+.1f}%)", "strength": "BEARISH", "value": r3m, "category": "momentum"})
-            bearish += 1
+    # ── Signal 7: 6-month momentum (if available) — weight 1 ─────────────────
+    if r6m is not None:
+        if r6m > 10:
+            _add(
+                f"6-month momentum strong ({r6m:+.1f}%)",
+                f"A {r6m:+.1f}% half-year return shows sustained sector strength across two quarters — not just a recent spike.",
+                "BULLISH", r6m, 1, "momentum",
+            )
+        elif r6m < -10:
+            _add(
+                f"6-month momentum weak ({r6m:+.1f}%)",
+                f"A {r6m:+.1f}% six-month loss indicates that weakness has persisted across two full quarters, making recovery harder to sustain.",
+                "BEARISH", r6m, 1, "momentum",
+            )
 
-    # Determine action
-    if bullish >= 3 and bullish > bearish * 1.5:
+    # ── Confluence score ──────────────────────────────────────────────────────
+    # Weighted net bullish fraction, scaled to [-1, 1]
+    if max_weight > 0:
+        raw_score = (weighted_bull - weighted_bear) / max_weight
+    else:
+        raw_score = 0.0
+    confluence_score = round(raw_score, 2)
+
+    # ── Action ────────────────────────────────────────────────────────────────
+    bull_sigs = sum(1 for s in signals if s["strength"] == "BULLISH")
+    bear_sigs = sum(1 for s in signals if s["strength"] == "BEARISH")
+
+    if confluence_score >= 0.35 and bull_sigs >= 3:
         ai_action = "BUY"
-    elif bearish >= 3 and bearish > bullish * 1.5:
+    elif confluence_score <= -0.35 and bear_sigs >= 3:
         ai_action = "SELL"
     else:
         ai_action = "HOLD"
 
-    # Build summary string
+    # ── Summary + outlook ─────────────────────────────────────────────────────
     parts = []
-    if r1d is not None:
-        parts.append(f"1d {r1d:+.2f}%")
-    if r1m is not None:
-        parts.append(f"1m {r1m:+.1f}%")
-    if r1y is not None:
-        parts.append(f"1y {r1y:+.1f}%")
-    ai_summary = f"{row.get('industry', row.get('etf', '?'))} — {', '.join(parts)}" if parts else row.get("industry", "")
+    if r1d is not None: parts.append(f"1d {r1d:+.2f}%")
+    if r1m is not None: parts.append(f"1m {r1m:+.1f}%")
+    if r1y is not None: parts.append(f"1y {r1y:+.1f}%")
+    ai_summary = f"{name} — {', '.join(parts)}" if parts else name
 
-    outlook_map = {"BUY": "Bullish momentum with trend confirmation", "SELL": "Bearish momentum, trend breakdown", "HOLD": "Mixed signals — monitor for breakout"}
+    conf_label = (
+        "HIGH" if abs(confluence_score) >= 0.55
+        else "MEDIUM" if abs(confluence_score) >= 0.25
+        else "LOW"
+    )
+    if ai_action == "BUY":
+        ai_outlook = (
+            f"Confluence score {confluence_score:+.2f} ({conf_label}): {bull_sigs} of {len(signals)} signals are bullish "
+            f"(weighted {weighted_bull:.0f}/{max_weight:.0f}). Entry case is strongest when today's relative strength "
+            f"aligns with the multi-week trend — watch for confirmation on volume."
+        )
+    elif ai_action == "SELL":
+        ai_outlook = (
+            f"Confluence score {confluence_score:+.2f} ({conf_label}): {bear_sigs} of {len(signals)} signals are bearish "
+            f"(weighted {weighted_bear:.0f}/{max_weight:.0f}). Structural weakness across multiple timeframes — "
+            f"risk/reward favors avoiding or reducing exposure until a multi-week trend reversal is confirmed."
+        )
+    else:
+        ai_outlook = (
+            f"Confluence score {confluence_score:+.2f} ({conf_label}): signals are split ({bull_sigs} bullish, {bear_sigs} bearish, "
+            f"{len(signals) - bull_sigs - bear_sigs} neutral). No dominant directional edge — monitor for a breakout "
+            f"above recent highs or breakdown below support before acting."
+        )
 
     return {
         "symbol": row.get("etf", ""),
         "ai_action": ai_action,
         "ai_summary": ai_summary,
-        "ai_outlook": outlook_map[ai_action],
-        "ai_score": round((bullish - bearish) / max(len(signals), 1), 2),
-        "ai_confidence": "HIGH" if abs(bullish - bearish) >= 3 else "MEDIUM" if abs(bullish - bearish) >= 1 else "LOW",
-        "price": 0.0,  # industry_cache doesn't store price; use /industry-intel for live quotes
+        "ai_outlook": ai_outlook,
+        "ai_score": confluence_score,
+        "ai_confidence": conf_label,
+        "confluence_score": confluence_score,
+        "confluence_label": conf_label,
+        "price": 0.0,
         "signal_count": len(signals),
+        "bull_count": bull_sigs,
+        "bear_count": bear_sigs,
         "change_pct": r1d,
         "signals": signals,
-        "indicators": {
-            "rsi": None,   # not available from returns data
-            "macd": None,  # not available from returns data
-            "adx": None,   # not available from returns data
-        },
+        "indicators": {"rsi": None, "macd": None, "adx": None},
         "industry": row.get("industry"),
         "returns": returns,
         "52w_high": row.get("52w_high"),
@@ -253,10 +403,10 @@ async def get_technical_signals(symbol: str | None = None) -> dict:
         rank_1d = rank_map.get(etf, total)
         scored.append(_score_etf(row, rank_1d, total))
 
-    # Sort: BUY first, then HOLD, then SELL; within each by signal_count desc
+    # Sort: BUY first, then HOLD, then SELL; within each by confluence_score desc
     ranked = sorted(
         scored,
-        key=lambda x: (_ACTION_ORDER.get(x["ai_action"], 1), -x["signal_count"]),
+        key=lambda x: (_ACTION_ORDER.get(x["ai_action"], 1), -x.get("confluence_score", 0)),
     )
     buys  = [r for r in ranked if r["ai_action"] == "BUY"]
     sells = [r for r in ranked if r["ai_action"] == "SELL"]
