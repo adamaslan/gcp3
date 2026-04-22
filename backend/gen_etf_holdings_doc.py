@@ -138,7 +138,7 @@ async def fetch_top_holdings(
         data = resp.json()
 
         result = data.get("quoteSummary", {}).get("result")
-        if not result:
+        if not result or not isinstance(result[0], dict):
             logger.warning("No quoteSummary result for %s", ticker)
             return []
 

@@ -127,9 +127,9 @@ def _regime_strength(regime_text: str, supporting_val: float, strong_threshold: 
         Float in [-1, 1] where sign comes from the label and magnitude comes
         from how strongly the supporting_val backs it up.
     """
-    if "risk-on" in regime_text or "bullish" in regime_text:
+    if "risk-on" in regime_text or "bullish" in regime_text or "positive" in regime_text:
         direction = 1.0
-    elif "risk-off" in regime_text or "bearish" in regime_text:
+    elif "risk-off" in regime_text or "bearish" in regime_text or "negative" in regime_text:
         direction = -1.0
     else:
         direction = 0.0
@@ -137,7 +137,11 @@ def _regime_strength(regime_text: str, supporting_val: float, strong_threshold: 
     if direction == 0.0:
         return 0.0
 
-    magnitude = min(abs(supporting_val) / max(strong_threshold, 1e-6), 1.0)
+    # Only let supporting_val add magnitude when its sign agrees with direction.
+    # A contradicting value (e.g. bullish label but negative breadth) returns the
+    # floor signal rather than inflating strength.
+    aligned_val = supporting_val if (direction * supporting_val) >= 0 else 0.0
+    magnitude = min(abs(aligned_val) / max(strong_threshold, 1e-6), 1.0)
     return direction * (0.3 + 0.7 * magnitude)  # floor of 0.3 when label is set
 
 
@@ -535,9 +539,9 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
         avg_score = float(sources["market_summary"].get("avg_sentiment_score", 0))
         screener_breadth = sources.get("screener", {}).get("breadth_pct", 0)
 
-        # Trend signal backed by 7-day avg sentiment score magnitude
+        # Trend signal backed by 7-day avg sentiment score (typically -1..+1)
         trend_signal = _regime_strength(trend.replace("improv", "bullish").replace("deterior", "bearish"),
-                                        avg_score * 50, strong_threshold=30)
+                                        avg_score, strong_threshold=0.3)
         # Tone signal backed by today's screener breadth
         tone_signal = _regime_strength(tone, screener_breadth, strong_threshold=30)
 
