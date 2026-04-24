@@ -64,10 +64,13 @@ async function getCorrelation() {
   const base = process.env.BACKEND_URL;
   if (!base) return null;
   try {
-    const res = await fetch(`${base}/content`, { next: { revalidate: 14400 } });
+    const res = await fetch(`${base}/content?type=correlation`, {
+      next: { revalidate: 21600 },
+      signal: AbortSignal.timeout(8000),
+    });
     if (!res.ok) return null;
     const data = await res.json();
-    return data?.correlation && !data.correlation.error ? data.correlation : null;
+    return data && !data.error ? data : null;
   } catch {
     return null;
   }
