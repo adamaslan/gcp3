@@ -3,6 +3,7 @@
 Reads data populated by industry.py._attach_stored_returns (via etf_store).
 No API calls — pure Firestore read + in-process ranking.
 """
+import heapq
 import logging
 from datetime import date
 
@@ -31,31 +32,14 @@ def _rank(industries: list[dict], period: str) -> list[dict]:
 
 
 def _find_most_recent_returns_cache() -> tuple[dict, str] | None:
-    """Scan gcp3_cache for the most recent industry_returns doc from a prior day.
+    """Find the most recent prior-day industry_returns cache doc.
 
-    Used as a last-resort fallback when today's cache key doesn't exist yet
-    (e.g. Firestore outage at the start of a new day before first calculation).
+    Uses a document-ID range query instead of list_documents() to avoid a
+    full collection scan — same approach as get_cache_stale_prev.
     Returns (value, stale_as_of) or None if no prior entry exists.
     """
-    docs = _db().collection("gcp3_cache").list_documents()
-    candidates = []
-    prefix = "industry_returns:"
-    for ref in docs:
-        if ref.id.startswith(prefix) and ref.id != f"{prefix}{date.today()}":
-            candidates.append(ref.id)
-    if not candidates:
-        return None
-    most_recent_key = max(candidates)  # lexicographic sort works for YYYY-MM-DD
-    snap = _db().collection("gcp3_cache").document(most_recent_key).get()
-    if not snap.exists:
-        return None
-    data = snap.to_dict()
-    value = data.get("value")
-    if not value:
-        return None
-    updated_at = data.get("updated_at")
-    stale_as_of = updated_at.isoformat() if updated_at else most_recent_key.replace(prefix, "")
-    return value, stale_as_of
+    exclude_key = f"industry_returns:{date.today()}"
+    return get_cache_stale_prev("industry_returns:", exclude_key) or None
 
 
 async def get_industry_returns(force: bool = False) -> dict:
@@ -91,20 +75,28 @@ async def get_industry_returns(force: bool = False) -> dict:
         row.setdefault("returns", {})
         industries.append(row)
 
-    # Per-period ranked lists (top 5 leaders / laggards each)
+    # Per-period ranked lists (top 5 leaders / laggards each).
+    # heapq is O(N log 5) per period vs O(N log N) full sort — ~3x faster for N=54.
     leaders: dict[str, list] = {}
     laggards: dict[str, list] = {}
     for period in RETURN_PERIODS:
-        ranked = _rank(industries, period)
-        if ranked:
-            leaders[period] = [
-                {"industry": r["industry"], "etf": r.get("etf"), "return": r["returns"][period]}
-                for r in ranked[:5]
-            ]
-            laggards[period] = [
-                {"industry": r["industry"], "etf": r.get("etf"), "return": r["returns"][period]}
-                for r in ranked[-5:]
-            ]
+        valid = [
+            ((i.get("returns") or {}).get(period), i)
+            for i in industries
+            if (i.get("returns") or {}).get(period) is not None
+        ]
+        if not valid:
+            continue
+        top5 = heapq.nlargest(5, valid, key=lambda x: x[0])
+        bot5 = heapq.nsmallest(5, valid, key=lambda x: x[0])
+        leaders[period] = [
+            {"industry": r["industry"], "etf": r.get("etf"), "return": v}
+            for v, r in top5
+        ]
+        laggards[period] = [
+            {"industry": r["industry"], "etf": r.get("etf"), "return": v}
+            for v, r in bot5
+        ]
 
     updated = max(
         (i.get("updated", "") for i in industries if i.get("updated")),

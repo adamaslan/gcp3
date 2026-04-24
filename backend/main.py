@@ -1043,11 +1043,10 @@ def _compute_industry_signal_summary(industry_data: dict) -> dict:
     for name, info in industry_data.get("industries", {}).items():
         sector = info.get("sector", "Unknown")
         change_pct = info.get("change_pct") or 0.0
-        if sector not in by_sector:
-            by_sector[sector] = {"bullish": 0, "bearish": 0, "neutral": 0, "industries": []}
+        bucket = by_sector.setdefault(sector, {"bullish": 0, "bearish": 0, "neutral": 0, "industries": []})
         direction = "bullish" if change_pct > 0 else ("bearish" if change_pct < 0 else "neutral")
-        by_sector[sector][direction] += 1
-        by_sector[sector]["industries"].append({
+        bucket[direction] += 1
+        bucket["industries"].append({
             "industry": name,
             "etf": info.get("etf"),
             "change_pct": change_pct,

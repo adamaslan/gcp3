@@ -13,7 +13,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (symbol) params.set("symbol", symbol);
   if (scope) params.set("scope", scope);
 
-  const url = `${BACKEND}/signals${params.size ? `?${params}` : ""}`;
+  const qs = params.toString();
+  const url = `${BACKEND}/signals${qs ? `?${qs}` : ""}`;
 
   let res: Response;
   try {

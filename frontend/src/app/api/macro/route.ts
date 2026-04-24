@@ -5,6 +5,7 @@ const BACKEND = process.env.BACKEND_URL!;
 /**
  * Proxy for the /macro page: fans out to /macro-pulse and /earnings-radar
  * concurrently and merges them into a single payload.
+ * TTL aligns with the shorter of the two backend caches (macro-pulse: 1h).
  */
 export async function GET(): Promise<NextResponse> {
   if (!BACKEND) {
@@ -12,8 +13,8 @@ export async function GET(): Promise<NextResponse> {
   }
 
   const [macroPulseRes, earningsRes] = await Promise.allSettled([
-    fetch(`${BACKEND}/macro-pulse`, { cache: "no-store" }),
-    fetch(`${BACKEND}/earnings-radar`, { cache: "no-store" }),
+    fetch(`${BACKEND}/macro-pulse`, { next: { revalidate: 3600 } }),
+    fetch(`${BACKEND}/earnings-radar`, { next: { revalidate: 21600 } }),
   ]);
 
   const getPayload = async (result: PromiseSettledResult<Response>, label: string) => {
@@ -34,9 +35,7 @@ export async function GET(): Promise<NextResponse> {
     { macro_pulse, earnings_radar },
     {
       headers: {
-        "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0",
-        "Pragma": "no-cache",
-        "Expires": "0",
+        "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=7200",
       },
     }
   );
