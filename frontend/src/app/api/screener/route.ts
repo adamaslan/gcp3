@@ -12,7 +12,7 @@ export async function GET(): Promise<NextResponse> {
 
   let res: Response;
   try {
-    res = await fetch(`${BACKEND}/screener`, { next: { revalidate: 3600 } });
+    res = await fetch(`${BACKEND}/screener`, { next: { revalidate: 1800 } });
   } catch (err) {
     console.error("[screener] Network error reaching backend:", err);
     return NextResponse.json({ error: "Network error reaching backend", detail: String(err) }, { status: 503 });

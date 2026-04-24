@@ -13,7 +13,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (sections) params.set("sections", sections);
   if (days) params.set("days", days);
 
-  const url = `${BACKEND}/market-overview${params.size ? `?${params}` : ""}`;
+  const qs = params.toString();
+  const url = `${BACKEND}/market-overview${qs ? `?${qs}` : ""}`;
 
   let res: Response;
   try {

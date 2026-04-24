@@ -2,20 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND = process.env.BACKEND_URL!;
 
+const ALLOWED_TYPES = new Set(["blog", "review", "correlation", "story"]);
+
 export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!BACKEND) {
     return NextResponse.json({ error: "BACKEND_URL not configured" }, { status: 500 });
   }
 
   const rawType = req.nextUrl.searchParams.get("type");
-  const ALLOWED_TYPES = ["blog", "review", "correlation", "story"] as const;
-  type ContentType = typeof ALLOWED_TYPES[number];
-  const type = ALLOWED_TYPES.includes(rawType as ContentType) ? (rawType as ContentType) : null;
+  const type = rawType && ALLOWED_TYPES.has(rawType) ? rawType : null;
   const url = `${BACKEND}/content${type ? `?type=${type}` : ""}`;
 
   let res: Response;
   try {
-    res = await fetch(url, { next: { revalidate: 14400 } });
+    res = await fetch(url, { next: { revalidate: 21600 } });
   } catch (err) {
     return NextResponse.json({ error: "Network error reaching backend", detail: String(err) }, { status: 503 });
   }
@@ -27,6 +27,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const data = await res.json();
   return NextResponse.json(data, {
-    headers: { "Cache-Control": "public, s-maxage=14400, stale-while-revalidate=28800" },
+    headers: { "Cache-Control": "public, s-maxage=21600, stale-while-revalidate=43200" },
   });
 }
