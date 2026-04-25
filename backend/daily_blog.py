@@ -17,7 +17,7 @@ from sector_rotation import get_sector_rotation
 from macro_pulse import get_macro_pulse
 from screener import get_screener_data
 from news_sentiment import get_news_sentiment
-from massive_client import get_snapshots
+from data_client import get_finnhub_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -137,23 +137,21 @@ async def _gather_market_snapshot() -> dict:
         get_news_sentiment(),
     )
 
-    # Get top movers from screener for Massive enrichment
+    # Get top movers from screener and enrich with 52w high/low from Finnhub
     top_movers = [g.get("symbol", "") for g in screener.get("gainers", [])[:5]]
     massive_movers = {}
     try:
         if top_movers:
-            snapshots = await get_snapshots(top_movers)
+            metrics = await get_finnhub_metrics(top_movers)
             for sym in top_movers:
-                if sym in snapshots:
-                    snap = snapshots[sym]
+                if sym in metrics:
+                    m = metrics[sym]
                     massive_movers[sym] = {
-                        "change_pct": snap.get("dp"),
-                        "rsi": snap.get("rsi"),
-                        "week52_high": snap.get("high_52week"),
-                        "week52_low": snap.get("low_52week"),
+                        "week52_high": m.get("high_52week"),
+                        "week52_low": m.get("low_52week"),
                     }
     except Exception as exc:
-        logger.warning("market_snapshot massive movers failed: %s", exc)
+        logger.warning("market_snapshot metrics movers failed: %s", exc)
 
     return {
         "tone": morning.get("market_tone", "unknown"),

@@ -202,6 +202,42 @@ async def _finnhub_quote(client: httpx.AsyncClient, symbol: str) -> dict:
     }
 
 
+async def get_finnhub_metrics(symbols: list[str]) -> dict[str, dict]:
+    """Fetch 52-week high/low for a list of symbols via Finnhub /stock/metric.
+
+    Uses the same rate-limited semaphore as other Finnhub calls (25 concurrent,
+    50ms stagger). Returns a dict mapping symbol -> {high_52week, low_52week}.
+    Missing or errored symbols are silently omitted — callers should treat absent
+    keys as unavailable rather than zero.
+
+    Free plan supports this endpoint. Practical limit: ~20 req/s sustained.
+    """
+    if not symbols:
+        return {}
+
+    results: dict[str, dict] = {}
+
+    async def fetch_one(client: httpx.AsyncClient, symbol: str) -> None:
+        try:
+            d = await finnhub_get(client, "/stock/metric", {"symbol": symbol, "metric": "all"})
+            m = d.get("metric", {})
+            high = m.get("52WeekHigh")
+            low = m.get("52WeekLow")
+            if high is not None or low is not None:
+                results[symbol] = {
+                    "high_52week": round(float(high), 2) if high is not None else None,
+                    "low_52week": round(float(low), 2) if low is not None else None,
+                }
+        except Exception as exc:
+            logger.debug("get_finnhub_metrics: %s failed: %s", symbol, exc)
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        await asyncio.gather(*[fetch_one(client, s) for s in symbols])
+
+    logger.info("get_finnhub_metrics: fetched %d/%d symbols", len(results), len(symbols))
+    return results
+
+
 # ── yfinance ──────────────────────────────────────────────────────────────────
 
 def _yf_session() -> "requests.Session":

@@ -7,7 +7,7 @@ import httpx
 
 from data_client import finnhub_get
 from firestore import get_cache, set_cache
-from massive_client import get_snapshots
+from data_client import get_finnhub_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -57,28 +57,21 @@ async def get_morning_brief() -> dict:
     avg_change = sum(v["change_pct"] for v in valid) / len(valid) if valid else 0
     tone = "bullish" if avg_change > 0.5 else "bearish" if avg_change < -0.5 else "neutral"
 
-    # Enrich with Massive snapshots (52w high/low, RSI)
-    massive_rsi = {}
+    # Enrich with Finnhub 52w high/low (only 4-5 index symbols — well within free tier)
+    metrics: dict[str, dict] = {}
     try:
-        snapshots = await get_snapshots(list(INDICES.values()))
-        for name, symbol in INDICES.items():
-            if symbol in snapshots:
-                snap = snapshots[symbol]
-                massive_rsi[symbol] = {
-                    "rsi": snap.get("rsi"),
-                    "high_52week": snap.get("high_52week"),
-                    "low_52week": snap.get("low_52week"),
-                }
-                logger.debug("morning_brief massive: %s = %s", symbol, massive_rsi[symbol])
+        metrics = await get_finnhub_metrics(list(INDICES.values()))
+        for symbol, m in metrics.items():
+            logger.debug("morning_brief metrics: %s = %s", symbol, m)
     except Exception as exc:
-        logger.warning("morning_brief massive enrichment failed: %s", exc)
+        logger.warning("morning_brief metrics enrichment failed: %s", exc)
 
     result = {
         "date": str(date.today()),
         "market_tone": tone,
         "avg_change_pct": round(avg_change, 2),
         "indices": indices,
-        "massive_rsi": massive_rsi,
+        "metrics_52w": metrics,
         "summary": (
             f"Markets are {tone} today with an average move of {avg_change:+.2f}% "
             f"across major indices."

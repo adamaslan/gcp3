@@ -3,6 +3,7 @@
 Predicts 10 buy and 10 sell candidates for 2-week to 1-month swing trades
 based on previous momentum and technical indicators.
 """
+import asyncio
 import logging
 from datetime import date, datetime, timedelta
 from typing import Optional
@@ -43,7 +44,7 @@ def _calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["stoch_d"] = stoch.stoch_signal()
 
     # MACD (12, 26, 9)
-    macd = MACDIndicator(close)
+    macd = MACD(close)
     df["macd"] = macd.macd()
     df["macd_signal"] = macd.macd_signal()
     df["macd_hist"] = macd.macd_diff()
@@ -103,7 +104,7 @@ def _score_buy_signal(row: pd.Series) -> float:
         score += 2.0
 
     # Price above moving averages (uptrend)
-    if row.get("close", 0) > row.get("sma_20", 0) > row.get("sma_50", 0):
+    if row.get("Close", 0) > row.get("sma_20", 0) > row.get("sma_50", 0):
         score += 2.0
 
     # Strong momentum (positive 10d and 21d)
@@ -120,7 +121,7 @@ def _score_buy_signal(row: pd.Series) -> float:
         score -= 1.0  # possible exhaustion
 
     # Price near lower Bollinger Band (potential support)
-    if row.get("close", 0) <= row.get("bb_lower", 0) * 1.02:
+    if row.get("Close", 0) <= row.get("bb_lower", 0) * 1.02:
         score += 1.5
 
     # ROC positive
@@ -149,7 +150,7 @@ def _score_sell_signal(row: pd.Series) -> float:
         score += 2.0
 
     # Price below moving averages (downtrend)
-    if row.get("close", 0) < row.get("sma_20", 0) < row.get("sma_50", 0):
+    if row.get("Close", 0) < row.get("sma_20", 0) < row.get("sma_50", 0):
         score += 2.0
 
     # Negative momentum
@@ -164,7 +165,7 @@ def _score_sell_signal(row: pd.Series) -> float:
         score += 1.5
 
     # Price near upper Bollinger Band (resistance)
-    if row.get("close", 0) >= row.get("bb_upper", 0) * 0.98:
+    if row.get("Close", 0) >= row.get("bb_upper", 0) * 0.98:
         score += 1.5
 
     # ROC negative
@@ -182,28 +183,33 @@ async def get_swing_predictions() -> dict:
     """
     logger.info("calculating swing trade predictions for %d symbols", len(SWING_WATCHLIST))
 
-    # Download 6 months of data for each symbol
+    # Download enough data for 200-day SMA (typically ~300 trading days = ~15 months)
     end_date = date.today()
-    start_date = end_date - timedelta(days=180)
+    start_date = end_date - timedelta(days=450)
 
     buy_candidates = []
     sell_candidates = []
     analysis_data = {}
 
-    for symbol in SWING_WATCHLIST:
+    async def analyze_symbol(symbol: str) -> Optional[tuple]:
+        """Fetch and analyze a single symbol."""
         try:
-            ticker = yf.Ticker(symbol)
-            df = ticker.history(start=start_date, end=end_date, interval="1d")
+            # Run synchronous yfinance in a thread pool
+            loop = asyncio.get_running_loop()
+            df = await loop.run_in_executor(
+                None,
+                lambda: yf.Ticker(symbol).history(start=start_date, end=end_date, interval="1d")
+            )
 
             if df.empty or len(df) < 50:
-                continue
+                return None
 
             df = _calculate_indicators(df)
             latest = df.iloc[-1]
 
             # Skip if missing critical indicators
             if pd.isna(latest.get("rsi")) or pd.isna(latest.get("adx")):
-                continue
+                return None
 
             # Calculate scores
             buy_score = _score_buy_signal(latest)
@@ -255,10 +261,14 @@ async def get_swing_predictions() -> dict:
                     "adx": round(latest["adx"], 1),
                     "reason": _get_sell_reason(latest),
                 })
+            return None
 
         except Exception as e:
             logger.warning("error analyzing %s: %s", symbol, e)
-            continue
+            return None
+
+    # Fetch all symbols concurrently (rate-limited by yfinance semaphore)
+    await asyncio.gather(*[analyze_symbol(symbol) for symbol in SWING_WATCHLIST], return_exceptions=True)
 
     # Sort and take top 10 for each
     buy_candidates.sort(key=lambda x: x["score"], reverse=True)
@@ -286,7 +296,7 @@ def _get_buy_reason(row: pd.Series) -> str:
         reasons.append(f"RSI oversold ({row['rsi']:.0f})")
     if row.get("macd", 0) > row.get("macd_signal", 0):
         reasons.append("MACD bullish crossover")
-    if row.get("close", 0) > row.get("sma_20", 0):
+    if row.get("Close", 0) > row.get("sma_20", 0):
         reasons.append("Price above 20-day MA")
     if row.get("momentum_10d", 0) > 0:
         reasons.append(f"+{row['momentum_10d']:.1f}% 10d momentum")
@@ -306,7 +316,7 @@ def _get_sell_reason(row: pd.Series) -> str:
         reasons.append(f"RSI overbought ({row['rsi']:.0f})")
     if row.get("macd", 0) < row.get("macd_signal", 0):
         reasons.append("MACD bearish crossover")
-    if row.get("close", 0) < row.get("sma_20", 0):
+    if row.get("Close", 0) < row.get("sma_20", 0):
         reasons.append("Price below 20-day MA")
     if row.get("momentum_10d", 0) < 0:
         reasons.append(f"{row['momentum_10d']:.1f}% 10d momentum")
