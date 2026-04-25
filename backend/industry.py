@@ -16,15 +16,22 @@ Permanent storage (etf_store):
 import asyncio
 from asyncio import Semaphore
 import logging
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 from math import floor
 import time
+
+_EST = timezone(timedelta(hours=-5))
+
+
+def _now_est_iso() -> str:
+    """Return current time as an EST ISO string, e.g. '2026-04-25T09:32:00-05:00'."""
+    return datetime.now(_EST).isoformat()
 
 import httpx
 import pandas as pd
 
 from data_client import av_analytics_batch, av_remaining_calls, finnhub_get, get_cache, get_quote, set_cache
-from massive_client import get_snapshots
+from data_client import get_finnhub_metrics
 import etf_store
 
 logger = logging.getLogger(__name__)
@@ -181,7 +188,7 @@ async def get_industry_quotes() -> dict:
 
         result = {
             "date": str(date.today()),
-            "quotes_as_of": datetime.now(timezone.utc).isoformat(),
+            "quotes_as_of": _now_est_iso(),
             "total": len(industries),
             "industries": industries,
             "rankings": ranked,
@@ -298,25 +305,18 @@ async def get_industry_data(enrich_av: bool = False, force: bool = False) -> dic
         t_returns_ms = round((time.monotonic() - t_returns_start) * 1000)
         logger.info("industry_data: attach_stored_returns_done ms=%d", t_returns_ms)
 
-        # Step 4: Enrich with Massive snapshots (52w high/low, RSI)
-        massive_snapshot = {}
+        # Step 4: Enrich with Finnhub 52w high/low (replaces Polygon snapshot — always 403)
         try:
-            snapshots = await get_snapshots(all_etfs)
+            metrics = await get_finnhub_metrics(all_etfs)
             for industry, data in industries.items():
                 etf = data.get("etf")
-                if etf and etf in snapshots and "error" not in data:
-                    snap = snapshots[etf]
-                    data["week52_high"] = snap.get("high_52week")
-                    data["week52_low"] = snap.get("low_52week")
-                    data["rsi"] = snap.get("rsi")
-                    massive_snapshot[etf] = {
-                        "week52_high": snap.get("high_52week"),
-                        "week52_low": snap.get("low_52week"),
-                        "rsi": snap.get("rsi"),
-                    }
-                    logger.debug("industry_data massive: %s = %s", etf, massive_snapshot[etf])
+                if etf and etf in metrics and "error" not in data:
+                    m = metrics[etf]
+                    data["week52_high"] = m.get("high_52week")
+                    data["week52_low"] = m.get("low_52week")
+                    logger.debug("industry_data metrics: %s = %s", etf, m)
         except Exception as exc:
-            logger.warning("industry_data massive enrichment failed: %s", exc)
+            logger.warning("industry_data metrics enrichment failed: %s", exc)
 
         # Build rankings after all enrichment so rows include returns + 52W data
         ranked = sorted(
@@ -332,14 +332,13 @@ async def get_industry_data(enrich_av: bool = False, force: bool = False) -> dic
 
         result = {
             "date": str(date.today()),
-            "quotes_as_of": datetime.now(timezone.utc).isoformat(),
+            "quotes_as_of": _now_est_iso(),
             "total": len(industries),
             "industries": industries,
             "rankings": ranked,
             "by_sector": by_sector,
             "leaders": ranked[:5],
             "laggards": ranked[-5:],
-            "massive_snapshot": massive_snapshot,
         }
 
         if ranked:
