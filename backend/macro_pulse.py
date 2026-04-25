@@ -7,7 +7,7 @@ import httpx
 
 from data_client import finnhub_get
 from firestore import get_cache, set_cache
-from massive_client import get_snapshots
+from data_client import get_finnhub_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -145,21 +145,14 @@ async def get_macro_pulse() -> dict:
         cat = v.get("category", "other")
         by_category.setdefault(cat, []).append(v)
 
-    # Enrich with Massive snapshots (52w high/low, volume)
-    massive_snapshots = {}
+    # Enrich with Finnhub 52w high/low (~11 macro tickers — well within free tier)
+    metrics_52w: dict[str, dict] = {}
     try:
-        snapshots = await get_snapshots(list(MACRO_TICKERS.keys()))
-        for key, meta in MACRO_TICKERS.items():
-            if key in snapshots:
-                snap = snapshots[key]
-                massive_snapshots[key] = {
-                    "high_52week": snap.get("high_52week"),
-                    "low_52week": snap.get("low_52week"),
-                    "volume": snap.get("volume"),
-                }
-                logger.debug("macro_pulse massive: %s = %s", key, massive_snapshots[key])
+        metrics_52w = await get_finnhub_metrics(list(MACRO_TICKERS.keys()))
+        for key, m in metrics_52w.items():
+            logger.debug("macro_pulse metrics: %s = %s", key, m)
     except Exception as exc:
-        logger.warning("macro_pulse massive enrichment failed: %s", exc)
+        logger.warning("macro_pulse metrics enrichment failed: %s", exc)
 
     result = {
         "date": str(date.today()),
@@ -169,7 +162,7 @@ async def get_macro_pulse() -> dict:
         "ai_regime_score": ai_analysis["regime_score"],
         "ai_signals": ai_analysis["signals"],
         "ai_summary": ai_analysis["summary"],
-        "massive_snapshots": massive_snapshots,
+        "metrics_52w": metrics_52w,
     }
 
     set_cache(cache_key, result, ttl_hours=2)

@@ -15,6 +15,7 @@ from google.oauth2 import id_token as google_id_token
 from industry import compute_returns, get_industry_data, seed_etf_history
 from morning import get_morning_brief
 from screener import get_screener_data
+from swing_predictions import get_swing_predictions
 from sector_rotation import get_sector_rotation
 from earnings_radar import get_earnings_radar
 from macro_pulse import get_macro_pulse
@@ -283,6 +284,25 @@ async def screener(request: Request) -> dict:
         return data
     except Exception as exc:
         logger.exception("GET /screener failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+
+
+# ── Swing Trade Predictions ───────────────────────────────────────────────────
+@app.get("/swing-predictions")
+async def swing_predictions(request: Request) -> dict:
+    """Momentum-based swing trade predictions for 2-week to 1-month horizon.
+
+    Uses technical indicators (RSI, Stochastic, MACD, ADX, Bollinger Bands)
+    and momentum (10d, 21d rate of change) to predict 10 buy and 10 sell candidates.
+    """
+    logger.info("GET /swing-predictions from %s", request.client)
+    try:
+        data = await get_swing_predictions()
+        logger.info("GET /swing-predictions success: %d buy, %d sell",
+                    len(data.get("buy_candidates", [])), len(data.get("sell_candidates", [])))
+        return data
+    except Exception as exc:
+        logger.exception("GET /swing-predictions failed: %s", exc)
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
 
