@@ -6,19 +6,24 @@ and generates a focused 300-word article grounded entirely in that one relations
 
 Complements daily_correlation (5-pair overview) — this article goes deep on one story.
 """
+import asyncio
 import logging
 from datetime import date, datetime, timedelta, timezone
 
 from correlation_article import (
     CorrelationResult,
-    _call_gemini,
     _compute_all_correlations,
     _gather_all_sources,
     _generate_title_and_slug,
 )
 from firestore import delete_cache, get_cache, get_cache_stale_prev, set_cache
+from gemini_client import call_gemini
 
 logger = logging.getLogger(__name__)
+
+# Per-key lock prevents concurrent requests from each triggering a separate Gemini call
+# on a cold cache (stampede). Only one generation runs at a time per cache key.
+_story_lock = asyncio.Lock()
 
 
 def _pick_extreme_pair(all_pairs: list[CorrelationResult]) -> CorrelationResult | None:
@@ -184,60 +189,67 @@ async def get_story_article() -> dict:
         logger.info("story_picker cache hit key=%s", cache_key)
         return cached
 
-    logger.info("story_picker cache miss — generating for %s", today)
+    # Lock prevents concurrent cold-cache requests from each triggering Gemini.
+    # The second caller re-checks cache after acquiring and returns if already populated.
+    async with _story_lock:
+        if cached := get_cache(cache_key):
+            logger.info("story_picker cache hit after lock key=%s", cache_key)
+            return cached
 
-    # Reuse correlation_article's source gathering and pair computation
-    sources = await _gather_all_sources()
-    if len(sources) < 3:
-        logger.warning(
-            "story_picker: only %d sources available, need at least 3 — checking for prior article",
-            len(sources),
+        logger.info("story_picker cache miss — generating for %s", today)
+
+        # Reuse correlation_article's source gathering and pair computation
+        sources = await _gather_all_sources()
+        if len(sources) < 3:
+            logger.warning(
+                "story_picker: only %d sources available, need at least 3 — checking for prior article",
+                len(sources),
+            )
+            stale, stale_as_of = get_cache_stale_prev("daily_story:", cache_key)
+            if stale:
+                stale_date = stale_as_of or str(today - timedelta(days=1))
+                logger.warning("story_picker: serving stale article stale_as_of=%s", stale_date)
+                return {**stale, "stale": True, "stale_date": stale_date}
+            raise RuntimeError(f"Insufficient data sources ({len(sources)} < 3)")
+
+        all_pairs = _compute_all_correlations(sources)
+        extreme_pair = _pick_extreme_pair(all_pairs)
+        if extreme_pair is None:
+            raise RuntimeError("No correlation pairs could be computed")
+
+        logger.info(
+            "story_picker: extreme pair=%s signal=%s score=%.2f",
+            extreme_pair.pair_id, extreme_pair.signal, extreme_pair.score,
         )
-        stale, stale_as_of = get_cache_stale_prev("daily_story:", cache_key)
-        if stale:
-            stale_date = stale_as_of or str(today - timedelta(days=1))
-            logger.warning("story_picker: serving stale article stale_as_of=%s", stale_date)
-            return {**stale, "stale": True, "stale_date": stale_date}
-        raise RuntimeError(f"Insufficient data sources ({len(sources)} < 3)")
 
-    all_pairs = _compute_all_correlations(sources)
-    extreme_pair = _pick_extreme_pair(all_pairs)
-    if extreme_pair is None:
-        raise RuntimeError("No correlation pairs could be computed")
+        prompt = _build_story_prompt(extreme_pair, sources)
+        article_text = await call_gemini(prompt)
+        logger.info("story_picker: Gemini response received (%d chars)", len(article_text))
 
-    logger.info(
-        "story_picker: extreme pair=%s signal=%s score=%.2f",
-        extreme_pair.pair_id, extreme_pair.signal, extreme_pair.score,
-    )
+        title, slug = await _generate_title_and_slug([extreme_pair], article_text)
 
-    prompt = _build_story_prompt(extreme_pair, sources)
-    article_text = await _call_gemini(prompt)
-    logger.info("story_picker: Gemini response received (%d chars)", len(article_text))
+        result = {
+            "date": str(today),
+            "title": title,
+            "slug": slug,
+            "body": article_text,
+            "extreme_pair": {
+                "pair_id": extreme_pair.pair_id,
+                "signal": extreme_pair.signal,
+                "score": extreme_pair.score,
+                "summary": extreme_pair.summary,
+                "source_a": extreme_pair.source_a,
+                "source_b": extreme_pair.source_b,
+            },
+            "all_pairs_count": len(all_pairs),
+            "stale": False,
+        }
 
-    title, slug = await _generate_title_and_slug([extreme_pair], article_text)
-
-    result = {
-        "date": str(today),
-        "title": title,
-        "slug": slug,
-        "body": article_text,
-        "extreme_pair": {
-            "pair_id": extreme_pair.pair_id,
-            "signal": extreme_pair.signal,
-            "score": extreme_pair.score,
-            "summary": extreme_pair.summary,
-            "source_a": extreme_pair.source_a,
-            "source_b": extreme_pair.source_b,
-        },
-        "all_pairs_count": len(all_pairs),
-        "stale": False,
-    }
-
-    # Cache until midnight UTC
-    now = datetime.now(timezone.utc)
-    tomorrow = datetime(now.year, now.month, now.day, tzinfo=timezone.utc) + timedelta(days=1)
-    ttl_hours = max(1, int((tomorrow - now).total_seconds() / 3600))
-    set_cache(cache_key, result, ttl_hours=ttl_hours)
+        # Cache until midnight UTC
+        now = datetime.now(timezone.utc)
+        tomorrow = datetime(now.year, now.month, now.day, tzinfo=timezone.utc) + timedelta(days=1)
+        ttl_hours = max(1, int((tomorrow - now).total_seconds() / 3600))
+        set_cache(cache_key, result, ttl_hours=ttl_hours)
     return result
 
 
