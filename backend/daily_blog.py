@@ -6,12 +6,10 @@ Cached in Firestore with a to-midnight TTL so only one Gemini call per day.
 """
 import asyncio
 import logging
-import os
 from datetime import date, datetime, timedelta, timezone
 
-import httpx
-
 from firestore import get_cache, set_cache, delete_cache
+from gemini_client import call_gemini
 from morning import get_morning_brief
 from sector_rotation import get_sector_rotation
 from macro_pulse import get_macro_pulse
@@ -168,20 +166,8 @@ async def _gather_market_snapshot() -> dict:
 
 
 async def _call_gemini(prompt: str) -> str:
-    """Send a prompt to Gemini 2.0 Flash and return the text response."""
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY not set")
-
-    url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        "gemini-2.0-flash:generateContent"
-    )
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
-    async with httpx.AsyncClient(timeout=45) as client:
-        resp = await client.post(url, json=payload, headers={"x-goog-api-key": api_key})
-        resp.raise_for_status()
-        return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+    """Delegate to the shared Gemini client (retry + backoff)."""
+    return await call_gemini(prompt)
 
 
 async def refresh_daily_blog() -> dict:
