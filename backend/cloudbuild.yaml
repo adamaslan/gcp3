@@ -19,7 +19,7 @@ steps:
       - --cpu=1
       - --max-instances=5
       - --set-env-vars=GCP_PROJECT_ID=$PROJECT_ID,SCHEDULER_EXPECTED_AUDIENCE=https://gcp3-backend-cif7ppahzq-uc.a.run.app,SCHEDULER_EXPECTED_SA=gcp3-scheduler@ttb-lang1.iam.gserviceaccount.com
-      - --set-secrets=FINNHUB_API_KEY=FINNHUB_API_KEY:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,SCHEDULER_SECRET=SCHEDULER_SECRET:latest,ALPHA_VANTAGE_KEY=ALPHA_VANTAGE_KEY:latest,MASSIVE_API_KEY=MASSIVE_API_KEY:latest
+      - --set-secrets=FINNHUB_API_KEY=FINNHUB_API_KEY:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,SCHEDULER_SECRET=SCHEDULER_SECRET:latest,ALPHA_VANTAGE_KEY=ALPHA_VANTAGE_KEY:latest,MASSIVE_API_KEY=MASSIVE_API_KEY:latest,MISTRAL_KEY=MISTRAL_KEY:latest
 
 images:
   - us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/gcp3-backend
