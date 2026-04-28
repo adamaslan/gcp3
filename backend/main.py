@@ -14,7 +14,7 @@ from google.oauth2 import id_token as google_id_token
 
 from industry import compute_returns, get_industry_data, seed_etf_history
 from morning import get_morning_brief
-from screener import get_screener_data
+from screener import get_screener_data, build_screener_cache
 from swing_predictions import get_swing_predictions
 from sector_rotation import get_sector_rotation
 from earnings_radar import get_earnings_radar
@@ -36,7 +36,35 @@ from contextlib import asynccontextmanager
 from llm.cost_logger import get_daily_stats, top_endpoints_by_cost
 from calibration.fit import load_from_gcs
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+import json as _json
+
+
+class _CloudRunJsonFormatter(logging.Formatter):
+    """Emit logs as single-line JSON so Cloud Logging parses severity + fields."""
+
+    _LEVEL_MAP = {
+        "DEBUG": "DEBUG",
+        "INFO": "INFO",
+        "WARNING": "WARNING",
+        "ERROR": "ERROR",
+        "CRITICAL": "CRITICAL",
+    }
+
+    def format(self, record: logging.LogRecord) -> str:
+        entry: dict = {
+            "severity": self._LEVEL_MAP.get(record.levelname, "DEFAULT"),
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            entry["exception"] = self.formatException(record.exc_info)
+        return _json.dumps(entry)
+
+
+_handler = logging.StreamHandler()
+_handler.setFormatter(_CloudRunJsonFormatter())
+logging.root.setLevel(logging.INFO)
+logging.root.handlers = [_handler]
 logger = logging.getLogger(__name__)
 
 
@@ -508,7 +536,7 @@ async def refresh_all(request: Request) -> dict:
     s2_names = ["sector_rotation", "screener"]
     s2_results = await asyncio.gather(
         get_sector_rotation(),
-        get_screener_data(),
+        build_screener_cache(),
         return_exceptions=True,
     )
     s2_errors = [f"{n}: {r}" for n, r in zip(s2_names, s2_results) if isinstance(r, Exception)]
@@ -672,7 +700,7 @@ async def refresh_fetch(request: Request) -> dict:
     t0 = time.perf_counter()
     f2_results = await asyncio.gather(
         get_sector_rotation(),
-        get_screener_data(),
+        build_screener_cache(),
         return_exceptions=True,
     )
     f2_names = ["sector_rotation", "screener_data"]

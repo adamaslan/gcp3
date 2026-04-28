@@ -1,16 +1,19 @@
-"""Stock Screener: top movers from major indices + AI momentum signal.
+"""Stock Screener: top movers across watchlist with rule-based momentum signals.
 
-Data resolution chain:
-  1. Finnhub — real-time intraday quotes (primary)
-  2. yfinance bulk download — free fallback for any symbols Finnhub fails
-     (single yf.download() call covers all failed symbols at once)
+Data resolution:
+  - Reads exclusively from Firestore cache (populated by the nightly refresh job).
+  - Returns HTTP 503 if cache is cold — never makes live Finnhub/yfinance calls
+    at request time, avoiding rate-limit exposure on hot paths.
+  - Cache TTL is 26h so a missed nightly refresh still serves yesterday's data
+    rather than going dark.
 """
 import asyncio
 import logging
 from datetime import date
 
-from data_client import get_quotes
+from fastapi import HTTPException
 from firestore import get_cache, set_cache
+from utils.signals import ai_signal
 
 logger = logging.getLogger(__name__)
 
@@ -47,43 +50,47 @@ WATCHLIST: list[str] = [
 
 
 
-def _ai_signal(quote: dict) -> str:
-    """Rule-based momentum signal derived from intraday data."""
-    pct = quote.get("change_pct", 0)
-    price = quote.get("price", 0)
-    low = quote.get("low", price)
-    high = quote.get("high", price)
-    intraday_range = high - low
-    position_in_range = (price - low) / intraday_range if intraday_range > 0 else 0.5
-
-    if pct > 3 and position_in_range > 0.75:
-        return "strong_buy"
-    if pct > 1.5 or (pct > 0.5 and position_in_range > 0.7):
-        return "buy"
-    if pct < -3 and position_in_range < 0.25:
-        return "strong_sell"
-    if pct < -1.5 or (pct < -0.5 and position_in_range < 0.3):
-        return "sell"
-    return "hold"
+_SCREENER_TTL_HOURS = 26  # survives one missed nightly refresh
 
 
 async def get_screener_data() -> dict:
+    """Return screener data from Firestore cache.
+
+    Raises:
+        HTTPException 503: Cache is cold (nightly refresh hasn't run yet today).
+    """
     cache_key = f"screener:{date.today()}"
-    if cached := get_cache(cache_key):
-        logger.info("screener cache hit key=%s", cache_key)
+    cached = get_cache(cache_key)
+    if cached is not None:
+        logger.info("screener cache_hit key=%s symbols=%s", cache_key, cached.get("total_screened"))
         return cached
 
+    logger.warning("screener cache_miss key=%s — returning 503; nightly refresh has not run", cache_key)
+    raise HTTPException(
+        status_code=503,
+        detail="Screener data not yet available — nightly refresh has not run. Try again after market close.",
+    )
+
+
+async def build_screener_cache() -> dict:
+    """Fetch live quotes and write the screener cache. Called by the nightly refresh job only.
+
+    Returns:
+        The assembled screener result dict.
+    """
+    from data_client import get_quotes  # local import — only the refresh job needs this
+
+    cache_key = f"screener:{date.today()}"
+
     async with _fetch_lock:
-        # Re-check after acquiring lock — another waiter may have populated cache
+        # Re-check after acquiring lock — another job invocation may have just written
         if cached := get_cache(cache_key):
-            logger.info("screener lock: cache populated by concurrent fetch key=%s", cache_key)
+            logger.info("screener build_cache: already populated key=%s — skipping", cache_key)
             return cached
 
-        logger.info("screener cache miss — fetching %d symbols from Finnhub", len(WATCHLIST))
-
-        # get_quotes handles Finnhub concurrent + yfinance bulk fallback internally
+        logger.info("screener build_cache: fetching %d symbols from Finnhub", len(WATCHLIST))
         raw_quotes = await get_quotes(WATCHLIST)
-        quotes = {sym: {**q, "symbol": sym, "signal": _ai_signal(q)} for sym, q in raw_quotes.items()}
+        quotes = {sym: {**q, "symbol": sym, "signal": ai_signal(q)} for sym, q in raw_quotes.items()}
         valid = list(quotes.values())
 
         ranked = sorted(valid, key=lambda x: x.get("change_pct", 0), reverse=True)
@@ -121,5 +128,9 @@ async def get_screener_data() -> dict:
             },
         }
 
-        set_cache(cache_key, result, ttl_hours=1)
+        set_cache(cache_key, result, ttl_hours=_SCREENER_TTL_HOURS)
+        logger.info(
+            "screener build_cache: complete key=%s symbols=%d gainers=%d losers=%d breadth_pct=%s",
+            cache_key, total, len(gainers), len(losers), breadth_pct,
+        )
         return result

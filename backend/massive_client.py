@@ -16,6 +16,9 @@ from datetime import datetime
 
 import httpx
 
+_MAX_RETRIES = 3
+_RETRY_BASE_DELAY = 2.0  # seconds; doubles each attempt (2s, 4s, 8s)
+
 logger = logging.getLogger(__name__)
 
 MASSIVE_API_KEY = os.environ.get("MASSIVE_API_KEY", "")
@@ -65,34 +68,57 @@ async def _get(url: str, params: dict | None = None) -> dict:
             logger.debug("rate_limit: sleeping %.1fs", wait)
             await asyncio.sleep(wait)
 
-        try:
-            client = _get_http_client()
-            full_params = {"apiKey": MASSIVE_API_KEY, **(params or {})}
-            logger.debug("massive_get: %s params=%s", url, {k: v for k, v in full_params.items() if k != "apiKey"})
+        client = _get_http_client()
+        full_params = {"apiKey": MASSIVE_API_KEY, **(params or {})}
+        logger.debug("massive_get: %s params=%s", url, {k: v for k, v in full_params.items() if k != "apiKey"})
 
-            response = await client.get(url, params=full_params)
+        last_exc: Exception | None = None
+        for attempt in range(1, _MAX_RETRIES + 1):
+            try:
+                response = await client.get(url, params=full_params)
 
-            if response.status_code == 403:
-                # 403 means the key is invalid or this endpoint requires a higher plan tier.
-                # Log clearly so the fix is obvious in Cloud Run logs.
-                logger.error(
-                    "massive_client: 403 Forbidden for %s — check MASSIVE_API_KEY in Secret Manager "
-                    "and verify the Polygon.io subscription tier supports this endpoint",
-                    url,
+                if response.status_code == 403:
+                    logger.error(
+                        "massive_client: 403 Forbidden url=%s attempt=%d/%d — "
+                        "check MASSIVE_API_KEY in Secret Manager and verify Polygon.io plan tier",
+                        url, attempt, _MAX_RETRIES,
+                    )
+                    raise httpx.HTTPStatusError(
+                        f"403 Forbidden — Polygon key invalid or plan tier insufficient for {url}",
+                        request=response.request,
+                        response=response,
+                    )
+
+                if response.status_code == 429:
+                    delay = _RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                    logger.warning(
+                        "massive_client: 429 rate_limited url=%s attempt=%d/%d — retrying in %.1fs",
+                        url, attempt, _MAX_RETRIES, delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+
+                response.raise_for_status()
+                _LAST_CALL = loop.time()
+                return response.json()
+
+            except httpx.TimeoutException as exc:
+                delay = _RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                logger.warning(
+                    "massive_client: timeout url=%s attempt=%d/%d — retrying in %.1fs",
+                    url, attempt, _MAX_RETRIES, delay,
                 )
-                raise httpx.HTTPStatusError(
-                    f"403 Forbidden — Polygon key invalid or plan tier insufficient for {url}",
-                    request=response.request,
-                    response=response,
-                )
+                last_exc = exc
+                if attempt < _MAX_RETRIES:
+                    await asyncio.sleep(delay)
+            except httpx.HTTPStatusError:
+                raise
+            except httpx.HTTPError as exc:
+                logger.error("massive_get url=%s attempt=%d/%d failed: %s", url, attempt, _MAX_RETRIES, exc)
+                raise
 
-            response.raise_for_status()
-
-            _LAST_CALL = loop.time()
-            return response.json()
-        except httpx.HTTPError as exc:
-            logger.error("massive_get %s failed: %s", url, exc)
-            raise
+        logger.error("massive_get url=%s exhausted %d retries: %s", url, _MAX_RETRIES, last_exc)
+        raise last_exc  # type: ignore[misc]
 
 
 async def get_snapshots(tickers: list[str]) -> dict:
