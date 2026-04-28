@@ -11,6 +11,7 @@ const NAV_LINKS = [
   { href: "/screener", label: "Screener" },
   { href: "/macro", label: "Macro" },
   { href: "/content", label: "Content" },
+  { href: "/content/archive", label: "Archive" },
 ];
 
 function AuthControl() {

@@ -57,7 +57,15 @@ export default async function ContentPage({
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold text-white mb-6">Content</h1>
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+        <h1 className="text-2xl font-bold text-white">Content</h1>
+        <Link
+          href="/content/archive"
+          className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 px-4 py-2 text-sm font-bold text-white shadow-md hover:shadow-lg hover:scale-105 transition-all"
+        >
+          📚 Browse archive →
+        </Link>
+      </div>
 
       <div className="flex gap-2 mb-6 border-b border-gray-700">
         {(
