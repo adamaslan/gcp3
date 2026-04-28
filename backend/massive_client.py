@@ -90,12 +90,18 @@ async def _get(url: str, params: dict | None = None) -> dict:
                     )
 
                 if response.status_code == 429:
-                    delay = _RETRY_BASE_DELAY * (2 ** (attempt - 1))
-                    logger.warning(
-                        "massive_client: 429 rate_limited url=%s attempt=%d/%d — retrying in %.1fs",
-                        url, attempt, _MAX_RETRIES, delay,
+                    last_exc = httpx.HTTPStatusError(
+                        f"429 Too Many Requests (attempt {attempt})",
+                        request=response.request,
+                        response=response,
                     )
-                    await asyncio.sleep(delay)
+                    if attempt < _MAX_RETRIES:
+                        delay = _RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                        logger.warning(
+                            "massive_client: 429 rate_limited url=%s attempt=%d/%d — retrying in %.1fs",
+                            url, attempt, _MAX_RETRIES, delay,
+                        )
+                        await asyncio.sleep(delay)
                     continue
 
                 response.raise_for_status()

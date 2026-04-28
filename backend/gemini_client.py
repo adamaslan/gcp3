@@ -24,6 +24,16 @@ _MISTRAL_MODEL = "mistral-small-latest"
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE = 10  # seconds; doubles each retry: 10, 20, 40
 
+# Shared client for connection pooling across Mistral fallback calls
+_mistral_client: httpx.AsyncClient | None = None
+
+
+def _get_mistral_client() -> httpx.AsyncClient:
+    global _mistral_client
+    if _mistral_client is None or _mistral_client.is_closed:
+        _mistral_client = httpx.AsyncClient(timeout=60)
+    return _mistral_client
+
 
 async def _call_mistral(prompt: str) -> str:
     """Send a prompt to Mistral and return the text response.
@@ -48,10 +58,10 @@ async def _call_mistral(prompt: str) -> str:
     }
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(_MISTRAL_URL, json=payload, headers=headers)
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"]
+    client = _get_mistral_client()
+    resp = await client.post(_MISTRAL_URL, json=payload, headers=headers)
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"]
 
 
 async def call_gemini(prompt: str) -> str:

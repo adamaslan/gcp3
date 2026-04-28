@@ -64,7 +64,7 @@ class _CloudRunJsonFormatter(logging.Formatter):
 _handler = logging.StreamHandler()
 _handler.setFormatter(_CloudRunJsonFormatter())
 logging.root.setLevel(logging.INFO)
-logging.root.handlers = [_handler]
+logging.root.addHandler(_handler)
 logger = logging.getLogger(__name__)
 
 
