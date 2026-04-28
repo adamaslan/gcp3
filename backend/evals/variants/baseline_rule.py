@@ -1,4 +1,4 @@
-"""Rule-based signal variant wrapping existing screener._ai_signal logic."""
+"""Rule-based signal variant mirroring utils.signals.ai_signal logic for eval comparison."""
 from __future__ import annotations
 
 import hashlib

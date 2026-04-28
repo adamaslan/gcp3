@@ -1,10 +1,11 @@
-"""Shared Gemini client with retry and exponential backoff.
+"""Shared LLM client: Gemini 2.0 Flash with Mistral fallback.
 
 All backend modules that call Gemini import call_gemini() from here.
 Centralises: API key handling, retry logic, backoff, logging.
 
-Rate limit: 15 RPM free tier. On 429 we back off and retry up to 3 times.
-Backoff schedule: 10s → 20s → 40s (doubles each attempt).
+Primary: Gemini 2.0 Flash — 15 RPM free tier.
+Fallback: Mistral (mistral-small-latest) — used when Gemini exhausts 3 retries.
+Backoff schedule for Gemini: 10s → 20s → 40s (doubles each attempt).
 """
 import asyncio
 import logging
@@ -18,15 +19,24 @@ _GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
     "gemini-2.0-flash:generateContent"
 )
+_MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions"
+_MISTRAL_MODEL = "mistral-small-latest"
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE = 10  # seconds; doubles each retry: 10, 20, 40
 
+# Shared client for connection pooling across Mistral fallback calls
+_mistral_client: httpx.AsyncClient | None = None
 
-async def call_gemini(prompt: str) -> str:
-    """Send a prompt to Gemini 2.0 Flash and return the text response.
 
-    Retries up to 3 times on 429 with exponential backoff (10s, 20s, 40s).
-    Raises RuntimeError on non-retryable errors or exhausted retries.
+def _get_mistral_client() -> httpx.AsyncClient:
+    global _mistral_client
+    if _mistral_client is None or _mistral_client.is_closed:
+        _mistral_client = httpx.AsyncClient(timeout=60)
+    return _mistral_client
+
+
+async def _call_mistral(prompt: str) -> str:
+    """Send a prompt to Mistral and return the text response.
 
     Args:
         prompt: The full text prompt to send.
@@ -35,8 +45,41 @@ async def call_gemini(prompt: str) -> str:
         The model's text response.
 
     Raises:
-        RuntimeError: If GEMINI_API_KEY is not set, or all retries exhausted.
-        httpx.HTTPStatusError: On non-429 HTTP errors (4xx/5xx).
+        RuntimeError: If MISTRAL_KEY is not set.
+        httpx.HTTPStatusError: On HTTP errors.
+    """
+    api_key = os.environ.get("MISTRAL_KEY")
+    if not api_key:
+        raise RuntimeError("MISTRAL_KEY not set — cannot fall back to Mistral")
+
+    payload = {
+        "model": _MISTRAL_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+    client = _get_mistral_client()
+    resp = await client.post(_MISTRAL_URL, json=payload, headers=headers)
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"]
+
+
+async def call_gemini(prompt: str) -> str:
+    """Send a prompt to Gemini 2.0 Flash; falls back to Mistral on quota exhaustion.
+
+    Retries Gemini up to 3 times on 429 with exponential backoff (10s, 20s, 40s).
+    If all Gemini retries fail with 429, attempts Mistral as a fallback before raising.
+
+    Args:
+        prompt: The full text prompt to send.
+
+    Returns:
+        The model's text response.
+
+    Raises:
+        RuntimeError: If GEMINI_API_KEY is not set, all retries exhausted, and
+            Mistral fallback also fails.
+        httpx.HTTPStatusError: On non-429 HTTP errors from Gemini.
     """
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -79,6 +122,18 @@ async def call_gemini(prompt: str) -> str:
                 last_exc = exc
                 continue
             raise
+
+    # Gemini quota exhausted — try Mistral before giving up
+    logger.warning(
+        "gemini_client: Gemini exhausted %d retries — falling back to Mistral",
+        _MAX_ATTEMPTS,
+    )
+    try:
+        result = await _call_mistral(prompt)
+        logger.info("gemini_client: Mistral fallback succeeded")
+        return result
+    except Exception as mistral_exc:
+        logger.error("gemini_client: Mistral fallback failed: %s", mistral_exc)
 
     raise RuntimeError(
         f"Gemini call failed after {_MAX_ATTEMPTS} attempts (rate limited): {last_exc}"
