@@ -1,71 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import ReactMarkdown from "react-markdown";
+import {
+  ARTICLE_TYPES,
+  findArticleType,
+  type ArticleTypeConfig,
+  type ArticleTypeId,
+} from "@/lib/article-types";
 
-export const dynamic = "force-dynamic";
-
-const ARTICLE_TYPES = {
-  story: {
-    label: "Story",
-    description: "Single extreme-pair correlation deep-dive",
-    backendType: "story",
-    gradient: "from-purple-700 via-pink-700 to-rose-700",
-    accent: "purple",
-    icon: "📖",
-  },
-  blog: {
-    label: "Daily Blog",
-    description: "Themed daily blog post",
-    backendType: "blog",
-    gradient: "from-blue-700 via-cyan-700 to-teal-700",
-    accent: "blue",
-    icon: "📰",
-  },
-  correlation: {
-    label: "Correlation",
-    description: "Cross-asset correlation analysis",
-    backendType: "correlation",
-    gradient: "from-emerald-700 via-green-700 to-lime-700",
-    accent: "emerald",
-    icon: "🔗",
-  },
-  review: {
-    label: "Blog Review",
-    description: "Self-review and improvement suggestions",
-    backendType: "review",
-    gradient: "from-orange-700 via-amber-700 to-yellow-700",
-    accent: "orange",
-    icon: "✍️",
-  },
-  morning: {
-    label: "Morning Brief",
-    description: "Pre-open market tone snapshot",
-    backendType: null,
-    gradient: "from-fuchsia-700 via-purple-700 to-indigo-700",
-    accent: "fuchsia",
-    icon: "☀️",
-  },
-  macro: {
-    label: "Macro Pulse",
-    description: "AI macro regime summary",
-    backendType: null,
-    gradient: "from-rose-700 via-pink-700 to-fuchsia-700",
-    accent: "rose",
-    icon: "🌐",
-  },
-  "ai-summary": {
-    label: "AI Summary",
-    description: "Daily AI-written market brief",
-    backendType: null,
-    gradient: "from-sky-700 via-blue-700 to-indigo-700",
-    accent: "sky",
-    icon: "🤖",
-  },
-} as const;
-
-type TypeId = keyof typeof ARTICLE_TYPES;
-
-const TYPE_IDS = Object.keys(ARTICLE_TYPES) as TypeId[];
+export const revalidate = 14400;
 
 export async function generateMetadata({
   params,
@@ -73,7 +17,7 @@ export async function generateMetadata({
   params: Promise<{ type: string }>;
 }): Promise<Metadata> {
   const { type } = await params;
-  const meta = ARTICLE_TYPES[type as TypeId];
+  const meta = findArticleType(type);
   if (!meta) return { title: "Not found" };
   return {
     title: `${meta.label} Archive`,
@@ -81,17 +25,18 @@ export async function generateMetadata({
   };
 }
 
-async function fetchTodayArticle(typeId: TypeId): Promise<unknown | null> {
-  const meta = ARTICLE_TYPES[typeId];
+async function fetchTodayArticle(
+  meta: ArticleTypeConfig,
+): Promise<Record<string, unknown> | null> {
   if (!meta.backendType) return null;
   const base = process.env.BACKEND_URL;
   if (!base) return null;
   try {
     const res = await fetch(`${base}/content?type=${meta.backendType}`, {
-      cache: "no-store",
+      next: { revalidate: 14400 },
     });
     if (!res.ok) return null;
-    return await res.json();
+    return (await res.json()) as Record<string, unknown>;
   } catch {
     return null;
   }
@@ -156,12 +101,10 @@ export default async function ArchiveTypePage({
   params: Promise<{ type: string }>;
 }) {
   const { type } = await params;
-  const meta = ARTICLE_TYPES[type as TypeId];
+  const meta = findArticleType(type);
   if (!meta) notFound();
 
-  const article = (await fetchTodayArticle(type as TypeId)) as
-    | Record<string, unknown>
-    | null;
+  const article = await fetchTodayArticle(meta);
 
   const title =
     (article?.title as string | undefined) ||
@@ -210,13 +153,12 @@ export default async function ArchiveTypePage({
       <nav className="border-b border-gray-800 bg-gray-950/80 backdrop-blur sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <div className="flex gap-1 overflow-x-auto py-3">
-            {TYPE_IDS.map((id) => {
-              const t = ARTICLE_TYPES[id];
-              const active = id === type;
+            {ARTICLE_TYPES.map((t) => {
+              const active = t.id === (type as ArticleTypeId);
               return (
                 <Link
-                  key={id}
-                  href={`/content/archive/${id}`}
+                  key={t.id}
+                  href={`/content/archive/${t.id}`}
                   className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-colors ${
                     active
                       ? "bg-white text-gray-900 shadow-md"
@@ -251,11 +193,7 @@ export default async function ArchiveTypePage({
             <article className="rounded-2xl bg-gray-900/60 border border-gray-800 p-6 sm:p-10">
               {body ? (
                 <div className="prose prose-invert prose-lg max-w-none">
-                  {body.split(/\n{2,}/).map((para, i) => (
-                    <p key={i} className="text-gray-200">
-                      {para.trim()}
-                    </p>
-                  ))}
+                  <ReactMarkdown>{body}</ReactMarkdown>
                 </div>
               ) : (
                 <p className="text-gray-500 italic">

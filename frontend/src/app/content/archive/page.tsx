@@ -1,65 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ARTICLE_TYPES } from "@/lib/article-types";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 14400;
 
 export const metadata: Metadata = {
   title: "Content Archive",
   description:
     "Browse daily AI-generated market articles by type — story, blog, correlation, review, morning, macro, and AI summary.",
 };
-
-const ARTICLE_TYPES = [
-  {
-    id: "story",
-    label: "Story",
-    description: "Single extreme-pair correlation deep-dive",
-    gradient: "from-purple-600 via-pink-600 to-rose-600",
-    icon: "📖",
-  },
-  {
-    id: "blog",
-    label: "Daily Blog",
-    description: "Themed daily blog post on a market topic",
-    gradient: "from-blue-600 via-cyan-600 to-teal-600",
-    icon: "📰",
-  },
-  {
-    id: "correlation",
-    label: "Correlation",
-    description: "Cross-asset correlation analysis with news context",
-    gradient: "from-emerald-600 via-green-600 to-lime-600",
-    icon: "🔗",
-  },
-  {
-    id: "review",
-    label: "Blog Review",
-    description: "Self-review and improvement suggestions",
-    gradient: "from-orange-600 via-amber-600 to-yellow-600",
-    icon: "✍️",
-  },
-  {
-    id: "morning",
-    label: "Morning Brief",
-    description: "Pre-open market tone and indices snapshot",
-    gradient: "from-fuchsia-600 via-purple-600 to-indigo-600",
-    icon: "☀️",
-  },
-  {
-    id: "macro",
-    label: "Macro Pulse",
-    description: "AI macro regime and indicator summary",
-    gradient: "from-rose-600 via-pink-600 to-fuchsia-600",
-    icon: "🌐",
-  },
-  {
-    id: "ai-summary",
-    label: "AI Summary",
-    description: "Daily AI-written market brief",
-    gradient: "from-sky-600 via-blue-600 to-indigo-600",
-    icon: "🤖",
-  },
-] as const;
 
 export default function ContentArchiveHub() {
   return (
