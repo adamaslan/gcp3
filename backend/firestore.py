@@ -130,19 +130,32 @@ def delete_cache(key: str) -> None:
     db().collection("gcp3_cache").document(key).delete()
 
 
-def set_cache(key: str, value: dict, ttl_hours: int = 1) -> None:
+def set_cache(key: str, value: dict, ttl_hours: int = 1, ttl_seconds: int | None = None) -> None:
     """Set cache in both Firestore and in-memory.
 
     Ensures subsequent reads hit in-memory for 60s without Firestore round-trip.
     """
     now = datetime.now(timezone.utc)
+    ttl_delta = timedelta(seconds=ttl_seconds) if ttl_seconds is not None else timedelta(hours=ttl_hours)
     db().collection("gcp3_cache").document(key).set({
         "value": value,
-        "expires_at": now + timedelta(hours=ttl_hours),
+        "expires_at": now + ttl_delta,
         "updated_at": now,
     })
     # Populate in-memory layer for hot path (industry_quotes, screener, etc.)
     mem_set(key, value)
+
+
+def write_agent_document(collection: str, key: str, value: dict) -> None:
+    """Persist an agent artifact with deterministic document IDs."""
+    db().collection(collection).document(key).set(value)
+
+
+def read_agent_document(collection: str, key: str) -> dict | None:
+    snap = db().collection(collection).document(key).get()
+    if not snap.exists:
+        return None
+    return snap.to_dict()
 
 
 def write_checkpoint(phase: str, status: str, stages_completed: list[str], stages_failed: list[str], extra: dict | None = None) -> None:

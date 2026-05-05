@@ -16,6 +16,7 @@ from ta.trend import MACD, SMAIndicator, EMAIndicator, ADXIndicator
 from ta.volatility import BollingerBands, AverageTrueRange
 
 logger = logging.getLogger(__name__)
+_YF_SEMAPHORE = asyncio.Semaphore(4)
 
 # High-liquidity stocks for swing trading
 SWING_WATCHLIST: list[str] = [
@@ -175,17 +176,27 @@ def _score_sell_signal(row: pd.Series) -> float:
     return score
 
 
-async def get_swing_predictions() -> dict:
+async def get_swing_predictions(
+    universe: str | None = None,
+    top_n: int = 10,
+    period: str = "450d",
+    force_refresh: bool = False,
+) -> dict:
     """Get momentum-based swing trade predictions.
 
     Analyzes technical indicators to predict 10 buy and 10 sell candidates
     for 2-week to 1-month swing trades based on previous momentum.
     """
-    logger.info("calculating swing trade predictions for %d symbols", len(SWING_WATCHLIST))
+    symbols = [s.strip().upper() for s in universe.split(",")] if universe else list(SWING_WATCHLIST)
+    symbols = [s for s in symbols if s]
+    logger.info("calculating swing trade predictions for %d symbols", len(symbols))
 
     # Download enough data for 200-day SMA (typically ~300 trading days = ~15 months)
     end_date = date.today()
-    start_date = end_date - timedelta(days=450)
+    lookback_days = 450
+    if period.endswith("d") and period[:-1].isdigit():
+        lookback_days = max(60, min(1000, int(period[:-1])))
+    start_date = end_date - timedelta(days=lookback_days)
 
     buy_candidates = []
     sell_candidates = []
@@ -196,10 +207,12 @@ async def get_swing_predictions() -> dict:
         try:
             # Run synchronous yfinance in a thread pool
             loop = asyncio.get_running_loop()
-            df = await loop.run_in_executor(
-                None,
-                lambda: yf.Ticker(symbol).history(start=start_date, end=end_date, interval="1d")
-            )
+            async with _YF_SEMAPHORE:
+                await asyncio.sleep(0.25)
+                df = await loop.run_in_executor(
+                    None,
+                    lambda: yf.Ticker(symbol).history(start=start_date, end=end_date, interval="1d")
+                )
 
             if df.empty or len(df) < 50:
                 return None
@@ -268,17 +281,20 @@ async def get_swing_predictions() -> dict:
             return None
 
     # Fetch all symbols concurrently (rate-limited by yfinance semaphore)
-    await asyncio.gather(*[analyze_symbol(symbol) for symbol in SWING_WATCHLIST], return_exceptions=True)
+    await asyncio.gather(*[analyze_symbol(symbol) for symbol in symbols], return_exceptions=True)
 
     # Sort and take top 10 for each
     buy_candidates.sort(key=lambda x: x["score"], reverse=True)
     sell_candidates.sort(key=lambda x: x["score"], reverse=True)
 
-    top_buys = buy_candidates[:10]
-    top_sells = sell_candidates[:10]
+    top_buys = buy_candidates[:top_n]
+    top_sells = sell_candidates[:top_n]
 
     return {
         "date": str(date.today()),
+        "universe": symbols,
+        "period": period,
+        "force_refresh": force_refresh,
         "horizon": "2 weeks to 1 month",
         "methodology": "Technical indicators (RSI, Stochastic, MACD, ADX, Bollinger Bands) + momentum (10d, 21d rate of change)",
         "buy_candidates": top_buys,
