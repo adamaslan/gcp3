@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { TechnicalSignals } from "@/components/TechnicalSignals";
+import { Disclaimer } from "@/components/Disclaimer";
 import { buildOgImageUrl } from "@/lib/og";
 
 export const revalidate = 3600;
@@ -50,5 +51,10 @@ export default async function SignalsPage() {
       </div>
     );
   }
-  return <TechnicalSignals data={data} />;
+  return (
+    <div>
+      <TechnicalSignals data={data} />
+      <Disclaimer />
+    </div>
+  );
 }

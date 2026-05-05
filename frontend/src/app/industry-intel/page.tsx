@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { IndustryTracker } from "@/components/IndustryTracker";
+import { Disclaimer } from "@/components/Disclaimer";
 import { buildOgImageUrl } from "@/lib/og";
 
 export const revalidate = 60;
@@ -50,7 +51,12 @@ async function IndustryIntelContent() {
       </div>
     );
   }
-  return <IndustryTracker data={data} />;
+  return (
+    <div>
+      <IndustryTracker data={data} />
+      <Disclaimer />
+    </div>
+  );
 }
 
 export default function IndustryIntelPage() {

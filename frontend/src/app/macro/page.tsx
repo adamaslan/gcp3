@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { MacroPulse } from "@/components/MacroPulse";
 import { EarningsRadar } from "@/components/EarningsRadar";
+import { Disclaimer } from "@/components/Disclaimer";
 import { buildOgImageUrl } from "@/lib/og";
 
 export const revalidate = 900;
@@ -77,6 +78,8 @@ export default async function MacroPage() {
       ) : (
         <div className="h-48 bg-gray-800 rounded animate-pulse" />
       )}
+
+      <Disclaimer />
     </div>
   );
 }

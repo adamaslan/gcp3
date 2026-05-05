@@ -1,6 +1,7 @@
 "use client";
 
 import { IndustryReturns } from "@/components/IndustryReturns";
+import { Disclaimer } from "@/components/Disclaimer";
 import { useEffect, useState } from "react";
 
 interface IndustryReturnsData {
@@ -45,5 +46,10 @@ export default function IndustryReturnsPage() {
   if (error) return <div className="p-8 text-red-600">Error: {error}</div>;
   if (!data) return <div className="p-8">No data available</div>;
 
-  return <IndustryReturns data={data} />;
+  return (
+    <div>
+      <IndustryReturns data={data} />
+      <Disclaimer />
+    </div>
+  );
 }
