@@ -123,6 +123,7 @@ export default async function Home() {
         <span>·</span>
         <span>Cloud Run</span>
       </div>
+
     </div>
   );
 }

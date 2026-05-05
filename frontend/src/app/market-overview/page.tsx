@@ -87,6 +87,7 @@ export default async function MarketOverviewPage() {
           <MarketSummary data={data.history} selectedDays="7" />
         </section>
       )}
+
     </div>
   );
 }

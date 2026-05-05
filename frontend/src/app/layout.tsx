@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { NavBar } from "@/components/NavBar";
+import { Disclaimer } from "@/components/Disclaimer";
 
 import { ClerkProvider } from "@clerk/nextjs";
 
@@ -75,7 +76,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <html lang="en">
         <body className="bg-gray-950 text-gray-100 min-h-screen">
           <NavBar />
-          <main className="max-w-5xl mx-auto px-4 py-5 sm:px-6 sm:py-8">{children}</main>
+          <main className="max-w-5xl mx-auto px-4 py-5 sm:px-6 sm:py-8">
+            {children}
+            <Disclaimer />
+          </main>
         </body>
       </html>
     </ClerkProvider>

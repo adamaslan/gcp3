@@ -77,6 +77,7 @@ export default async function MacroPage() {
       ) : (
         <div className="h-48 bg-gray-800 rounded animate-pulse" />
       )}
+
     </div>
   );
 }
