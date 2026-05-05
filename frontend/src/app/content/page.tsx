@@ -4,7 +4,6 @@ import { DailyBlog } from "@/components/DailyBlog";
 import { BlogReview } from "@/components/BlogReview";
 import { CorrelationArticle } from "@/components/CorrelationArticle";
 import { StoryArticle } from "@/components/StoryArticle";
-import { Disclaimer } from "@/components/Disclaimer";
 import { buildOgImageUrl } from "@/lib/og";
 
 export const revalidate = 14400;
@@ -118,7 +117,6 @@ export default async function ContentPage({
         </>
       )}
 
-      <Disclaimer />
     </div>
   );
 }

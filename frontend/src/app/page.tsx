@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { CorrelationArticle } from "@/components/CorrelationArticle";
-import { Disclaimer } from "@/components/Disclaimer";
 
 const TOOLS = [
   {
@@ -125,7 +124,6 @@ export default async function Home() {
         <span>Cloud Run</span>
       </div>
 
-      <Disclaimer />
     </div>
   );
 }

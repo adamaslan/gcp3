@@ -1,5 +1,3 @@
-"use client";
-
 export function Disclaimer() {
   return (
     <div className="border-t border-gray-800 pt-6 mt-8">

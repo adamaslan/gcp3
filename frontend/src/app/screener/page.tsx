@@ -1,7 +1,6 @@
 "use client";
 
 import { Screener, type ScreenerData } from "@/components/Screener";
-import { Disclaimer } from "@/components/Disclaimer";
 import { useEffect, useState } from "react";
 
 export default function ScreenerPage() {
@@ -29,10 +28,5 @@ export default function ScreenerPage() {
   if (error) return <div className="p-8 text-red-600">Error: {error}</div>;
   if (!data) return <div className="p-8">No data available</div>;
 
-  return (
-    <div>
-      <Screener data={data} />
-      <Disclaimer />
-    </div>
-  );
+  return <Screener data={data} />;
 }

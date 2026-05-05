@@ -3,7 +3,6 @@ import { MorningBrief } from "@/components/MorningBrief";
 import { AiSummary } from "@/components/AiSummary";
 import { NewsSentiment } from "@/components/NewsSentiment";
 import { MarketSummary } from "@/components/MarketSummary";
-import { Disclaimer } from "@/components/Disclaimer";
 import { buildOgImageUrl } from "@/lib/og";
 
 export const revalidate = 900;
@@ -89,7 +88,6 @@ export default async function MarketOverviewPage() {
         </section>
       )}
 
-      <Disclaimer />
     </div>
   );
 }
