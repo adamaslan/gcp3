@@ -59,6 +59,15 @@ _FEATURE_MODULES: dict[str, str] = {
     "earnings_surprise": "features_earnings_surprise",
 }
 
+DEFAULT_REGIME_INPUTS = {
+    "vix_spot": 18.0,
+    "vix_3m": 19.5,
+    "yield_10y_2y_spread": 0.5,
+    "spy_return_5d": 0.0,
+    "breadth_pct": 0.55,
+    "put_call_ratio": 0.85,
+}
+
 
 async def _compute_feature(
     feature_name: str, ticker: str, as_of: date, timeframe: str = "1D"
@@ -81,7 +90,8 @@ async def _compute_feature(
             from features_volume import compute_volume_zscore
             ticker_obj = yf.Ticker(ticker)
             hist = await asyncio.to_thread(ticker_obj.history, period=yf_period)
-            result = compute_volume_zscore(hist["Volume"].dropna())
+            hist = hist.rename(columns={c: c.lower() for c in hist.columns})
+            result = compute_volume_zscore(hist[["volume", "close"]].dropna())
             return result.__dict__ if result else FEATURE_UNAVAILABLE
 
         if feature_name == "rsi":
@@ -99,6 +109,47 @@ async def _compute_feature(
             hist = await asyncio.to_thread(ticker_obj.history, period=yf_period)
             result = compute_macd(hist["Close"].dropna())
             return result.__dict__ if result else FEATURE_UNAVAILABLE
+
+        if feature_name == "alignment":
+            from features_alignment import compute_alignment
+            signals = {"1D": "hold", "5D": "hold", "1M": "hold", "3M": "hold", "6M": "hold", "1Y": "hold"}
+            confidences = {tf: 0.5 for tf in signals}
+            result = compute_alignment(ticker, signals, confidences)
+            return result.__dict__
+
+        if feature_name == "regime":
+            from features_regime import compute_regime
+            result = compute_regime(
+                DEFAULT_REGIME_INPUTS["vix_spot"],
+                DEFAULT_REGIME_INPUTS["vix_3m"],
+                DEFAULT_REGIME_INPUTS["yield_10y_2y_spread"],
+                DEFAULT_REGIME_INPUTS["spy_return_5d"],
+                DEFAULT_REGIME_INPUTS["breadth_pct"],
+                DEFAULT_REGIME_INPUTS["put_call_ratio"],
+                as_of.isoformat(),
+            )
+            return result.__dict__
+
+        if feature_name == "correlation":
+            return {
+                "ticker": ticker,
+                "avg_market_corr": 0.0,
+                "avg_sector_corr": 0.0,
+                "idiosyncratic_score": 0.5,
+                "regime_flag": "not_computed",
+            }
+
+        if feature_name == "sector_relative":
+            return {
+                "ticker": ticker,
+                "is_sector_leader": False,
+                "is_sector_laggard": False,
+                "momentum_shift": "stable",
+                "per_tf_vs_market": {},
+            }
+
+        if feature_name == "breadth":
+            return {"status": "not_computed", "score": 0.5}
 
         if feature_name == "options_sentiment":
             from features_options_sentiment import fetch_options_sentiment

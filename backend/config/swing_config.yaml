@@ -1,0 +1,35 @@
+accept_threshold: 0.78
+watchlist_threshold: 0.62
+reject_threshold: 0.45
+max_iterations_per_candidate: 5
+april500_finalist_limit: 5
+max_april500_timeframes_per_candidate: 3
+min_average_dollar_volume: 20000000
+max_spread_bps: 50
+requires_counter_evidence: true
+a1_weight: 0.50
+a2_weight: 0.50
+april500_script_path: ""
+llm_provider_order:
+  - openrouter_qwen3
+  - mistral
+  - gemini
+llm_timeout_seconds: 45
+run_mode_ttls:
+  premarket: 1800
+  intraday: 300
+  postmarket: 3600
+  manual: 3600
+penalty_caps:
+  risk_penalty: 0.35
+  stale_data_penalty: 0.30
+  total_penalty: 0.55
+feature_weights:
+  liquidity: 0.15
+  trend: 0.15
+  momentum: 0.20
+  volume: 0.15
+  volatility_quality: 0.10
+  multi_timeframe: 0.10
+  sector_relative: 0.10
+  counter_evidence: 0.05

@@ -9,6 +9,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from pydantic import BaseModel, Field
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 
@@ -35,6 +36,11 @@ from datetime import date, datetime, timezone
 from contextlib import asynccontextmanager
 from llm.cost_logger import get_daily_stats, top_endpoints_by_cost
 from calibration.fit import load_from_gcs
+from agents.swing_orchestrator import SwingOrchestrator, get_swing_run
+from agents.growth_orchestrator import GrowthOrchestrator, get_growth_run
+from compliance.research_only import research_only_header_middleware
+from rag.chat_service import answer_run_question
+from schemas.rag import RagChatRequest
 
 import json as _json
 
@@ -96,6 +102,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+app.middleware("http")(research_only_header_middleware)
+
+
+class AgentRunRequest(BaseModel):
+    candidates: list[str] = Field(default_factory=list)
+    mode: str = "manual"
+    run_id: str | None = None
+    include_llm: bool = False
+
+
+class AgentChatBody(BaseModel):
+    question: str
+    ticker: str | None = None
+    max_chunks: int = 6
 
 
 @app.get("/health")
@@ -317,7 +337,13 @@ async def screener(request: Request) -> dict:
 
 # ── Swing Trade Predictions ───────────────────────────────────────────────────
 @app.get("/swing-predictions")
-async def swing_predictions(request: Request) -> dict:
+async def swing_predictions(
+    request: Request,
+    universe: str | None = Query(default=None),
+    top_n: int = Query(default=10, ge=1, le=50),
+    period: str = Query(default="450d"),
+    force_refresh: bool = Query(default=False),
+) -> dict:
     """Momentum-based swing trade predictions for 2-week to 1-month horizon.
 
     Uses technical indicators (RSI, Stochastic, MACD, ADX, Bollinger Bands)
@@ -325,13 +351,64 @@ async def swing_predictions(request: Request) -> dict:
     """
     logger.info("GET /swing-predictions from %s", request.client)
     try:
-        data = await get_swing_predictions()
+        data = await get_swing_predictions(universe=universe, top_n=top_n, period=period, force_refresh=force_refresh)
         logger.info("GET /swing-predictions success: %d buy, %d sell",
                     len(data.get("buy_candidates", [])), len(data.get("sell_candidates", [])))
         return data
     except Exception as exc:
         logger.exception("GET /swing-predictions failed: %s", exc)
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+
+
+# ── Swing + Growth Research Agents ────────────────────────────────────────────
+@app.post("/agents/swing/run")
+async def run_swing_agent(body: AgentRunRequest) -> dict:
+    try:
+        candidates = body.candidates or ["AAPL", "MSFT", "NVDA"]
+        run = await SwingOrchestrator().run(candidates=candidates, mode=body.mode, run_id=body.run_id)
+        return run.model_dump(mode="json")
+    except Exception as exc:
+        logger.exception("POST /agents/swing/run failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Swing research run failed")
+
+
+@app.get("/agents/swing/{run_id}")
+async def read_swing_agent_run(run_id: str) -> dict:
+    data = get_swing_run(run_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Swing run not found")
+    return data
+
+
+@app.post("/agents/swing/{run_id}/chat")
+async def chat_swing_agent_run(run_id: str, body: AgentChatBody) -> dict:
+    response = await answer_run_question(RagChatRequest(run_id=run_id, question=body.question, ticker=body.ticker, system="swing", max_chunks=body.max_chunks))
+    return response.model_dump(mode="json")
+
+
+@app.post("/agents/growth/run")
+async def run_growth_agent(body: AgentRunRequest) -> dict:
+    try:
+        candidates = body.candidates or ["AAPL", "MSFT", "NVDA"]
+        run = await GrowthOrchestrator().run(candidates=candidates, run_id=body.run_id)
+        return run.model_dump(mode="json")
+    except Exception as exc:
+        logger.exception("POST /agents/growth/run failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Growth research run failed")
+
+
+@app.get("/agents/growth/{run_id}")
+async def read_growth_agent_run(run_id: str) -> dict:
+    data = get_growth_run(run_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Growth run not found")
+    return data
+
+
+@app.post("/agents/growth/{run_id}/chat")
+async def chat_growth_agent_run(run_id: str, body: AgentChatBody) -> dict:
+    response = await answer_run_question(RagChatRequest(run_id=run_id, question=body.question, ticker=body.ticker, system="growth", max_chunks=body.max_chunks))
+    return response.model_dump(mode="json")
 
 
 # ── Earnings Radar (kept — used internally by /market-overview + /macro proxy) ─
