@@ -367,9 +367,10 @@ async def _av_fixed_window(
         raise RuntimeError("Alpha Vantage daily quota exhausted")
 
     _av_increment()
+    calls_used = _AV_DAILY_LIMIT - await av_remaining_calls()
     logger.info(
         "alphavantage: ANALYTICS_FIXED_WINDOW symbols=%s range=%s calls_used=%d/%d",
-        ",".join(symbols), range_, _av_call_count, _AV_DAILY_LIMIT,
+        ",".join(symbols), range_, calls_used, _AV_DAILY_LIMIT,
     )
     r = await client.get(
         _AV_ANALYTICS_BASE,

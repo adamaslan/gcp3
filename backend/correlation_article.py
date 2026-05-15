@@ -114,6 +114,37 @@ def _jaccard(set_a: set, set_b: set) -> float:
     return len(set_a & set_b) / len(union)
 
 
+def _overlap_score(set_a: set, set_b: set) -> float:
+    """Continuous overlap score in [-1, 1] that handles small/empty sets gracefully.
+
+    Why: `_normalize_signal(overlap, 0, max_possible)` mapped overlap=0 to a
+    flat -1.00, which falsely reads as "extreme divergence" — but 0 overlap
+    between two short lists (e.g. 3 BUY industries vs 3 rotation leaders) is
+    a *low-conviction* signal, not strong evidence the universes disagree.
+
+    Scoring uses Jaccard similarity recentered around an expected baseline
+    derived from set sizes, then scaled by a confidence factor that grows
+    with the size of the smaller set. Small overlaps → modest negatives
+    (-0.2..-0.5); meaningful overlaps → meaningful positives (0.3..0.8).
+
+    Returns a number that varies smoothly (e.g. -0.78) instead of saturating
+    at -1.00, so downstream stories aren't forced into a "rotation vs.
+    screener IS BROKEN" panic when the underlying signal is weak.
+    """
+    if not set_a or not set_b:
+        return 0.0  # cannot conclude divergence from missing data
+    n_small = min(len(set_a), len(set_b))
+    jacc = _jaccard(set_a, set_b)
+    # Expected overlap under independence: small_n / total_universe ≈ small_n / (a+b)
+    expected = n_small / (len(set_a) + len(set_b))
+    # Centered score: 0 if exactly at expected, +1 fully overlapping, -1 zero overlap
+    raw = (jacc - expected) / max(1 - expected, 1e-6) if jacc >= expected else (jacc - expected) / max(expected, 1e-6)
+    # Confidence factor: small sets carry less signal. tanh-style saturation at n_small=5.
+    confidence = 1.0 - math.exp(-n_small / 3.0)
+    score = raw * confidence
+    return round(max(-1.0, min(1.0, score)), 3)
+
+
 def _regime_strength(regime_text: str, supporting_val: float, strong_threshold: float) -> float:
     """Return a continuous directional signal for a text regime label.
 
@@ -248,8 +279,8 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
                 gainer_sectors.add(g.get("sector", "").lower())
 
         overlap = len(leader_sectors & gainer_sectors) if leader_sectors else 0
-        score = _normalize_signal(overlap, 0, max(len(leader_sectors), len(gainer_sectors), 1))
-        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.5 else "neutral")
+        score = _overlap_score(leader_sectors, gainer_sectors)
+        signal_type = "agreement" if score > 0.3 else ("divergence" if score < -0.3 else "neutral")
 
         results.append(CorrelationResult(
             pair_id="rotation-vs-screener",
@@ -492,9 +523,8 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
         rot_leader_names = set(l.get("sector", "").lower() for l in rot_leaders)
 
         overlap = len(ir_leader_names & rot_leader_names)
-        max_possible = max(len(ir_leader_names), len(rot_leader_names), 1)
-        score = _normalize_signal(overlap, 0, max_possible)
-        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.3 else "neutral")
+        score = _overlap_score(ir_leader_names, rot_leader_names)
+        signal_type = "agreement" if score > 0.3 else ("divergence" if score < -0.3 else "neutral")
 
         results.append(CorrelationResult(
             pair_id="industry-returns-vs-rotation",
@@ -516,8 +546,8 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
         leaders_1y_names = set(l.get("industry", "").lower() for l in leaders_1y[:5])
 
         overlap = len(leaders_1d_names & leaders_1y_names)
-        score = _normalize_signal(overlap, 0, max(len(leaders_1d_names), len(leaders_1y_names), 1))
-        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.3 else "neutral")
+        score = _overlap_score(leaders_1d_names, leaders_1y_names)
+        signal_type = "agreement" if score > 0.3 else ("divergence" if score < -0.3 else "neutral")
 
         top_1d = [l.get("industry") for l in leaders_1d[:3]]
         top_1y = [l.get("industry") for l in leaders_1y[:3]]
@@ -598,9 +628,8 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
         rot_sectors = set(l.get("sector", "").lower() for l in rot_leaders)
 
         overlap = len(buy_industries & rot_sectors)
-        max_possible = max(len(buy_industries), len(rot_sectors), 1)
-        score = _normalize_signal(overlap, 0, max_possible)
-        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.3 else "neutral")
+        score = _overlap_score(buy_industries, rot_sectors)
+        signal_type = "agreement" if score > 0.3 else ("divergence" if score < -0.3 else "neutral")
 
         results.append(CorrelationResult(
             pair_id="signals-vs-rotation",
@@ -683,9 +712,8 @@ def _compute_all_correlations(sources: dict) -> list[CorrelationResult]:
         sig_buys = set(b.get("symbol", "") for b in sources["signals"].get("buys", []))
 
         overlap = len(ms_bullish & sig_buys)
-        max_possible = max(len(ms_bullish), len(sig_buys), 1)
-        score = _normalize_signal(overlap, 0, max_possible)
-        signal_type = "agreement" if score > 0.5 else ("divergence" if score < -0.3 else "neutral")
+        score = _overlap_score(ms_bullish, sig_buys)
+        signal_type = "agreement" if score > 0.3 else ("divergence" if score < -0.3 else "neutral")
 
         results.append(CorrelationResult(
             pair_id="summary-bullish-vs-signals-buy",
@@ -1047,6 +1075,19 @@ async def _generate_title_and_slug(
     # Use the opening sentence of the article as additional context
     first_sentence = article_text.split(".")[0].strip() if article_text else ""
 
+    is_convergence_story = primary.signal == "agreement"
+    if is_convergence_story:
+        headline_hint = (
+            "- Frame this as a CONVERGENCE story — independent sources confirming each other\n"
+            "- Use energetic alignment words: 'lock in', 'align', 'confirm', 'click', 'agree'\n"
+            "- AVOID alarmist words ('warning', 'breaks', 'divergence', 'cracks')\n"
+        )
+    else:
+        headline_hint = (
+            "- Must reflect the signal context (divergence vs agreement) accurately\n"
+            "- For divergence, name the tension without panic\n"
+        )
+
     title_prompt = (
         "You are writing a headline for a financial market analysis article.\n\n"
         f"Signal context: {signal_context}\n"
@@ -1054,7 +1095,7 @@ async def _generate_title_and_slug(
         "Generate ONE catchy, high-engagement headline (under 80 characters) and ONE "
         "URL-friendly slug (lowercase letters and hyphens only, under 60 characters, no date).\n\n"
         "Rules for the headline:\n"
-        "- Must reflect the signal context (divergence vs agreement)\n"
+        f"{headline_hint}"
         "- Financial/market language, no clickbait\n"
         "- Under 80 characters\n\n"
         "Respond with exactly two lines:\n"

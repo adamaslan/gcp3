@@ -27,17 +27,27 @@ _story_lock = asyncio.Lock()
 
 
 def _pick_extreme_pair(all_pairs: list[CorrelationResult]) -> CorrelationResult | None:
-    """Return the single pair with the most extreme score.
+    """Return the single pair with the strongest CONVERGENCE (agreement) signal.
 
-    Tiebreak: prefer divergence over agreement (more tension = better story).
+    Why convergence-first: divergence pairs were saturating at -1.00 from binary
+    overlap scoring and producing alarmist "the market is broken" stories. The
+    real signal value is the *strongest positive correlation* — sources that
+    independently confirm each other — which is rarer and more actionable.
+
+    Selection order:
+      1. Highest positive score (strongest convergence) wins.
+      2. Tiebreak on absolute magnitude (so a clear divergence still surfaces
+         if literally no agreement exists today).
+      3. Final tiebreak prefers agreement → divergence → neutral.
     """
     if not all_pairs:
         return None
     return max(
         all_pairs,
         key=lambda p: (
-            abs(p.score),
-            1 if p.signal == "divergence" else 0,
+            p.score > 0,                                   # any convergence beats any divergence
+            p.score if p.score > 0 else abs(p.score),      # within group, strongest magnitude wins
+            2 if p.signal == "agreement" else (1 if p.signal == "divergence" else 0),
         ),
     )
 
@@ -137,18 +147,43 @@ def _build_story_prompt(pair: CorrelationResult, sources: dict) -> str:
 
     signal_description = {
         "divergence": f"strong DIVERGENCE (score: {pair.score:.2f}) — the two sources are pointing in opposite directions",
-        "agreement": f"strong AGREEMENT (score: {pair.score:.2f}) — the two sources confirm each other with unusual strength",
+        "agreement": f"strong CONVERGENCE (score: {pair.score:.2f}) — two independent sources are confirming each other with unusual conviction",
         "neutral": f"neutral correlation (score: {pair.score:.2f})",
     }.get(pair.signal, f"score: {pair.score:.2f}")
 
+    is_convergence = pair.signal == "agreement"
+    framing = (
+        "Today's standout signal is a CONVERGENCE — two independent data sources "
+        "lining up unusually well. Convergence is the rarer, higher-conviction read: "
+        "when independent measurements agree, the signal is real."
+        if is_convergence else
+        "Today's standout signal is a DIVERGENCE — two sources disagreeing. Treat "
+        "the disagreement as a question, not a verdict: which side resolves first?"
+    )
+    impact_line = (
+        "Since this is a convergence: does this confirmation strengthen conviction, "
+        "or is the move already priced in? Where is the entry that doesn't chase?"
+        if is_convergence else
+        "Since this is a divergence: what does the disagreement warn? What event "
+        "could resolve it — and to which side?"
+    )
+    title_hint = (
+        "Craft a HEADLINE-WORTHY title (under 65 chars) that conveys excitement "
+        "about the alignment — words like 'lock in', 'confirm', 'align', 'converge', "
+        "'agree', 'rare alignment' work well. Avoid panic words ('warning', 'breaks')."
+        if is_convergence else
+        "Craft a sharp title (under 65 chars) naming the tension. Avoid alarmism."
+    )
+
     return f"""You are a Senior Quantitative Financial Analyst and Viral Content Editor.
 
-Today's market data reveals ONE statistically extreme correlation pair that demands attention.
+{framing}
+
 You must write an article focused ENTIRELY on this single pair. Do not mention other pairs.
 
 DATE: {date.today()}
 
-═══ THE EXTREME PAIR ═══
+═══ THE STANDOUT PAIR ═══
 Pair ID: {pair.pair_id}
 Relationship: {pair.source_a} vs {pair.source_b}
 Signal: {signal_description}
@@ -162,20 +197,20 @@ What this measures: {pair.summary}
 Write a market update article of approximately 300 words with this exact structure:
 
 **The Hook (1-2 sentences):**
-Open with the specific tension or confirmation this pair reveals today. Name the magnitude — use the score or the direction. Make it feel urgent and specific.
+Open with the specific confirmation or tension this pair reveals today. Name the magnitude — use the score or the direction. Make it feel specific and earned.
 
 **The Data (2-3 sentences):**
 Explain what {pair.source_a} is showing independently, then what {pair.source_b} is showing independently. Be concrete — use the actual data above.
 
 **The Impact (2-3 sentences):**
 Explain why THIS specific relationship matters to investors right now.
-{"If divergence: what warning does this send? What could resolve it?" if pair.signal == "divergence" else "If agreement: does this confirmation strengthen conviction or is it already priced in?"}
+{impact_line}
 End with one specific thing to watch in the next 24 hours.
 
 TONE RULES:
-- Authoritative, sharp, and slightly contrarian
+- Authoritative, sharp, evidence-based — never alarmist
 - No "kitchen sink" summaries — stay on this one pair only
-- Under 65 characters for the implied headline
+- {title_hint}
 - Do NOT mention "Gemini", "Finnhub", "GCP", "Firestore", or internal tool names
 - Short paragraphs only. No bullet points."""
 
