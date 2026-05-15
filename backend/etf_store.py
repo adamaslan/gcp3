@@ -101,12 +101,33 @@ def append_daily(symbol: str, df: pd.DataFrame, source: str = "finnhub") -> int:
     if meta is None:
         return store_history(symbol, df, source)
 
-    new_records = [r for r in _to_records(df) if r["date"] > meta["last_date"]]
+    # Build an absolute date set from currently-stored prices to prevent
+    # duplicate-date rows that diverged between sources (finnhub_delta vs
+    # yfinance vs finnhub_seed). ArrayUnion only dedupes on exact dict
+    # equality, so two rows for the same date with different prices both
+    # persist and corrupt downstream return computations.
+    existing_dates: set[str] = set()
+    doc = _db().collection(_COLLECTION).document(symbol)
+    if meta.get("storage_mode") == "chunked":
+        for yr_snap in doc.collection("years").stream():
+            for r in yr_snap.to_dict().get("prices", []):
+                if r.get("date"):
+                    existing_dates.add(r["date"])
+    else:
+        snap = doc.get()
+        if snap.exists:
+            for r in snap.to_dict().get("prices", []):
+                if r.get("date"):
+                    existing_dates.add(r["date"])
+
+    new_records = [
+        r for r in _to_records(df)
+        if r["date"] > meta["last_date"] and r["date"] not in existing_dates
+    ]
     if not new_records:
         return 0
 
     from google.cloud.firestore_v1 import ArrayUnion
-    doc = _db().collection(_COLLECTION).document(symbol)
     now = datetime.now(tz=timezone.utc).isoformat()
     new_last = max(r["date"] for r in new_records)
 
