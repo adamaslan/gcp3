@@ -45,8 +45,8 @@ def _pick_extreme_pair(all_pairs: list[CorrelationResult]) -> CorrelationResult 
     return max(
         all_pairs,
         key=lambda p: (
-            p.score,                                       # convergence wins outright
-            abs(p.score),                                  # fall back to magnitude
+            p.score > 0,                                   # any convergence beats any divergence
+            p.score if p.score > 0 else abs(p.score),      # within group, strongest magnitude wins
             2 if p.signal == "agreement" else (1 if p.signal == "divergence" else 0),
         ),
     )
