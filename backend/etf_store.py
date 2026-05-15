@@ -101,18 +101,28 @@ def append_daily(symbol: str, df: pd.DataFrame, source: str = "finnhub") -> int:
     if meta is None:
         return store_history(symbol, df, source)
 
-    # Build an absolute date set from currently-stored prices to prevent
-    # duplicate-date rows that diverged between sources (finnhub_delta vs
-    # yfinance vs finnhub_seed). ArrayUnion only dedupes on exact dict
-    # equality, so two rows for the same date with different prices both
-    # persist and corrupt downstream return computations.
+    # First-pass filter: only keep rows newer than the stored last_date. The
+    # second-pass dedup against existing_dates catches the corruption mode
+    # where two upstream sources emitted the same date with different prices
+    # (ArrayUnion only dedupes on exact dict equality, so those would both
+    # have persisted and corrupted downstream return computations).
+    candidate_records = [r for r in _to_records(df) if r["date"] > meta["last_date"]]
+    if not candidate_records:
+        return 0
+
     existing_dates: set[str] = set()
     doc = _db().collection(_COLLECTION).document(symbol)
     if meta.get("storage_mode") == "chunked":
-        for yr_snap in doc.collection("years").stream():
-            for r in yr_snap.to_dict().get("prices", []):
-                if r.get("date"):
-                    existing_dates.add(r["date"])
+        # Only fetch the year chunks that overlap with the incoming candidates,
+        # not the entire price history. For long-history ETFs this is the
+        # difference between reading one ~365-row doc vs reading ~20 of them.
+        incoming_years = {r["date"][:4] for r in candidate_records}
+        for year in incoming_years:
+            yr_snap = doc.collection("years").document(year).get()
+            if yr_snap.exists:
+                for r in yr_snap.to_dict().get("prices", []):
+                    if r.get("date"):
+                        existing_dates.add(r["date"])
     else:
         snap = doc.get()
         if snap.exists:
@@ -120,10 +130,7 @@ def append_daily(symbol: str, df: pd.DataFrame, source: str = "finnhub") -> int:
                 if r.get("date"):
                     existing_dates.add(r["date"])
 
-    new_records = [
-        r for r in _to_records(df)
-        if r["date"] > meta["last_date"] and r["date"] not in existing_dates
-    ]
+    new_records = [r for r in candidate_records if r["date"] not in existing_dates]
     if not new_records:
         return 0
 

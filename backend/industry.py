@@ -475,11 +475,37 @@ async def seed_etf_history(force: bool = False, symbols: list[str] | None = None
         # instead of the delta-append path. Required when stored prices are
         # corrupted and can no longer be trusted as the base for an append.
         logger.warning("seed_etf_history: force=True — deleting %d existing docs", len(refs))
-        for ref in refs:
-            # Also drop yearly subcollection if chunked
-            for yr in ref.collection("years").stream():
-                yr.reference.delete()
-            ref.delete()
+
+        def _delete_all_force() -> None:
+            """Batched, threadpool-friendly destructive cleanup.
+
+            Streams + deletes per-year sub-docs in batches of up to 450 ops
+            (Firestore caps at 500), then deletes the parent docs in a
+            single batch. Runs synchronously inside run_in_executor so the
+            async event loop isn't blocked across 54 ETFs.
+            """
+            batch = _firestore.batch()
+            ops = 0
+            for ref in refs:
+                # Delete the per-year subcollection first
+                for yr_snap in ref.collection("years").stream():
+                    batch.delete(yr_snap.reference)
+                    ops += 1
+                    if ops >= _FIRESTORE_BATCH_MAX_OPS:
+                        batch.commit()
+                        batch = _firestore.batch()
+                        ops = 0
+                # Then the parent doc
+                batch.delete(ref)
+                ops += 1
+                if ops >= _FIRESTORE_BATCH_MAX_OPS:
+                    batch.commit()
+                    batch = _firestore.batch()
+                    ops = 0
+            if ops:
+                batch.commit()
+
+        await asyncio.get_running_loop().run_in_executor(None, _delete_all_force)
 
     snaps = _firestore.get_all(refs)
     existing_symbols = {snap.id for snap in snaps if snap.exists}
@@ -591,8 +617,12 @@ async def audit_etf_history(drift_threshold_pct: float = 1.0) -> dict:
     missing: list[str] = []
     checked = 0
 
+    loop = asyncio.get_running_loop()
+
     for etf in unique_etfs:
-        stored = etf_store.load_history(etf)
+        # load_history hits Firestore synchronously — push to a thread so the
+        # event loop stays free across the 54-symbol audit pass.
+        stored = await loop.run_in_executor(None, etf_store.load_history, etf)
         if stored is None or stored.empty:
             missing.append(etf)
             continue
@@ -601,7 +631,7 @@ async def audit_etf_history(drift_threshold_pct: float = 1.0) -> dict:
         stored_date = stored.index[0].strftime("%Y-%m-%d")
 
         try:
-            raw = await asyncio.get_running_loop().run_in_executor(
+            raw = await loop.run_in_executor(
                 None,
                 lambda e=etf: yf.download(
                     e, period="5d", auto_adjust=True, progress=False, threads=False
@@ -615,6 +645,12 @@ async def audit_etf_history(drift_threshold_pct: float = 1.0) -> dict:
         if raw is None or raw.empty:
             missing.append(etf)
             continue
+
+        # yfinance.download returns a MultiIndex DataFrame even for a single
+        # ticker; raw["Close"] then yields a DataFrame, not a Series, and
+        # float(closes.iloc[-1]) raises further down. Flatten before slicing.
+        if isinstance(raw, pd.DataFrame) and isinstance(raw.columns, pd.MultiIndex):
+            raw.columns = [c[0] for c in raw.columns]
 
         close_col = raw["Close"] if isinstance(raw, pd.DataFrame) else raw
         closes = close_col.dropna()
