@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 
-from industry import compute_returns, get_industry_data, seed_etf_history
+from industry import audit_etf_history, compute_returns, get_industry_data, seed_etf_history
 from morning import get_morning_brief
 from screener import get_screener_data, build_screener_cache
 from swing_predictions import get_swing_predictions
@@ -1079,24 +1079,74 @@ async def industry_returns(request: Request) -> dict:
 
 # ── Admin: Seed / delta-update permanent ETF price history ───────────────────
 @app.post("/admin/seed-etf-history")
-async def seed_etf_history_endpoint(request: Request) -> dict:
+async def seed_etf_history_endpoint(
+    request: Request,
+    force: bool = False,
+    symbols: str | None = None,
+) -> dict:
     """Seed or delta-update permanent ETF history for all 50 industries.
 
     - First run: fetches full yfinance history (max), stores in etf_history/*.
     - Subsequent runs: appends only new trading days (3mo fetch, delta filter).
     - Returns per-ETF row counts.
 
+    Query params:
+        force: If true, deletes existing etf_history/{SYMBOL} docs first so the
+            full-history reseed runs. Use only when audit-etf-history flagged
+            corruption and a delta append cannot recover.
+        symbols: Optional comma-separated symbol list to restrict the operation
+            (e.g. ?symbols=HACK,CLOU,IGV). Empty/omitted = all tracked ETFs.
+
     Trigger manually once after deploy, then optionally add to /refresh/all.
     """
     _verify_scheduler(request)
-    logger.info("POST /admin/seed-etf-history triggered")
+    sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()] if symbols else None
+    logger.info(
+        "POST /admin/seed-etf-history triggered force=%s symbols=%s",
+        force, sym_list or "all",
+    )
     try:
-        results = await seed_etf_history()
+        results = await seed_etf_history(force=force, symbols=sym_list)
         total = sum(results.values())
         logger.info("seed-etf-history complete: %d ETFs, %d total rows", len(results), total)
-        return {"status": "ok", "etfs": len(results), "total_rows": total, "detail": results}
+        return {
+            "status": "ok",
+            "force": force,
+            "symbols": sym_list or "all",
+            "etfs": len(results),
+            "total_rows": total,
+            "detail": results,
+        }
     except Exception as exc:
         logger.exception("POST /admin/seed-etf-history failed: %s", exc)
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
+# ── Admin: Audit ETF history vs fresh yfinance ─────────────────────────────
+@app.post("/admin/audit-etf-history")
+async def audit_etf_history_endpoint(
+    request: Request,
+    drift_threshold_pct: float = 1.0,
+) -> dict:
+    """Compare each stored ETF's latest close against a fresh yfinance pull.
+
+    Surfaces silent etf_history corruption. Use the returned drifting_symbols
+    list directly with POST /admin/seed-etf-history?force=true&symbols=<list>
+    to remediate.
+
+    Query params:
+        drift_threshold_pct: Symbols whose stored vs yfinance latest close
+            differ by more than this percentage are flagged. Default 1.0%.
+    """
+    _verify_scheduler(request)
+    logger.info(
+        "POST /admin/audit-etf-history triggered threshold=%.2f%%",
+        drift_threshold_pct,
+    )
+    try:
+        return await audit_etf_history(drift_threshold_pct=drift_threshold_pct)
+    except Exception as exc:
+        logger.exception("POST /admin/audit-etf-history failed: %s", exc)
         raise HTTPException(status_code=503, detail=str(exc))
 
 

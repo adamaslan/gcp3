@@ -1,0 +1,568 @@
+{
+  "change_tolerance_pp": 0.3,
+  "indices_checked": 4,
+  "matches": 2,
+  "mismatches": 2,
+  "skipped": 0,
+  "sentiment_cached": {
+    "avg_sentiment_score": -0.019,
+    "overall_sentiment": "neutral",
+    "date": "2026-05-15",
+    "most_negative": [
+      {
+        "neg_hits": 1,
+        "datetime": 1778845745,
+        "sentiment": "negative",
+        "id": 7947293,
+        "source": "Cointelegraph",
+        "url": "https://cointelegraph.com/markets/bitcoin-risks-next-downtrend-traders-diverge-fate-82k-resistance?utm_source=rss_feed&utm_medium=rss&utm_campaign=rss_partner_inbound",
+        "category": "crypto",
+        "pos_hits": 0,
+        "headline": "Bitcoin risks \u2018next downtrend\u2019 as traders diverge on fate of $82K resistance",
+        "score": -0.3
+      },
+      {
+        "neg_hits": 1,
+        "datetime": 1778846217,
+        "sentiment": "negative",
+        "id": 7947402,
+        "source": "SeekingAlpha",
+        "url": "https://seekingalpha.com/news/4593657-uk-clears-getty-shutterstock-merger-with-condition-to-sell-editorial-business?utm_source=feed_news_m_a&utm_medium=referral&feed_item_type=news",
+        "category": "merger",
+        "pos_hits": 0,
+        "headline": "UK clears Getty-Shutterstock merger with condition to sell editorial business",
+        "score": -0.3
+      },
+      {
+        "neg_hits": 0,
+        "datetime": 1778849868,
+        "sentiment": "neutral",
+        "id": 7947509,
+        "source": "CNBC",
+        "url": "https://www.cnbc.com/2026/05/15/jim-cramers-top-10-things-to-watch-in-the-stock-market-friday.html",
+        "category": "general",
+        "pos_hits": 0,
+        "headline": "Jim Cramer's top 10 things to watch in the stock market Friday",
+        "score": 0.0
+      },
+      {
+        "neg_hits": 0,
+        "datetime": 1778847041,
+        "sentiment": "neutral",
+        "id": 7947286,
+        "source": "CNBC",
+        "url": "https://www.cnbc.com/2026/05/15/treasury-yields-surge-as-inflation-data-points-to-tricky-rates-path.html",
+        "category": "general",
+        "pos_hits": 0,
+        "headline": "30-year Treasury yield tops 5.1%, highest in nearly a year",
+        "score": 0.0
+      },
+      {
+        "neg_hits": 0,
+        "datetime": 1778846982,
+        "sentiment": "neutral",
+        "id": 7947295,
+        "source": "Reuters",
+        "url": "https://news.google.com/rss/articles/CBMiugFBVV95cUxPaFBtX0tMLXo3MzhfMEVRSmJKQzc0bEszUzB0WnkwS3REZ052U0JqeDVRSzlCaTljODNzb2xWb1dhTlRfbkVna25iRklIby1wWXJBS1pvd3dhYzl2bkktZ1N6aXJCcVo1bi1LSTNXMDVyQ05rcXNQTVNjRDFGejRxQ3I0d1h3ZjlfejlyVnNtbG9kY2VTZS1qSXBUWER3NzBBMjBxVUpLNmF6b2k3RW1qeDRTT1NqZHBGVWc?oc=5",
+        "category": "general",
+        "pos_hits": 0,
+        "headline": "Iran has 'no trust' in US, will negotiate only if it is serious, Araqchi says - Reuters",
+        "score": 0.0
+      }
+    ],
+    "most_positive": [
+      {
+        "neg_hits": 0,
+        "datetime": 1778849868,
+        "sentiment": "neutral",
+        "id": 7947509,
+        "source": "CNBC",
+        "url": "https://www.cnbc.com/2026/05/15/jim-cramers-top-10-things-to-watch-in-the-stock-market-friday.html",
+        "category": "general",
+        "pos_hits": 0,
+        "headline": "Jim Cramer's top 10 things to watch in the stock market Friday",
+        "score": 0.0
+      },
+      {
+        "neg_hits": 0,
+        "datetime": 1778847041,
+        "sentiment": "neutral",
+        "id": 7947286,
+        "source": "CNBC",
+        "url": "https://www.cnbc.com/2026/05/15/treasury-yields-surge-as-inflation-data-points-to-tricky-rates-path.html",
+        "category": "general",
+        "pos_hits": 0,
+        "headline": "30-year Treasury yield tops 5.1%, highest in nearly a year",
+        "score": 0.0
+      },
+      {
+        "neg_hits": 0,
+        "datetime": 1778846982,
+        "sentiment": "neutral",
+        "id": 7947295,
+        "source": "Reuters",
+        "url": "https://news.google.com/rss/articles/CBMiugFBVV95cUxPaFBtX0tMLXo3MzhfMEVRSmJKQzc0bEszUzB0WnkwS3REZ052U0JqeDVRSzlCaTljODNzb2xWb1dhTlRfbkVna25iRklIby1wWXJBS1pvd3dhYzl2bkktZ1N6aXJCcVo1bi1LSTNXMDVyQ05rcXNQTVNjRDFGejRxQ3I0d1h3ZjlfejlyVnNtbG9kY2VTZS1qSXBUWER3NzBBMjBxVUpLNmF6b2k3RW1qeDRTT1NqZHBGVWc?oc=5",
+        "category": "general",
+        "pos_hits": 0,
+        "headline": "Iran has 'no trust' in US, will negotiate only if it is serious, Araqchi says - Reuters",
+        "score": 0.0
+      },
+      {
+        "neg_hits": 0,
+        "datetime": 1778846709,
+        "sentiment": "neutral",
+        "id": 7947079,
+        "source": "Reuters",
+        "url": "https://news.google.com/rss/articles/CBMiwAFBVV95cUxOUlBvVS1CSFpOWHFpd3NPbEROQlhLVDMxMm9PN1BBNjlzYVFPMnlFUW9na3JoMkxoQlo0bXQwcFVtZGY0VjNIcExteXNhNm8xSmJydkNHTDlWOFlZUjQybjJGWGx1Wks5MEJlREJYc2o2Yy1hbWpvY013Q2M3N3RfZmplMml3NFdvRmJYZjFkT1NOVWNlMjc5OWdHX3BGMmNETjk3bHFXTW9TTnFwRFZCTmdIbVFudWdzeFBDTDY3SXc?oc=5",
+        "category": "general",
+        "pos_hits": 0,
+        "headline": "BRICS talks end without joint statement, exposing divisions over war in Iran - Reuters",
+        "score": 0.0
+      },
+      {
+        "neg_hits": 0,
+        "datetime": 1778844554,
+        "sentiment": "neutral",
+        "id": 7947076,
+        "source": "CNBC",
+        "url": "https://www.cnbc.com/2026/05/15/trump-china-sanctions-iranian-oil.html",
+        "category": "general",
+        "pos_hits": 0,
+        "headline": "Trump says he will soon make decision about sanctions on Chinese companies buying Iranian oil",
+        "score": 0.0
+      }
+    ],
+    "by_category": {
+      "merger": [
+        {
+          "sentiment": "neutral",
+          "datetime": 1778849640,
+          "neg_hits": 0,
+          "headline": "MasterCraft Boat Holdings, Inc. Completes Acquisition of Marine Products Corporation, Creating a Diversified Portfolio of Leading Recreational Marine Brands",
+          "source": "GlobalNewswire",
+          "url": "https://www.globenewswire.com/news-release/2026/05/15/3295856/36608/en/MasterCraft-Boat-Holdings-Inc-Completes-Acquisition-of-Marine-Products-Corporation-Creating-a-Diversified-Portfolio-of-Leading-Recreational-Marine-Brands.html",
+          "category": "merger",
+          "pos_hits": 0,
+          "id": 7947504,
+          "score": 0.0
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778849220,
+          "neg_hits": 0,
+          "headline": "Enhabit Completes Previously Announced Acquisition by Kinderhook Industries to Become a Private Company",
+          "source": "BusinessWire",
+          "url": "http://www.businesswire.com/news/home/20260514135644/en/Enhabit-Completes-Previously-Announced-Acquisition-by-Kinderhook-Industries-to-Become-a-Private-Company/?feedref=JjAwJuNHiystnCoBq_hl-Rc4vIAVcHHkbDcwJimU8QtrtlakeQ9hNboBqTAWIjTge3KWq9s9jif-UkBjBsFRyYAbRTSLTc1mgvhPlnaBA55M-oupQnbXnhKsYk8RmHF_kAy2gZikaX3QWV6xOvgFlA==",
+          "category": "merger",
+          "pos_hits": 0,
+          "id": 7947505,
+          "score": 0.0
+        },
+        {
+          "sentiment": "negative",
+          "datetime": 1778846217,
+          "neg_hits": 1,
+          "headline": "UK clears Getty-Shutterstock merger with condition to sell editorial business",
+          "source": "SeekingAlpha",
+          "url": "https://seekingalpha.com/news/4593657-uk-clears-getty-shutterstock-merger-with-condition-to-sell-editorial-business?utm_source=feed_news_m_a&utm_medium=referral&feed_item_type=news",
+          "category": "merger",
+          "pos_hits": 0,
+          "id": 7947402,
+          "score": -0.3
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778844080,
+          "neg_hits": 0,
+          "headline": "Genco rejects Diana Shipping\u2019s $23.50/share tender offer",
+          "source": "SeekingAlpha",
+          "url": "https://seekingalpha.com/news/4593625-genco-rejects-diana-shippings-2350share-tender-offer?utm_source=feed_news_m_a&utm_medium=referral&feed_item_type=news",
+          "category": "merger",
+          "pos_hits": 0,
+          "id": 7947179,
+          "score": 0.0
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778841720,
+          "neg_hits": 0,
+          "headline": "Man Group PLC : Form 8.3 - A consortium comprising LondonMetric Property plc and Schroder Real Estate Investment Trust Limited",
+          "source": "GlobalNewswire",
+          "url": "https://www.globenewswire.com/news-release/2026/05/15/3295704/0/en/Man-Group-PLC-Form-8-3-A-consortium-comprising-LondonMetric-Property-plc-and-Schroder-Real-Estate-Investment-Trust-Limited.html",
+          "category": "merger",
+          "pos_hits": 0,
+          "id": 7946951,
+          "score": 0.0
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778841720,
+          "neg_hits": 0,
+          "headline": "Form 8.3 - Picton Property Income Limited",
+          "source": "GlobalNewswire",
+          "url": "https://www.globenewswire.com/news-release/2026/05/15/3295705/0/en/Form-8-3-Picton-Property-Income-Limited.html",
+          "category": "merger",
+          "pos_hits": 0,
+          "id": 7946950,
+          "score": 0.0
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778841660,
+          "neg_hits": 0,
+          "headline": "Form 8.3 - LondonMetric Property Plc & Schroder REIT Ltd",
+          "source": "GlobalNewswire",
+          "url": "https://www.globenewswire.com/news-release/2026/05/15/3295703/0/en/Form-8-3-LondonMetric-Property-Plc-Schroder-REIT-Ltd.html",
+          "category": "merger",
+          "pos_hits": 0,
+          "id": 7946952,
+          "score": 0.0
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778841600,
+          "neg_hits": 0,
+          "headline": "Man Group PLC : Form 8.3 - Gamma Communications Plc",
+          "source": "GlobalNewswire",
+          "url": "https://www.globenewswire.com/news-release/2026/05/15/3295700/0/en/Man-Group-PLC-Form-8-3-Gamma-Communications-Plc.html",
+          "category": "merger",
+          "pos_hits": 0,
+          "id": 7946953,
+          "score": 0.0
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778841540,
+          "neg_hits": 0,
+          "headline": "Form 8.3 - Bluefield Solar Income Fund Ltd",
+          "source": "GlobalNewswire",
+          "url": "https://www.globenewswire.com/news-release/2026/05/15/3295702/0/en/Form-8-3-Bluefield-Solar-Income-Fund-Ltd.html",
+          "category": "merger",
+          "pos_hits": 0,
+          "id": 7946954,
+          "score": 0.0
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778841480,
+          "neg_hits": 0,
+          "headline": "Form 8.3 - Advanced Medical Solutions Group",
+          "source": "GlobalNewswire",
+          "url": "https://www.globenewswire.com/news-release/2026/05/15/3295699/0/en/Form-8-3-Advanced-Medical-Solutions-Group.html",
+          "category": "merger",
+          "pos_hits": 0,
+          "id": 7946955,
+          "score": 0.0
+        }
+      ],
+      "forex": [
+        {
+          "sentiment": "neutral",
+          "datetime": 1778850923,
+          "neg_hits": 0,
+          "headline": "US industrial production for April 0.7% versus 0.3% estimate",
+          "source": "Forexlive",
+          "url": "https://investinglive.com/news/us-industrial-production-for-april-07-versus-03-estimate-20260515/",
+          "category": "forex",
+          "pos_hits": 0,
+          "id": 7947622,
+          "score": 0.0
+        }
+      ],
+      "general": [
+        {
+          "sentiment": "neutral",
+          "datetime": 1778849868,
+          "neg_hits": 0,
+          "headline": "Jim Cramer's top 10 things to watch in the stock market Friday",
+          "source": "CNBC",
+          "url": "https://www.cnbc.com/2026/05/15/jim-cramers-top-10-things-to-watch-in-the-stock-market-friday.html",
+          "category": "general",
+          "pos_hits": 0,
+          "id": 7947509,
+          "score": 0.0
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778847041,
+          "neg_hits": 0,
+          "headline": "30-year Treasury yield tops 5.1%, highest in nearly a year",
+          "source": "CNBC",
+          "url": "https://www.cnbc.com/2026/05/15/treasury-yields-surge-as-inflation-data-points-to-tricky-rates-path.html",
+          "category": "general",
+          "pos_hits": 0,
+          "id": 7947286,
+          "score": 0.0
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778846982,
+          "neg_hits": 0,
+          "headline": "Iran has 'no trust' in US, will negotiate only if it is serious, Araqchi says - Reuters",
+          "source": "Reuters",
+          "url": "https://news.google.com/rss/articles/CBMiugFBVV95cUxPaFBtX0tMLXo3MzhfMEVRSmJKQzc0bEszUzB0WnkwS3REZ052U0JqeDVRSzlCaTljODNzb2xWb1dhTlRfbkVna25iRklIby1wWXJBS1pvd3dhYzl2bkktZ1N6aXJCcVo1bi1LSTNXMDVyQ05rcXNQTVNjRDFGejRxQ3I0d1h3ZjlfejlyVnNtbG9kY2VTZS1qSXBUWER3NzBBMjBxVUpLNmF6b2k3RW1qeDRTT1NqZHBGVWc?oc=5",
+          "category": "general",
+          "pos_hits": 0,
+          "id": 7947295,
+          "score": 0.0
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778846709,
+          "neg_hits": 0,
+          "headline": "BRICS talks end without joint statement, exposing divisions over war in Iran - Reuters",
+          "source": "Reuters",
+          "url": "https://news.google.com/rss/articles/CBMiwAFBVV95cUxOUlBvVS1CSFpOWHFpd3NPbEROQlhLVDMxMm9PN1BBNjlzYVFPMnlFUW9na3JoMkxoQlo0bXQwcFVtZGY0VjNIcExteXNhNm8xSmJydkNHTDlWOFlZUjQybjJGWGx1Wks5MEJlREJYc2o2Yy1hbWpvY013Q2M3N3RfZmplMml3NFdvRmJYZjFkT1NOVWNlMjc5OWdHX3BGMmNETjk3bHFXTW9TTnFwRFZCTmdIbVFudWdzeFBDTDY3SXc?oc=5",
+          "category": "general",
+          "pos_hits": 0,
+          "id": 7947079,
+          "score": 0.0
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778844554,
+          "neg_hits": 0,
+          "headline": "Trump says he will soon make decision about sanctions on Chinese companies buying Iranian oil",
+          "source": "CNBC",
+          "url": "https://www.cnbc.com/2026/05/15/trump-china-sanctions-iranian-oil.html",
+          "category": "general",
+          "pos_hits": 0,
+          "id": 7947076,
+          "score": 0.0
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778842903,
+          "neg_hits": 0,
+          "headline": "Family investors turn to old-economy businesses like dealerships and fisheries to avoid AI disruption",
+          "source": "CNBC",
+          "url": "https://www.cnbc.com/2026/05/15/family-investors-economy-businesses-to-avoid-ai-disruption.html",
+          "category": "general",
+          "pos_hits": 0,
+          "id": 7947066,
+          "score": 0.0
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778827019,
+          "neg_hits": 0,
+          "headline": "German economy to take hit from Iran war during Q2, ministry says - Reuters",
+          "source": "Reuters",
+          "url": "https://news.google.com/rss/articles/CBMiowFBVV95cUxOSDZkZExsZVpBRnlRUkttUm1fVGdvWlF6UHhPMUpxVlhVNExBdktjT1dLbTlhUXFuYkJ6b3ZGT09iN0RTQVNJOEx0MW5WQVRTdTFONlgtcTVyeW1kaWhhOFVzZTRKLXMzb1dJaVI5YkIwN0FDc21ibkdhblZLNVFnbjR6anFpY1pQdkR5S291eFFsdWdrdkFEbHhXdTFLeVRLQWNn?oc=5",
+          "category": "general",
+          "pos_hits": 0,
+          "id": 7946525,
+          "score": 0.0
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778825880,
+          "neg_hits": 0,
+          "headline": "Trump says US and China are aligned on Iran, Tehran must make a deal soon - Reuters",
+          "source": "Reuters",
+          "url": "https://news.google.com/rss/articles/CBMirwFBVV95cUxOeFFlcklCYWQwZUZGc2xjSF9QWjJvMU1PWFVtakpUVDljdTFCMzJqN2lULXMycUVxS2V2Q0I4X3h3ZndCczNqZ2JKTEFwdW1tTlBMMGlJRWRiT05jT3otM1BtT3F6YmxNQ1hEM1hjVnZPTEdXX1JlWk9lWWJLd3BvQlozTDFDQnQtbFU5ZUZzakE4Q0RPTHA5QWVmbXluVkFSRVQtZjlmdkRNUHVhR29v?oc=5",
+          "category": "general",
+          "pos_hits": 0,
+          "id": 7946214,
+          "score": 0.0
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778825056,
+          "neg_hits": 0,
+          "headline": "India raises retail fuel prices for first time since Iran war started - Reuters",
+          "source": "Reuters",
+          "url": "https://news.google.com/rss/articles/CBMitgFBVV95cUxQN1Vpck9GV3BPb1A5LW5aM0xsWGJ4OV9udnZDMTEzbTJZOXR1RFhTay1tVXRpV1FDZDd0U2cxU2hCd1BXVEFJOTFZVjYyR293UXVEUGJ1dWt6TEhTYmwwblF6YXZsOVJWMk9WQl9nempVaEdBYWtnN0thaWgwazQ3N2U0MjVDVHZVYWlwdDNKQlRrajMwazEwMEpGRGxNOS1kalBvSXZkVUhOeWZaQXRscEsySXdTQQ?oc=5",
+          "category": "general",
+          "pos_hits": 0,
+          "id": 7945997,
+          "score": 0.0
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778822520,
+          "neg_hits": 0,
+          "headline": "Airlines cancel flights in response to Middle East conflict - Reuters",
+          "source": "Reuters",
+          "url": "https://news.google.com/rss/articles/CBMitgFBVV95cUxNUktYcUtESEg4Vkt6a2d5akRkeFI2Njd0dkR1UnhaLU5EbVFuQkJnMnkyaWRnWFlkQlVBY1BtWFRRVWpfS1RPMjRfclZidFBVaWJwb0c2Y2UxV2p5azA5M3FyWjRJLXlMcVRsd3JIdWZsZXpXVDV5WVdJRHFFUUFzWF9pQkxsbURWQ0p4bnl3MkxtTVFrVUxEX3dhdGNKM2MyNkhhOVNMTmhLRGNEYnJSWHRKTG5zdw?oc=5",
+          "category": "general",
+          "pos_hits": 0,
+          "id": 7944333,
+          "score": 0.0
+        }
+      ],
+      "crypto": [
+        {
+          "sentiment": "neutral",
+          "datetime": 1778849382,
+          "neg_hits": 0,
+          "headline": "Bitcoin stalls above $80K despite CLARITY Act pass: What will trigger a breakout?",
+          "source": "Cointelegraph",
+          "url": "https://cointelegraph.com/markets/bitcoin-stalls-80k-despite-clarity-act-pass-what-will-trigger-breakout?utm_source=rss_feed&utm_medium=rss&utm_campaign=rss_partner_inbound",
+          "category": "crypto",
+          "pos_hits": 0,
+          "id": 7947520,
+          "score": 0.0
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778848683,
+          "neg_hits": 0,
+          "headline": "Strategy to repurchase $1.5 billion of 2029 convertible bonds using cash or bitcoin sales",
+          "source": "CoinDesk",
+          "url": "https://www.coindesk.com/markets/2026/05/15/strategy-to-repurchase-usd1-5-billion-of-2029-convertible-bonds-using-cash-or-bitcoin-sales",
+          "category": "crypto",
+          "pos_hits": 0,
+          "id": 7947515,
+          "score": 0.0
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778847827,
+          "neg_hits": 0,
+          "headline": "South Korea plans July rules for tokenized securities",
+          "source": "Cointelegraph",
+          "url": "https://cointelegraph.com/news/south-korea-announce-tokenized-securities-laws-july?utm_source=rss_feed&utm_medium=rss&utm_campaign=rss_partner_inbound",
+          "category": "crypto",
+          "pos_hits": 0,
+          "id": 7947521,
+          "score": 0.0
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778847134,
+          "neg_hits": 1,
+          "headline": "Winklevoss\u2019 Gemini jumps 25% on $100 million bitcoin infusion despite deepening losses",
+          "source": "CoinDesk",
+          "url": "https://www.coindesk.com/business/2026/05/15/winklevoss-gemini-jumps-20-on-usd100-million-bitcoin-infusion-despite-deepening-losses",
+          "category": "crypto",
+          "pos_hits": 1,
+          "id": 7947516,
+          "score": 0.0
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778845958,
+          "neg_hits": 0,
+          "headline": "OKX, Korea Investment and Securities said to be in talks for 40% of Coinone",
+          "source": "CoinDesk",
+          "url": "https://www.coindesk.com/business/2026/05/15/okx-korea-investment-and-securities-said-to-be-in-talks-for-40-of-coinone",
+          "category": "crypto",
+          "pos_hits": 0,
+          "id": 7947517,
+          "score": 0.0
+        },
+        {
+          "sentiment": "negative",
+          "datetime": 1778845745,
+          "neg_hits": 1,
+          "headline": "Bitcoin risks \u2018next downtrend\u2019 as traders diverge on fate of $82K resistance",
+          "source": "Cointelegraph",
+          "url": "https://cointelegraph.com/markets/bitcoin-risks-next-downtrend-traders-diverge-fate-82k-resistance?utm_source=rss_feed&utm_medium=rss&utm_campaign=rss_partner_inbound",
+          "category": "crypto",
+          "pos_hits": 0,
+          "id": 7947293,
+          "score": -0.3
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778845000,
+          "neg_hits": 0,
+          "headline": "THORChain pauses trading after suspected $10M exploit",
+          "source": "Cointelegraph",
+          "url": "https://cointelegraph.com/news/thorchain-halts-trading-zachxbt-flags-10m-exploit?utm_source=rss_feed&utm_medium=rss&utm_campaign=rss_partner_inbound",
+          "category": "crypto",
+          "pos_hits": 0,
+          "id": 7947294,
+          "score": 0.0
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778844623,
+          "neg_hits": 0,
+          "headline": "Crypto\u2019s regulatory tailwind runs into a potential rates reset",
+          "source": "CoinDesk",
+          "url": "https://www.coindesk.com/daybook-us/2026/05/15/crypto-s-regulatory-tailwind-runs-into-a-potential-rates-reset",
+          "category": "crypto",
+          "pos_hits": 0,
+          "id": 7947518,
+          "score": 0.0
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778844600,
+          "neg_hits": 0,
+          "headline": "Wall Street is starting to notice one of crypto\u2019s smartest AI bets",
+          "source": "CoinDesk",
+          "url": "https://www.coindesk.com/tech/2026/05/15/wall-street-is-starting-to-notice-one-of-crypto-s-smartest-ai-bets",
+          "category": "crypto",
+          "pos_hits": 0,
+          "id": 7947519,
+          "score": 0.0
+        },
+        {
+          "sentiment": "neutral",
+          "datetime": 1778843244,
+          "neg_hits": 0,
+          "headline": "Why is Hyperliquid's HYPE token price up 23% in a day?",
+          "source": "Cointelegraph",
+          "url": "https://cointelegraph.com/markets/why-is-hyperliquid-hype-price-up-23-percent-in-a-day?utm_source=rss_feed&utm_medium=rss&utm_campaign=rss_partner_inbound",
+          "category": "crypto",
+          "pos_hits": 0,
+          "id": 7947074,
+          "score": 0.0
+        }
+      ]
+    },
+    "negative_count": 2,
+    "neutral_count": 29,
+    "total_articles": 31,
+    "positive_count": 0,
+    "ai_narrative": "Balanced news flow (0 positive, 2 negative, 29 neutral). Market narrative is unclear \u2014 follow price action."
+  },
+  "sections_included": [
+    "brief",
+    "ai_summary",
+    "sentiment",
+    "history"
+  ],
+  "deltas": [
+    {
+      "symbol": "SPY",
+      "cached_price": 740.76,
+      "cached_change_pct": -0.99,
+      "yf_change_pct": -0.68,
+      "diff_pp": 0.31,
+      "within_tolerance": "False"
+    },
+    {
+      "symbol": "QQQ",
+      "cached_price": 709.78,
+      "cached_change_pct": -1.39,
+      "yf_change_pct": -0.69,
+      "diff_pp": 0.7,
+      "within_tolerance": "False"
+    },
+    {
+      "symbol": "DIA",
+      "cached_price": 497.11,
+      "cached_change_pct": -0.74,
+      "yf_change_pct": -0.87,
+      "diff_pp": 0.13,
+      "within_tolerance": "True"
+    },
+    {
+      "symbol": "IWM",
+      "cached_price": 279.2,
+      "cached_change_pct": -1.85,
+      "yf_change_pct": -2.04,
+      "diff_pp": 0.19,
+      "within_tolerance": "True"
+    }
+  ],
+  "_meta": {
+    "tool": "market_overview",
+    "generated_at": "2026-05-15T18:14:42.005407+00:00",
+    "backend_url": "https://gcp3-backend-cif7ppahzq-uc.a.run.app"
+  }
+}

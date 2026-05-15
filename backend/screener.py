@@ -1,14 +1,17 @@
 """Stock Screener: top movers across watchlist with rule-based momentum signals.
 
 Data resolution:
-  - Reads exclusively from Firestore cache (populated by the nightly refresh job).
-  - Returns HTTP 503 if cache is cold — never makes live Finnhub/yfinance calls
-    at request time, avoiding rate-limit exposure on hot paths.
-  - Cache TTL is 26h so a missed nightly refresh still serves yesterday's data
-    rather than going dark.
+  - Reads from a 15-minute slot-bucketed Firestore cache key. During market
+    hours this means a fresh quote pull every 15 min instead of every 26h.
+  - Returns HTTP 503 only when no cache slot exists for the day yet (cold
+    backend) — request-time backfill happens on next slot rollover.
+  - Daily-rollup key `screener:{date}` is still written for downstream
+    consumers (correlation_article, market_summary) that want a stable
+    once-per-day snapshot.
 """
 import asyncio
 import logging
+import time
 from datetime import date
 
 from fastapi import HTTPException
@@ -50,42 +53,77 @@ WATCHLIST: list[str] = [
 
 
 
-_SCREENER_TTL_HOURS = 26  # survives one missed nightly refresh
+_SCREENER_SLOT_SECONDS = 900  # 15-minute bucket — quote freshness target
+_SCREENER_SLOT_TTL_HOURS = 1  # each slot doc lives ~4 slots in case of refresh lag
+_SCREENER_DAILY_TTL_HOURS = 26  # daily-rollup TTL — survives one missed nightly refresh
+
+
+def _slot_key() -> str:
+    """Cache key bucketed to a 15-minute window so /screener serves fresh
+    quotes instead of yesterday's daily snapshot."""
+    slot = int(time.time() // _SCREENER_SLOT_SECONDS)
+    return f"screener:slot:{slot}"
+
+
+def _daily_key() -> str:
+    """Stable once-per-day rollup key used by correlation_article and other
+    daily consumers that need a snapshot rather than rolling intraday quotes."""
+    return f"screener:{date.today()}"
 
 
 async def get_screener_data() -> dict:
     """Return screener data from Firestore cache.
 
+    Resolution order:
+      1. Current 15-minute slot — freshest available, refreshed during market hours.
+      2. Daily rollup — used as a stable snapshot when the slot is still warming
+         (e.g. immediately after a Cloud Run cold start).
+
     Raises:
-        HTTPException 503: Cache is cold (nightly refresh hasn't run yet today).
+        HTTPException 503: Neither cache exists. The nightly refresh has not
+            run AND no slot has been built — backend is genuinely cold.
     """
-    cache_key = f"screener:{date.today()}"
-    cached = get_cache(cache_key)
+    slot_key = _slot_key()
+    cached = get_cache(slot_key)
     if cached is not None:
-        logger.info("screener cache_hit key=%s symbols=%s", cache_key, cached.get("total_screened"))
+        logger.info("screener cache_hit (slot) key=%s symbols=%s", slot_key, cached.get("total_screened"))
         return cached
 
-    logger.warning("screener cache_miss key=%s — returning 503; nightly refresh has not run", cache_key)
+    # Fall back to daily rollup so we never serve nothing during the warm-up window
+    daily = get_cache(_daily_key())
+    if daily is not None:
+        logger.info("screener cache_hit (daily) key=%s — slot %s not yet built", _daily_key(), slot_key)
+        return daily
+
+    logger.warning(
+        "screener cache_miss — no slot key=%s and no daily key=%s",
+        slot_key, _daily_key(),
+    )
     raise HTTPException(
         status_code=503,
-        detail="Screener data not yet available — nightly refresh has not run. Try again after market close.",
+        detail="Screener data not yet available — cache has not been built. Try again after the next refresh.",
     )
 
 
 async def build_screener_cache() -> dict:
-    """Fetch live quotes and write the screener cache. Called by the nightly refresh job only.
+    """Fetch live quotes and write the screener cache.
+
+    Writes to BOTH the current 15-min slot key (intraday hot path) and the
+    daily rollup key (stable snapshot for correlation_article et al.). Safe
+    to call from the nightly refresh job OR an intraday refresh.
 
     Returns:
         The assembled screener result dict.
     """
     from data_client import get_quotes  # local import — only the refresh job needs this
 
-    cache_key = f"screener:{date.today()}"
+    slot_key = _slot_key()
+    daily_key = _daily_key()
 
     async with _fetch_lock:
         # Re-check after acquiring lock — another job invocation may have just written
-        if cached := get_cache(cache_key):
-            logger.info("screener build_cache: already populated key=%s — skipping", cache_key)
+        if cached := get_cache(slot_key):
+            logger.info("screener build_cache: slot already populated key=%s — skipping", slot_key)
             return cached
 
         logger.info("screener build_cache: fetching %d symbols from Finnhub", len(WATCHLIST))
@@ -115,6 +153,8 @@ async def build_screener_cache() -> dict:
 
         result = {
             "date": str(date.today()),
+            "slot_key": slot_key,
+            "built_at": int(time.time()),
             "total_screened": total,
             "gainers": gainers,
             "losers": losers,
@@ -128,9 +168,12 @@ async def build_screener_cache() -> dict:
             },
         }
 
-        set_cache(cache_key, result, ttl_hours=_SCREENER_TTL_HOURS)
+        # Dual-write: fresh slot for intraday hot path, daily rollup for downstream
+        # consumers (correlation_article, market_summary) that want one snapshot per day.
+        set_cache(slot_key, result, ttl_hours=_SCREENER_SLOT_TTL_HOURS)
+        set_cache(daily_key, result, ttl_hours=_SCREENER_DAILY_TTL_HOURS)
         logger.info(
-            "screener build_cache: complete key=%s symbols=%d gainers=%d losers=%d breadth_pct=%s",
-            cache_key, total, len(gainers), len(losers), breadth_pct,
+            "screener build_cache: complete slot=%s daily=%s symbols=%d gainers=%d losers=%d breadth_pct=%s",
+            slot_key, daily_key, total, len(gainers), len(losers), breadth_pct,
         )
         return result

@@ -1,0 +1,78 @@
+{
+  "pair_count": 5,
+  "matches": 4,
+  "mismatches": 1,
+  "skipped": 0,
+  "overlap_pairs": 5,
+  "pairs_with_score_change": 1,
+  "pairs_saturated_under_old_formula": 4,
+  "saturated_pair_ids": [
+    "industry-returns-vs-rotation",
+    "signals-vs-rotation",
+    "summary-bullish-vs-signals-buy",
+    "rotation-vs-screener"
+  ],
+  "deltas": [
+    {
+      "pair_id": "industry-returns-vs-rotation",
+      "new_score": -1.0,
+      "new_signal": "divergence",
+      "old_score": -1.0,
+      "old_signal": "divergence",
+      "uses_overlap_math": true,
+      "score_changed": false,
+      "summary": "1-month industry leaders overlap with sector rotation leaders: 0"
+    },
+    {
+      "pair_id": "signals-vs-rotation",
+      "new_score": -1.0,
+      "new_signal": "divergence",
+      "old_score": -1.0,
+      "old_signal": "divergence",
+      "uses_overlap_math": true,
+      "score_changed": false,
+      "summary": "BUY-signal industries vs rotation leaders: 0 overlap"
+    },
+    {
+      "pair_id": "summary-bullish-vs-signals-buy",
+      "new_score": -1.0,
+      "new_signal": "divergence",
+      "old_score": -1.0,
+      "old_signal": "divergence",
+      "uses_overlap_math": true,
+      "score_changed": false,
+      "summary": "Market summary bullish list vs signals BUY list: 0 overlap"
+    },
+    {
+      "pair_id": "rotation-vs-screener",
+      "new_score": -1.0,
+      "new_signal": "divergence",
+      "old_score": -1.0,
+      "old_signal": "divergence",
+      "uses_overlap_math": true,
+      "score_changed": false,
+      "summary": "Sector leaders overlapping with top gainers: 0 sectors"
+    },
+    {
+      "pair_id": "industry-1d-vs-1y",
+      "new_score": -0.6,
+      "new_signal": "divergence",
+      "old_score": 1.0,
+      "old_signal": "agreement",
+      "uses_overlap_math": true,
+      "score_changed": true,
+      "summary": "Today's leaders (Oil & Gas, Automotive) vs 1-year leaders (Semiconductors, Mining): 1 overlap"
+    }
+  ],
+  "snapshot": {
+    "total_pairs": 20,
+    "neutral": 15,
+    "divergences": 5,
+    "agreements": 0
+  },
+  "_meta": {
+    "tool": "correlation_replay",
+    "generated_at": "2026-05-15T18:14:43.030059+00:00",
+    "backend_url": "https://gcp3-backend-cif7ppahzq-uc.a.run.app"
+  }
+}

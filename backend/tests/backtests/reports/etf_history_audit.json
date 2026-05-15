@@ -1,0 +1,459 @@
+{
+  "checked": 54,
+  "drift_threshold_pct": 1.0,
+  "missing_yfinance": [],
+  "drifting": [
+    {
+      "symbol": "SOXX",
+      "stored_close": 385.56,
+      "yfinance_close": 517.76,
+      "drift_pct": 25.53,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "CLOU",
+      "stored_close": 17.69,
+      "yfinance_close": 22.4,
+      "drift_pct": 21.01,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "CARZ",
+      "stored_close": 89.01,
+      "yfinance_close": 111.73,
+      "drift_pct": 20.33,
+      "stored_date": "2026-04-10",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "XLK",
+      "stored_close": 142.44,
+      "yfinance_close": 178.48,
+      "drift_pct": 20.19,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "HACK",
+      "stored_close": 71.17,
+      "yfinance_close": 88.83,
+      "drift_pct": 19.88,
+      "stored_date": "2026-04-10",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "IGV",
+      "stored_close": 75.04,
+      "yfinance_close": 92.59,
+      "drift_pct": 18.96,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "MSOS",
+      "stored_close": 3.76,
+      "yfinance_close": 4.55,
+      "drift_pct": 17.27,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "IHF",
+      "stored_close": 43.73,
+      "yfinance_close": 50.97,
+      "drift_pct": 14.21,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "ROBO",
+      "stored_close": 73.37,
+      "yfinance_close": 85.36,
+      "drift_pct": 14.05,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "ICLN",
+      "stored_close": 18.88,
+      "yfinance_close": 21.92,
+      "drift_pct": 13.87,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "LUXE",
+      "stored_close": 8.62,
+      "yfinance_close": 7.6,
+      "drift_pct": 13.42,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "BOTZ",
+      "stored_close": 35.17,
+      "yfinance_close": 40.51,
+      "drift_pct": 13.19,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "PBS",
+      "stored_close": 52.05,
+      "yfinance_close": 59.91,
+      "drift_pct": 13.12,
+      "stored_date": "2026-04-10",
+      "yfinance_date": "2026-05-14"
+    },
+    {
+      "symbol": "PAWZ",
+      "stored_close": 52.05,
+      "yfinance_close": 46.2,
+      "drift_pct": 12.66,
+      "stored_date": "2026-04-10",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "UFO",
+      "stored_close": 50.25,
+      "yfinance_close": 56.26,
+      "drift_pct": 10.67,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "FDN",
+      "stored_close": 242.92,
+      "yfinance_close": 269.51,
+      "drift_pct": 9.87,
+      "stored_date": "2026-04-10",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "IHI",
+      "stored_close": 53.24,
+      "yfinance_close": 48.55,
+      "drift_pct": 9.66,
+      "stored_date": "2026-04-10",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "FINX",
+      "stored_close": 22.73,
+      "yfinance_close": 25.09,
+      "drift_pct": 9.42,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "ESGU",
+      "stored_close": 147.48,
+      "yfinance_close": 161.74,
+      "drift_pct": 8.82,
+      "stored_date": "2026-04-10",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "SLX",
+      "stored_close": 97.1,
+      "yfinance_close": 105.96,
+      "drift_pct": 8.36,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "ITB",
+      "stored_close": 93.85,
+      "yfinance_close": 86.65,
+      "drift_pct": 8.3,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "LIT",
+      "stored_close": 77.75,
+      "yfinance_close": 84.23,
+      "drift_pct": 7.7,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "XHB",
+      "stored_close": 103.72,
+      "yfinance_close": 96.76,
+      "drift_pct": 7.19,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "XLU",
+      "stored_close": 46.84,
+      "yfinance_close": 43.89,
+      "drift_pct": 6.72,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "ITA",
+      "stored_close": 229.54,
+      "yfinance_close": 218.09,
+      "drift_pct": 5.25,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "VOX",
+      "stored_close": 187.93,
+      "yfinance_close": 196.45,
+      "drift_pct": 4.34,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "FTXR",
+      "stored_close": 39.6,
+      "yfinance_close": 41.38,
+      "drift_pct": 4.29,
+      "stored_date": "2026-04-10",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "PBJ",
+      "stored_close": 50.03,
+      "yfinance_close": 48.2,
+      "drift_pct": 3.79,
+      "stored_date": "2026-04-10",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "XRT",
+      "stored_close": 82.4,
+      "yfinance_close": 79.51,
+      "drift_pct": 3.63,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "PFM",
+      "stored_close": 52.37,
+      "yfinance_close": 54.33,
+      "drift_pct": 3.6,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "DBA",
+      "stored_close": 26.89,
+      "yfinance_close": 27.86,
+      "drift_pct": 3.48,
+      "stored_date": "2026-04-10",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "IPAY",
+      "stored_close": 43.41,
+      "yfinance_close": 44.95,
+      "drift_pct": 3.43,
+      "stored_date": "2026-04-10",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "XLB",
+      "stored_close": 51.91,
+      "yfinance_close": 50.39,
+      "drift_pct": 3.02,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "XLP",
+      "stored_close": 82.2,
+      "yfinance_close": 84.72,
+      "drift_pct": 2.97,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "SOCL",
+      "stored_close": 44.15,
+      "yfinance_close": 45.49,
+      "drift_pct": 2.95,
+      "stored_date": "2026-04-10",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "XME",
+      "stored_close": 112.51,
+      "yfinance_close": 115.83,
+      "drift_pct": 2.87,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "KRE",
+      "stored_close": 68.67,
+      "yfinance_close": 66.86,
+      "drift_pct": 2.71,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "XLE",
+      "stored_close": 57.56,
+      "yfinance_close": 59.01,
+      "drift_pct": 2.45,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "REM",
+      "stored_close": 22.28,
+      "yfinance_close": 21.82,
+      "drift_pct": 2.13,
+      "stored_date": "2026-04-10",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "PEJ",
+      "stored_close": 60.49,
+      "yfinance_close": 59.26,
+      "drift_pct": 2.08,
+      "stored_date": "2026-04-10",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "XPH",
+      "stored_close": 55.87,
+      "yfinance_close": 56.9,
+      "drift_pct": 1.8,
+      "stored_date": "2026-04-10",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "JETS",
+      "stored_close": 25.25,
+      "yfinance_close": 25.69,
+      "drift_pct": 1.73,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "BOAT",
+      "stored_close": 40.93,
+      "yfinance_close": 41.62,
+      "drift_pct": 1.67,
+      "stored_date": "2026-04-10",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "PAVE",
+      "stored_close": 54.51,
+      "yfinance_close": 55.35,
+      "drift_pct": 1.51,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "KBE",
+      "stored_close": 62.51,
+      "yfinance_close": 61.65,
+      "drift_pct": 1.4,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "KIE",
+      "stored_close": 55.69,
+      "yfinance_close": 56.4,
+      "drift_pct": 1.25,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "IBB",
+      "stored_close": 169.37,
+      "yfinance_close": 167.32,
+      "drift_pct": 1.23,
+      "stored_date": "2026-04-10",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "IYR",
+      "stored_close": 98.79,
+      "yfinance_close": 99.97,
+      "drift_pct": 1.19,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "XLV",
+      "stored_close": 146.68,
+      "yfinance_close": 145.2,
+      "drift_pct": 1.02,
+      "stored_date": "2026-04-13",
+      "yfinance_date": "2026-05-15"
+    },
+    {
+      "symbol": "VHT",
+      "stored_close": 273.78,
+      "yfinance_close": 271.02,
+      "drift_pct": 1.02,
+      "stored_date": "2026-04-10",
+      "yfinance_date": "2026-05-15"
+    }
+  ],
+  "drifting_symbols": [
+    "SOXX",
+    "CLOU",
+    "CARZ",
+    "XLK",
+    "HACK",
+    "IGV",
+    "MSOS",
+    "IHF",
+    "ROBO",
+    "ICLN",
+    "LUXE",
+    "BOTZ",
+    "PBS",
+    "PAWZ",
+    "UFO",
+    "FDN",
+    "IHI",
+    "FINX",
+    "ESGU",
+    "SLX",
+    "ITB",
+    "LIT",
+    "XHB",
+    "XLU",
+    "ITA",
+    "VOX",
+    "FTXR",
+    "PBJ",
+    "XRT",
+    "PFM",
+    "DBA",
+    "IPAY",
+    "XLB",
+    "XLP",
+    "SOCL",
+    "XME",
+    "KRE",
+    "XLE",
+    "REM",
+    "PEJ",
+    "XPH",
+    "JETS",
+    "BOAT",
+    "PAVE",
+    "KBE",
+    "KIE",
+    "IBB",
+    "IYR",
+    "XLV",
+    "VHT"
+  ]
+}

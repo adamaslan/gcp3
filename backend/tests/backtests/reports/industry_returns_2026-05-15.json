@@ -1,0 +1,150 @@
+{
+  "tolerance_pp": 0.5,
+  "etfs_checked": 22,
+  "etfs_with_yf_data": 22,
+  "comparisons": 30,
+  "matches": 19,
+  "mismatches": 11,
+  "skipped": 0,
+  "worst_deltas": [
+    {
+      "industry": "Commercial Real Estate",
+      "etf": "INDS",
+      "period": "1w",
+      "cached": 3.4,
+      "yfinance": -4.13,
+      "diff_pp": 7.53,
+      "within_tolerance": "False"
+    },
+    {
+      "industry": "Cloud Computing",
+      "etf": "CLOU",
+      "period": "1m",
+      "cached": 17.14,
+      "yfinance": 13.92,
+      "diff_pp": 3.22,
+      "within_tolerance": "False"
+    },
+    {
+      "industry": "Cybersecurity",
+      "etf": "HACK",
+      "period": "1m",
+      "cached": 17.3,
+      "yfinance": 14.5,
+      "diff_pp": 2.8,
+      "within_tolerance": "False"
+    },
+    {
+      "industry": "Automotive",
+      "etf": "CARZ",
+      "period": "1m",
+      "cached": 21.54,
+      "yfinance": 18.95,
+      "diff_pp": 2.59,
+      "within_tolerance": "False"
+    },
+    {
+      "industry": "Luxury Goods",
+      "etf": "LUXE",
+      "period": "1m",
+      "cached": -14.44,
+      "yfinance": -12.37,
+      "diff_pp": 2.07,
+      "within_tolerance": "False"
+    },
+    {
+      "industry": "Aerospace & Defense",
+      "etf": "ITA",
+      "period": "1m",
+      "cached": -6.81,
+      "yfinance": -4.87,
+      "diff_pp": 1.94,
+      "within_tolerance": "False"
+    },
+    {
+      "industry": "Medical Devices",
+      "etf": "IHI",
+      "period": "1m",
+      "cached": -10.58,
+      "yfinance": -8.93,
+      "diff_pp": 1.65,
+      "within_tolerance": "False"
+    },
+    {
+      "industry": "Hardware",
+      "etf": "XLK",
+      "period": "1m",
+      "cached": 18.87,
+      "yfinance": 17.52,
+      "diff_pp": 1.35,
+      "within_tolerance": "False"
+    },
+    {
+      "industry": "Semiconductors",
+      "etf": "SOXX",
+      "period": "1m",
+      "cached": 29.0,
+      "yfinance": 27.75,
+      "diff_pp": 1.25,
+      "within_tolerance": "False"
+    },
+    {
+      "industry": "Pet Care",
+      "etf": "PAWZ",
+      "period": "1m",
+      "cached": -13.87,
+      "yfinance": -13.21,
+      "diff_pp": 0.66,
+      "within_tolerance": "False"
+    }
+  ],
+  "leaders_1d_cached": [
+    {
+      "industry": "Cloud Computing",
+      "return": 2.38
+    },
+    {
+      "industry": "Software",
+      "return": 2.05
+    },
+    {
+      "industry": "Cybersecurity",
+      "return": 1.7
+    },
+    {
+      "industry": "Oil & Gas",
+      "return": 1.61
+    },
+    {
+      "industry": "Internet",
+      "return": 0.47
+    }
+  ],
+  "leaders_1m_cached": [
+    {
+      "industry": "Semiconductors",
+      "return": 29.0
+    },
+    {
+      "industry": "Automotive",
+      "return": 21.54
+    },
+    {
+      "industry": "Hardware",
+      "return": 18.87
+    },
+    {
+      "industry": "Cybersecurity",
+      "return": 17.3
+    },
+    {
+      "industry": "Cloud Computing",
+      "return": 17.14
+    }
+  ],
+  "_meta": {
+    "tool": "industry_returns",
+    "generated_at": "2026-05-15T18:13:57.145888+00:00",
+    "backend_url": "https://gcp3-backend-cif7ppahzq-uc.a.run.app"
+  }
+}

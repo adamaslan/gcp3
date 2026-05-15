@@ -1,0 +1,50 @@
+{
+  "price_tolerance_pct": 1.5,
+  "change_tolerance_pp": 0.5,
+  "quotes_checked": 5,
+  "matches": 2,
+  "mismatches": 3,
+  "skipped": 27,
+  "breadth_pct_cached": -25.0,
+  "total_screened_cached": 32,
+  "worst_deltas": [
+    {
+      "symbol": "BG",
+      "cached_price": 123.64,
+      "finnhub_price": 121.6,
+      "price_drift_pct": 1.678,
+      "cached_change_pct": 0.39,
+      "finnhub_change_pct": -1.2666,
+      "change_diff_pp": 1.657,
+      "price_within_tolerance": false,
+      "change_within_tolerance": false
+    },
+    {
+      "symbol": "AAPL",
+      "cached_price": 298.32,
+      "finnhub_price": 302.04,
+      "price_drift_pct": 1.232,
+      "cached_change_pct": 0.04,
+      "finnhub_change_pct": 1.2843,
+      "change_diff_pp": 1.244,
+      "price_within_tolerance": true,
+      "change_within_tolerance": false
+    },
+    {
+      "symbol": "ALB",
+      "cached_price": 183,
+      "finnhub_price": 180.94,
+      "price_drift_pct": 1.138,
+      "cached_change_pct": -4.24,
+      "finnhub_change_pct": -5.3166,
+      "change_diff_pp": 1.077,
+      "price_within_tolerance": true,
+      "change_within_tolerance": false
+    }
+  ],
+  "_meta": {
+    "tool": "screener",
+    "generated_at": "2026-05-15T18:12:20.260962+00:00",
+    "backend_url": "https://gcp3-backend-cif7ppahzq-uc.a.run.app"
+  }
+}

@@ -1,0 +1,147 @@
+{
+  "signal_summary_cached": {
+    "buy_count": 24,
+    "sell_count": 10,
+    "hold_count": 20,
+    "total_signals": 280,
+    "ai_regime": "Bullish"
+  },
+  "buy_count": 24,
+  "sell_count": 10,
+  "hold_count": 20,
+  "total_signals": 280,
+  "counts_consistent": true,
+  "samples_checked": 20,
+  "matches": 5,
+  "mismatches": 15,
+  "skipped": 0,
+  "buy_direction_accuracy": 6.7,
+  "sell_direction_accuracy": 80.0,
+  "samples": [
+    {
+      "symbol": "HACK",
+      "signal": "buy",
+      "momentum_pp": -5.16,
+      "direction_matches": "False"
+    },
+    {
+      "symbol": "FDN",
+      "signal": "buy",
+      "momentum_pp": -11.47,
+      "direction_matches": "False"
+    },
+    {
+      "symbol": "PBS",
+      "signal": "buy",
+      "momentum_pp": -11.41,
+      "direction_matches": "False"
+    },
+    {
+      "symbol": "XLE",
+      "signal": "buy",
+      "momentum_pp": 0.68,
+      "direction_matches": "True"
+    },
+    {
+      "symbol": "XLK",
+      "signal": "buy",
+      "momentum_pp": -21.0,
+      "direction_matches": "False"
+    },
+    {
+      "symbol": "BOTZ",
+      "signal": "buy",
+      "momentum_pp": -16.34,
+      "direction_matches": "False"
+    },
+    {
+      "symbol": "ESGU",
+      "signal": "buy",
+      "momentum_pp": -10.27,
+      "direction_matches": "False"
+    },
+    {
+      "symbol": "ROBO",
+      "signal": "buy",
+      "momentum_pp": -19.11,
+      "direction_matches": "False"
+    },
+    {
+      "symbol": "BOAT",
+      "signal": "buy",
+      "momentum_pp": -0.66,
+      "direction_matches": "False"
+    },
+    {
+      "symbol": "ICLN",
+      "signal": "buy",
+      "momentum_pp": -16.84,
+      "direction_matches": "False"
+    },
+    {
+      "symbol": "UFO",
+      "signal": "buy",
+      "momentum_pp": -4.9,
+      "direction_matches": "False"
+    },
+    {
+      "symbol": "VOX",
+      "signal": "buy",
+      "momentum_pp": -8.0,
+      "direction_matches": "False"
+    },
+    {
+      "symbol": "CARZ",
+      "signal": "buy",
+      "momentum_pp": -27.98,
+      "direction_matches": "False"
+    },
+    {
+      "symbol": "LIT",
+      "signal": "buy",
+      "momentum_pp": -18.63,
+      "direction_matches": "False"
+    },
+    {
+      "symbol": "SOXX",
+      "signal": "buy",
+      "momentum_pp": -41.35,
+      "direction_matches": "False"
+    },
+    {
+      "symbol": "IPAY",
+      "signal": "sell",
+      "momentum_pp": -11.27,
+      "direction_matches": "True"
+    },
+    {
+      "symbol": "XLU",
+      "signal": "sell",
+      "momentum_pp": -0.43,
+      "direction_matches": "True"
+    },
+    {
+      "symbol": "ESPO",
+      "signal": "sell",
+      "momentum_pp": -1.57,
+      "direction_matches": "True"
+    },
+    {
+      "symbol": "FINX",
+      "signal": "sell",
+      "momentum_pp": -11.27,
+      "direction_matches": "True"
+    },
+    {
+      "symbol": "IHI",
+      "signal": "sell",
+      "momentum_pp": 4.94,
+      "direction_matches": "False"
+    }
+  ],
+  "_meta": {
+    "tool": "signals",
+    "generated_at": "2026-05-15T18:13:31.245955+00:00",
+    "backend_url": "https://gcp3-backend-cif7ppahzq-uc.a.run.app"
+  }
+}

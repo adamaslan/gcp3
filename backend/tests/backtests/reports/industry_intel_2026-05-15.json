@@ -1,0 +1,33 @@
+{
+  "tolerance_pp": 0.3,
+  "rows_compared": 10,
+  "matches": 9,
+  "mismatches": 1,
+  "skipped": 0,
+  "top3_leader_overlap": 3,
+  "leaders_cached_top3": [
+    "CLOU",
+    "IGV",
+    "XLE"
+  ],
+  "leaders_yf_top3": [
+    "CLOU",
+    "IGV",
+    "XLE"
+  ],
+  "worst_deltas": [
+    {
+      "industry": "Cannabis",
+      "etf": "MSOS",
+      "cached_change_pct": -5.99,
+      "yfinance_change_pct": -6.33,
+      "diff_pp": 0.34,
+      "within_tolerance": "False"
+    }
+  ],
+  "_meta": {
+    "tool": "industry_intel",
+    "generated_at": "2026-05-15T18:14:21.055085+00:00",
+    "backend_url": "https://gcp3-backend-cif7ppahzq-uc.a.run.app"
+  }
+}
