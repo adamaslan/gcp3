@@ -101,12 +101,40 @@ def append_daily(symbol: str, df: pd.DataFrame, source: str = "finnhub") -> int:
     if meta is None:
         return store_history(symbol, df, source)
 
-    new_records = [r for r in _to_records(df) if r["date"] > meta["last_date"]]
+    # First-pass filter: only keep rows newer than the stored last_date. The
+    # second-pass dedup against existing_dates catches the corruption mode
+    # where two upstream sources emitted the same date with different prices
+    # (ArrayUnion only dedupes on exact dict equality, so those would both
+    # have persisted and corrupted downstream return computations).
+    candidate_records = [r for r in _to_records(df) if r["date"] > meta["last_date"]]
+    if not candidate_records:
+        return 0
+
+    existing_dates: set[str] = set()
+    doc = _db().collection(_COLLECTION).document(symbol)
+    if meta.get("storage_mode") == "chunked":
+        # Only fetch the year chunks that overlap with the incoming candidates,
+        # not the entire price history. For long-history ETFs this is the
+        # difference between reading one ~365-row doc vs reading ~20 of them.
+        incoming_years = {r["date"][:4] for r in candidate_records}
+        for year in incoming_years:
+            yr_snap = doc.collection("years").document(year).get()
+            if yr_snap.exists:
+                for r in yr_snap.to_dict().get("prices", []):
+                    if r.get("date"):
+                        existing_dates.add(r["date"])
+    else:
+        snap = doc.get()
+        if snap.exists:
+            for r in snap.to_dict().get("prices", []):
+                if r.get("date"):
+                    existing_dates.add(r["date"])
+
+    new_records = [r for r in candidate_records if r["date"] not in existing_dates]
     if not new_records:
         return 0
 
     from google.cloud.firestore_v1 import ArrayUnion
-    doc = _db().collection(_COLLECTION).document(symbol)
     now = datetime.now(tz=timezone.utc).isoformat()
     new_last = max(r["date"] for r in new_records)
 

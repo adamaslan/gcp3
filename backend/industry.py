@@ -40,6 +40,7 @@ _FIRESTORE_BATCH_MAX_OPS = 450  # stay under Firestore's 500-op batch limit
 _INDUSTRY_LOCK = Semaphore(1)  # serialize concurrent cache-miss rebuilds
 _QUOTES_LOCK = Semaphore(1)    # single-flight for quote rebuilds
 _QUOTE_CACHE_TTL_SECONDS = 60  # re-fetch Finnhub at most once per minute
+_ETF_FETCH_SEMAPHORE = Semaphore(5)  # limit concurrent Finnhub calls to 5 to avoid rate limiting
 
 # Industries → ETF, organized by sector group
 INDUSTRIES: dict[str, dict[str, str]] = {
@@ -238,12 +239,13 @@ async def get_industry_data(enrich_av: bool = False, force: bool = False) -> dic
 
         # Step 1: fetch all quotes (Finnhub → yfinance per symbol)
         async def fetch_one(industry: str, sector: str, etf: str):
-            try:
-                quote = await _fetch_quote_with_fallback(client, etf)
-                return industry, {"sector": sector, "etf": etf, **quote}
-            except Exception as exc:
-                logger.error("industry: all_sources_failed industry=%s etf=%s error=%s", industry, etf, exc)
-                return industry, {"sector": sector, "etf": etf, "error": str(exc)}
+            async with _ETF_FETCH_SEMAPHORE:
+                try:
+                    quote = await _fetch_quote_with_fallback(client, etf)
+                    return industry, {"sector": sector, "etf": etf, **quote}
+                except Exception as exc:
+                    logger.error("industry: all_sources_failed industry=%s etf=%s error=%s", industry, etf, exc)
+                    return industry, {"sector": sector, "etf": etf, "error": str(exc)}
 
         async with httpx.AsyncClient(timeout=15) as client:
             tasks = [
@@ -436,12 +438,20 @@ def _attach_stored_returns(industries: dict) -> None:
     )
 
 
-async def seed_etf_history() -> dict[str, int]:
+async def seed_etf_history(force: bool = False, symbols: list[str] | None = None) -> dict[str, int]:
     """Seed or delta-update permanent ETF history for all tracked industries.
 
     Call once at startup or via a scheduled endpoint. Uses yfinance batch
     download (one HTTP request for all tickers) to avoid per-ticker rate limits.
     Full history on first run; 3-month window on subsequent delta runs.
+
+    Args:
+        force: If True, deletes etf_history/{SYMBOL} docs before reseeding.
+            Use when stored history is corrupted (e.g. wrong-signed returns
+            from an upstream bug). Existing data is unrecoverable after this.
+        symbols: If set, restrict the operation to just these ETFs. Useful
+            for surgical reseeds (only the offenders from /admin/audit-etf-history)
+            instead of nuking all 54.
 
     Returns:
         Dict mapping ETF symbol → rows stored/appended.
@@ -449,14 +459,54 @@ async def seed_etf_history() -> dict[str, int]:
     import yfinance as yf
 
     unique_etfs = list({etf for _, etf in _FLAT.values()})
+    if symbols:
+        wanted = {s.upper() for s in symbols}
+        unique_etfs = [e for e in unique_etfs if e.upper() in wanted]
+        logger.info("seed_etf_history: restricted to %d/%d ETFs", len(unique_etfs), len(wanted))
+
     results: dict[str, int] = {}
 
-    # Split into new (need full history) vs existing (3mo delta).
-    # Use db.get_all() to fetch all metadata docs in a single round-trip
-    # instead of 54 sequential Firestore reads.
     from firestore import db as _db
     _firestore = _db()
     refs = [_firestore.collection(etf_store._COLLECTION).document(e.upper()) for e in unique_etfs]
+
+    if force:
+        # Destructive: drop existing docs so the seed path runs (full history)
+        # instead of the delta-append path. Required when stored prices are
+        # corrupted and can no longer be trusted as the base for an append.
+        logger.warning("seed_etf_history: force=True — deleting %d existing docs", len(refs))
+
+        def _delete_all_force() -> None:
+            """Batched, threadpool-friendly destructive cleanup.
+
+            Streams + deletes per-year sub-docs in batches of up to 450 ops
+            (Firestore caps at 500), then deletes the parent docs in a
+            single batch. Runs synchronously inside run_in_executor so the
+            async event loop isn't blocked across 54 ETFs.
+            """
+            batch = _firestore.batch()
+            ops = 0
+            for ref in refs:
+                # Delete the per-year subcollection first
+                for yr_snap in ref.collection("years").stream():
+                    batch.delete(yr_snap.reference)
+                    ops += 1
+                    if ops >= _FIRESTORE_BATCH_MAX_OPS:
+                        batch.commit()
+                        batch = _firestore.batch()
+                        ops = 0
+                # Then the parent doc
+                batch.delete(ref)
+                ops += 1
+                if ops >= _FIRESTORE_BATCH_MAX_OPS:
+                    batch.commit()
+                    batch = _firestore.batch()
+                    ops = 0
+            if ops:
+                batch.commit()
+
+        await asyncio.get_running_loop().run_in_executor(None, _delete_all_force)
+
     snaps = _firestore.get_all(refs)
     existing_symbols = {snap.id for snap in snaps if snap.exists}
     new_etfs = [e for e in unique_etfs if e.upper() not in existing_symbols]
@@ -509,14 +559,18 @@ async def seed_etf_history() -> dict[str, int]:
                 results[etf] = 0
                 continue
 
-            # Single-ETF download returns a flat DataFrame with Close, Volume, etc.
+            # yfinance returns a MultiIndex DataFrame even for single-ticker
+            # downloads (cols are tuples like ('Close', 'HACK')). Flatten
+            # before slicing or we'll get DataFrame-not-Series back and the
+            # pd.DataFrame() constructor raises "all scalar values" errors.
             try:
-                # Extract Close and Volume columns (handling both Series and DataFrame)
+                if isinstance(raw, pd.DataFrame) and isinstance(raw.columns, pd.MultiIndex):
+                    raw.columns = [c[0] for c in raw.columns]
+
                 if isinstance(raw, pd.DataFrame):
                     close_series = raw["Close"]
                     volume_series = raw["Volume"]
                 else:
-                    # If single column (Series), this shouldn't happen but handle it
                     close_series = raw
                     volume_series = pd.Series([0] * len(raw), index=raw.index)
 
@@ -536,3 +590,102 @@ async def seed_etf_history() -> dict[str, int]:
 
     logger.info("seed_etf_history complete: %d ETFs, %d total rows", len(results), sum(results.values()))
     return results
+
+
+async def audit_etf_history(drift_threshold_pct: float = 1.0) -> dict:
+    """Compare each stored ETF latest close against a fresh yfinance pull.
+
+    Surfaces silent corruption of the etf_history collection (the root cause
+    behind the 2026-05-15 backtest finding where HACK 1m cached at -9.27%
+    while yfinance reported +13.62%).
+
+    Args:
+        drift_threshold_pct: Symbols whose stored vs yfinance latest close
+            differ by more than this percentage are flagged.
+
+    Returns:
+        {
+          "checked": int,                # ETFs with stored history
+          "missing_yfinance": [str],     # could not get a yfinance reference
+          "drifting": [{symbol, stored_close, yfinance_close, drift_pct, stored_date, yfinance_date}],
+        }
+    """
+    import yfinance as yf
+
+    unique_etfs = list({etf for _, etf in _FLAT.values()})
+    drifting: list[dict] = []
+    missing: list[str] = []
+    checked = 0
+
+    loop = asyncio.get_running_loop()
+
+    for etf in unique_etfs:
+        # load_history hits Firestore synchronously — push to a thread so the
+        # event loop stays free across the 54-symbol audit pass.
+        stored = await loop.run_in_executor(None, etf_store.load_history, etf)
+        if stored is None or stored.empty:
+            missing.append(etf)
+            continue
+        checked += 1
+        stored_close = float(stored["adjusted_close"].iloc[0])
+        stored_date = stored.index[0].strftime("%Y-%m-%d")
+
+        try:
+            raw = await loop.run_in_executor(
+                None,
+                lambda e=etf: yf.download(
+                    e, period="5d", auto_adjust=True, progress=False, threads=False
+                ),
+            )
+        except Exception as exc:
+            logger.warning("audit_etf_history: yfinance failed for %s: %s", etf, exc)
+            missing.append(etf)
+            continue
+
+        if raw is None or raw.empty:
+            missing.append(etf)
+            continue
+
+        # yfinance.download returns a MultiIndex DataFrame even for a single
+        # ticker; raw["Close"] then yields a DataFrame, not a Series, and
+        # float(closes.iloc[-1]) raises further down. Flatten before slicing.
+        if isinstance(raw, pd.DataFrame) and isinstance(raw.columns, pd.MultiIndex):
+            raw.columns = [c[0] for c in raw.columns]
+
+        close_col = raw["Close"] if isinstance(raw, pd.DataFrame) else raw
+        closes = close_col.dropna()
+        if closes.empty:
+            missing.append(etf)
+            continue
+        yf_close = float(closes.iloc[-1])
+        yf_date = closes.index[-1].strftime("%Y-%m-%d")
+        if yf_close == 0:
+            missing.append(etf)
+            continue
+
+        drift_pct = abs(stored_close - yf_close) / yf_close * 100
+        if drift_pct > drift_threshold_pct:
+            drifting.append({
+                "symbol": etf,
+                "stored_close": round(stored_close, 2),
+                "yfinance_close": round(yf_close, 2),
+                "drift_pct": round(drift_pct, 2),
+                "stored_date": stored_date,
+                "yfinance_date": yf_date,
+            })
+
+        # Pace yfinance to dodge rate limits — same 0.5s used in seed loop
+        await asyncio.sleep(0.5)
+
+    drifting.sort(key=lambda d: -d["drift_pct"])
+    logger.info(
+        "audit_etf_history: checked=%d drifting=%d missing=%d threshold=%.2f%%",
+        checked, len(drifting), len(missing), drift_threshold_pct,
+    )
+    return {
+        "checked": checked,
+        "drift_threshold_pct": drift_threshold_pct,
+        "missing_yfinance": missing,
+        "drifting": drifting,
+        "drifting_symbols": [d["symbol"] for d in drifting],
+    }
