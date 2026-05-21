@@ -30,7 +30,13 @@ def _now_est_iso() -> str:
 import httpx
 import pandas as pd
 
-from data_client import av_analytics_batch, av_remaining_calls, finnhub_get, get_cache, get_quote, set_cache
+from data_client import (
+    av_analytics_batch,
+    av_remaining_calls,
+    get_cache,
+    get_quote,
+    set_cache,
+)
 from data_client import get_finnhub_metrics
 import etf_store
 
@@ -126,24 +132,40 @@ _FLAT: dict[str, tuple[str, str]] = {
 }
 
 
+def _data_status(industries: dict[str, dict]) -> dict:
+    """Summarize dataset completeness for a response.
+
+    The multi-source fallback chain (Finnhub → yfinance → AlphaVantage) can
+    exhaust every source for an individual ETF; that industry then carries an
+    `error` field instead of a quote. The endpoint still returns HTTP 200, so
+    callers need an explicit signal that the dataset is partial — otherwise a
+    silently smaller result looks complete. See incident-2026-05-21.
+    """
+    total = len(industries)
+    failed = sorted(k for k, v in industries.items() if "error" in v)
+    return {
+        "expected": total,
+        "available": total - len(failed),
+        "failed": len(failed),
+        "partial": bool(failed),
+        "failed_industries": failed,
+    }
+
+
 async def _fetch_quote_with_fallback(client: httpx.AsyncClient, etf: str) -> dict:
-    """Fetch quote via Finnhub, falling back to yfinance on failure."""
+    """Fetch quote via the Finnhub → yfinance fallback chain.
+
+    Delegates the whole chain to data_client.get_quote, which already does
+    Finnhub (guarded against c=0 / None) → yfinance and reuses the shared
+    client. This must not re-implement either source: a local Finnhub parse
+    previously raised NoneType.__round__ TypeErrors, and calling _finnhub_quote
+    here before get_quote queried Finnhub twice on every failure
+    (incident-2026-05-21).
+    """
     try:
-        d = await finnhub_get(client, "/quote", {"symbol": etf})
-        return {
-            "price": round(d["c"], 2),
-            "change": round(d["d"], 2),
-            "change_pct": round(d["dp"], 2),
-            "source": "finnhub",
-        }
-    except Exception as finnhub_exc:
-        logger.warning("industry: Finnhub failed for %s (%s) — trying yfinance", etf, finnhub_exc)
-        try:
-            return await get_quote(etf)
-        except Exception as yf_exc:
-            raise RuntimeError(
-                f"All sources failed for {etf}: finnhub={finnhub_exc} yfinance={yf_exc}"
-            ) from yf_exc
+        return await get_quote(etf, client=client)
+    except Exception as exc:
+        raise RuntimeError(f"All sources failed for {etf}: {exc}") from exc
 
 
 async def get_industry_quotes() -> dict:
@@ -191,6 +213,7 @@ async def get_industry_quotes() -> dict:
             "date": str(date.today()),
             "quotes_as_of": _now_est_iso(),
             "total": len(industries),
+            "data_status": _data_status(industries),
             "industries": industries,
             "rankings": ranked,
             "by_sector": by_sector,
@@ -336,6 +359,7 @@ async def get_industry_data(enrich_av: bool = False, force: bool = False) -> dic
             "date": str(date.today()),
             "quotes_as_of": _now_est_iso(),
             "total": len(industries),
+            "data_status": _data_status(industries),
             "industries": industries,
             "rankings": ranked,
             "by_sector": by_sector,

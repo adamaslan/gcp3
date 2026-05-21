@@ -54,12 +54,18 @@ logger = logging.getLogger(__name__)
 
 _FINNHUB_BASE = "https://finnhub.io/api/v1"
 _AV_BASE = "https://www.alphavantage.co/query"
-_AV_ANALYTICS_BASE = "https://alphavantageapi.co/timeseries/analytics"
+# Advanced Analytics is served from the main query host with
+# function=ANALYTICS_FIXED_WINDOW. The legacy alphavantageapi.co/timeseries
+# host returns 400 Bad Request — see incident-2026-05-21.
+_AV_ANALYTICS_BASE = "https://www.alphavantage.co/query"
 _KEY_PATTERN = re.compile(r"token=[^&\s]+")
 
 # Finnhub: stay under 30 req/s hard limit
 _FH_SEMAPHORE = asyncio.Semaphore(25)
 _FH_REQUEST_DELAY = 0.05  # 50ms → ~20 req/s max under full concurrency
+# Jittered 429 retry backoff — avoids a synchronized retry herd.
+_FH_429_BACKOFF_MIN = 2.0
+_FH_429_BACKOFF_MAX = 4.0
 
 # Alpha Vantage: 25 calls/day free tier; keep 5-call buffer
 _AV_DAILY_LIMIT = 20
@@ -147,7 +153,7 @@ async def finnhub_get(
     - API key sent via header, never in the URL.
     - Error messages are sanitized to remove the key.
     - Global semaphore + 50ms delay keeps throughput under 30 req/s.
-    - Retries once on HTTP 429 with a 2-second backoff.
+    - Retries once on HTTP 429 with a jittered 2–4s backoff.
     """
     global _fh_429_count, _fh_429_since
     async with _FH_SEMAPHORE:
@@ -162,11 +168,15 @@ async def finnhub_get(
                 _fh_429_count += 1
                 if _fh_429_since is None:
                     _fh_429_since = datetime.now(timezone.utc)
+                # Jittered backoff: a fixed sleep makes every rate-limited
+                # ticker retry at the same instant, re-triggering the 429.
+                # Spreading retries over 2–4s breaks that synchronization.
+                backoff = random.uniform(_FH_429_BACKOFF_MIN, _FH_429_BACKOFF_MAX)
                 logger.warning(
-                    "finnhub: rate_limited_429 path=%s total_429s=%d since=%s — waiting 2s",
-                    path, _fh_429_count, _fh_429_since.isoformat(),
+                    "finnhub: rate_limited_429 path=%s total_429s=%d since=%s — waiting %.1fs",
+                    path, _fh_429_count, _fh_429_since.isoformat(), backoff,
                 )
-                await asyncio.sleep(2.0)
+                await asyncio.sleep(backoff)
                 r = await client.get(
                     f"{_FINNHUB_BASE}{path}",
                     params=params,
@@ -188,16 +198,36 @@ async def finnhub_get(
             raise type(exc)(_fh_sanitize(str(exc))) from None
 
 
+def _round2(value: object) -> float | None:
+    """Round a numeric value to 2 dp, returning None for missing data.
+
+    Finnhub signals "no data" for an instrument by returning c=0 (not an
+    HTTP error) — notably for index symbols like VIX and DXY. A None field
+    can also slip through. Either reaching round() raises TypeError, so
+    every Finnhub numeric field must pass through this guard.
+    """
+    if value is None:
+        return None
+    try:
+        return round(float(value), 2)
+    except (TypeError, ValueError):
+        return None
+
+
 async def _finnhub_quote(client: httpx.AsyncClient, symbol: str) -> dict:
     d = await finnhub_get(client, "/quote", {"symbol": symbol})
+    # c=0 means Finnhub cannot price this instrument — treat as unavailable
+    # so the caller falls through to the next source in the fallback chain.
+    if not d.get("c"):
+        raise ValueError(f"No price data from Finnhub for {symbol} (c=0)")
     return {
-        "price": round(d["c"], 2),
-        "change": round(d["d"], 2),
-        "change_pct": round(d["dp"], 2),
-        "high": round(d["h"], 2),
-        "low": round(d["l"], 2),
-        "open": round(d["o"], 2),
-        "prev_close": round(d["pc"], 2),
+        "price": _round2(d.get("c")),
+        "change": _round2(d.get("d")),
+        "change_pct": _round2(d.get("dp")),
+        "high": _round2(d.get("h")),
+        "low": _round2(d.get("l")),
+        "open": _round2(d.get("o")),
+        "prev_close": _round2(d.get("pc")),
         "source": "finnhub",
     }
 
@@ -375,6 +405,9 @@ async def _av_fixed_window(
     r = await client.get(
         _AV_ANALYTICS_BASE,
         params={
+            # function= is required — its absence is what produced the
+            # 400 Bad Request on every call (see incident-2026-05-21).
+            "function": "ANALYTICS_FIXED_WINDOW",
             "SYMBOLS": ",".join(symbols),
             "RANGE": range_,
             "INTERVAL": "DAILY",
@@ -385,18 +418,45 @@ async def _av_fixed_window(
         timeout=20,
     )
     r.raise_for_status()
-    return r.json()
+    # AlphaVantage returns HTTP 200 with an {"Error Message": ...} or
+    # {"Information": ...} body for bad params / rate limits — surface it.
+    payload = r.json()
+    if "Error Message" in payload or "Information" in payload:
+        raise RuntimeError(
+            f"AlphaVantage rejected request: {payload.get('Error Message') or payload.get('Information')}"
+        )
+    return payload
 
 
 def _av_parse(raw: dict, symbols: list[str]) -> dict[str, dict]:
-    payload = raw.get("payload", {})
+    """Parse an ANALYTICS_FIXED_WINDOW response into per-symbol metrics.
+
+    The response nests per-calculation results under
+    payload.RETURNS_CALCULATIONS.<CALCULATION>.<SYMBOL>. A legacy flat
+    shape (payload.<SYMBOL>.Returns) is also tolerated defensively, so a
+    response-format change degrades to empty metrics rather than a crash.
+    """
+    # `or {}` rather than a default arg throughout — AlphaVantage can return
+    # explicit nulls for these keys, and a default only applies to a missing key.
+    payload = raw.get("payload") or {}
+    calcs = payload.get("RETURNS_CALCULATIONS") or {}
+
+    def _metric(name: str, sym: str):
+        # Documented nested shape
+        by_symbol = calcs.get(name)
+        if isinstance(by_symbol, dict) and sym in by_symbol:
+            return by_symbol[sym]
+        # Legacy flat shape fallback. `payload.get(sym) or {}` (not a default
+        # arg) — AlphaVantage can return an explicit null for a symbol, and
+        # None.get() would raise AttributeError.
+        return (payload.get(sym) or {}).get("Returns", {}).get(name)
+
     results: dict[str, dict] = {}
     for sym in symbols:
-        returns_data = payload.get(sym, {}).get("Returns", {})
         results[sym] = {
-            "cumulative_return": returns_data.get("CUMULATIVE_RETURN"),
-            "mean": returns_data.get("MEAN"),
-            "stddev": returns_data.get("STDDEV"),
+            "cumulative_return": _metric("CUMULATIVE_RETURN", sym),
+            "mean": _metric("MEAN", sym),
+            "stddev": _metric("STDDEV", sym),
             "source": "alpha_vantage",
         }
     return results
