@@ -12,11 +12,15 @@ from data_client import get_finnhub_metrics
 logger = logging.getLogger(__name__)
 
 # Macro proxy ETFs / tickers
+# VIX and DXY are indices — Finnhub's free /quote endpoint does not price
+# raw indices and returns c=0 for them. Use tradeable ETF proxies Finnhub
+# CAN price: VIXY (VIX short-term futures) and UUP (US Dollar Index fund).
+# This keeps real prices from a real source — no faked index values.
 MACRO_TICKERS: dict[str, dict] = {
-    "VIX": {"ticker": "VIX", "label": "Fear Gauge", "category": "volatility"},
+    "VIX": {"ticker": "VIXY", "label": "Fear Gauge (VIXY proxy)", "category": "volatility"},
     "TLT": {"ticker": "TLT", "label": "20yr Treasury ETF", "category": "bonds"},
     "SHY": {"ticker": "SHY", "label": "2yr Treasury ETF", "category": "bonds"},
-    "DXY": {"ticker": "DXY", "label": "US Dollar Index", "category": "currency"},
+    "DXY": {"ticker": "UUP", "label": "US Dollar Index (UUP proxy)", "category": "currency"},
     "GLD": {"ticker": "GLD", "label": "Gold ETF", "category": "commodities"},
     "SLV": {"ticker": "SLV", "label": "Silver ETF", "category": "commodities"},
     "USO": {"ticker": "USO", "label": "Oil ETF", "category": "commodities"},
@@ -129,6 +133,11 @@ async def get_macro_pulse() -> dict:
         try:
             q = await _fetch_quote(client, meta["ticker"])
             return key, {**meta, **q}
+        except ValueError as exc:
+            # Expected when an indicator has no Finnhub price data — log at
+            # WARNING, not ERROR; the indicator is dropped, pulse still serves.
+            logger.warning("macro_pulse: no data for %s — %s", key, exc)
+            return key, {**meta, "error": str(exc)}
         except Exception as exc:
             logger.error("macro_pulse failed %s: %s", key, exc)
             return key, {**meta, "error": str(exc)}
@@ -154,8 +163,22 @@ async def get_macro_pulse() -> dict:
     except Exception as exc:
         logger.warning("macro_pulse metrics enrichment failed: %s", exc)
 
+    # An indicator with no Finnhub price data carries an `error` field instead
+    # of a quote. The endpoint still returns HTTP 200, so surface completeness
+    # explicitly — a silently smaller indicator set otherwise looks complete.
+    # See incident-2026-05-21.
+    failed_indicators = sorted(k for k, v in indicators.items() if "error" in v)
+    data_status = {
+        "expected": len(indicators),
+        "available": len(indicators) - len(failed_indicators),
+        "failed": len(failed_indicators),
+        "partial": bool(failed_indicators),
+        "failed_indicators": failed_indicators,
+    }
+
     result = {
         "date": str(date.today()),
+        "data_status": data_status,
         "indicators": indicators,
         "by_category": by_category,
         "ai_regime": ai_analysis["regime"],
