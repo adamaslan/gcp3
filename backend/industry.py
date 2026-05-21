@@ -31,7 +31,6 @@ import httpx
 import pandas as pd
 
 from data_client import (
-    _finnhub_quote,
     av_analytics_batch,
     av_remaining_calls,
     get_cache,
@@ -154,22 +153,19 @@ def _data_status(industries: dict[str, dict]) -> dict:
 
 
 async def _fetch_quote_with_fallback(client: httpx.AsyncClient, etf: str) -> dict:
-    """Fetch quote via Finnhub, falling back to yfinance on failure.
+    """Fetch quote via the Finnhub → yfinance fallback chain.
 
-    Delegates the Finnhub parse to data_client._finnhub_quote, which guards
-    against c=0 ("no data") and None price fields — a local reimplementation
-    here previously raised `NoneType.__round__` TypeErrors (incident-2026-05-21).
+    Delegates the whole chain to data_client.get_quote, which already does
+    Finnhub (guarded against c=0 / None) → yfinance and reuses the shared
+    client. This must not re-implement either source: a local Finnhub parse
+    previously raised NoneType.__round__ TypeErrors, and calling _finnhub_quote
+    here before get_quote queried Finnhub twice on every failure
+    (incident-2026-05-21).
     """
     try:
-        return await _finnhub_quote(client, etf)
-    except Exception as finnhub_exc:
-        logger.warning("industry: Finnhub failed for %s (%s) — trying yfinance", etf, finnhub_exc)
-        try:
-            return await get_quote(etf)
-        except Exception as yf_exc:
-            raise RuntimeError(
-                f"All sources failed for {etf}: finnhub={finnhub_exc} yfinance={yf_exc}"
-            ) from yf_exc
+        return await get_quote(etf, client=client)
+    except Exception as exc:
+        raise RuntimeError(f"All sources failed for {etf}: {exc}") from exc
 
 
 async def get_industry_quotes() -> dict:

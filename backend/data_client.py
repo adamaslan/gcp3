@@ -436,16 +436,20 @@ def _av_parse(raw: dict, symbols: list[str]) -> dict[str, dict]:
     shape (payload.<SYMBOL>.Returns) is also tolerated defensively, so a
     response-format change degrades to empty metrics rather than a crash.
     """
-    payload = raw.get("payload", {})
-    calcs = payload.get("RETURNS_CALCULATIONS", {})
+    # `or {}` rather than a default arg throughout — AlphaVantage can return
+    # explicit nulls for these keys, and a default only applies to a missing key.
+    payload = raw.get("payload") or {}
+    calcs = payload.get("RETURNS_CALCULATIONS") or {}
 
     def _metric(name: str, sym: str):
         # Documented nested shape
         by_symbol = calcs.get(name)
         if isinstance(by_symbol, dict) and sym in by_symbol:
             return by_symbol[sym]
-        # Legacy flat shape fallback
-        return payload.get(sym, {}).get("Returns", {}).get(name)
+        # Legacy flat shape fallback. `payload.get(sym) or {}` (not a default
+        # arg) — AlphaVantage can return an explicit null for a symbol, and
+        # None.get() would raise AttributeError.
+        return (payload.get(sym) or {}).get("Returns", {}).get(name)
 
     results: dict[str, dict] = {}
     for sym in symbols:
