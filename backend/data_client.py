@@ -544,19 +544,27 @@ async def get_quotes(
 
         if failed:
             logger.info("data_client: fetching %d failed symbols via yfinance bulk", len(failed))
-            try:
-                # Bulk download is one network request regardless of symbol count —
-                # acquire semaphore once, add a single randomized delay.
-                async with _YF_SEMAPHORE:
-                    await asyncio.sleep(random.uniform(_YF_DELAY_MIN, _YF_DELAY_MAX))
-                    loop = asyncio.get_running_loop()
-                    yf_quotes = await loop.run_in_executor(_YF_EXECUTOR, _yf_bulk_sync, failed)
-                results.update(yf_quotes)
-                still_failed = [s for s in failed if s not in yf_quotes]
-                if still_failed:
-                    logger.error("data_client: all sources failed for: %s", still_failed)
-            except Exception as exc:
-                logger.error("data_client: yfinance bulk failed: %s", exc)
+            yf_quotes: dict[str, dict] = {}
+            for _attempt in range(3):
+                try:
+                    async with _YF_SEMAPHORE:
+                        await asyncio.sleep(random.uniform(_YF_DELAY_MIN, _YF_DELAY_MAX))
+                        loop = asyncio.get_running_loop()
+                        yf_quotes = await loop.run_in_executor(_YF_EXECUTOR, _yf_bulk_sync, failed)
+                    break
+                except Exception as exc:
+                    if _attempt < 2:
+                        logger.warning(
+                            "data_client: yfinance bulk attempt %d/3 failed — retrying in 5s: %s",
+                            _attempt + 1, exc,
+                        )
+                        await asyncio.sleep(5.0)
+                    else:
+                        logger.error("data_client: yfinance bulk failed after 3 attempts: %s", exc)
+            results.update(yf_quotes)
+            still_failed = [s for s in failed if s not in yf_quotes]
+            if still_failed:
+                logger.error("data_client: all sources failed for: %s", still_failed)
 
         return results
 

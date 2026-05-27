@@ -46,7 +46,7 @@ _FIRESTORE_BATCH_MAX_OPS = 450  # stay under Firestore's 500-op batch limit
 _INDUSTRY_LOCK = Semaphore(1)  # serialize concurrent cache-miss rebuilds
 _QUOTES_LOCK = Semaphore(1)    # single-flight for quote rebuilds
 _QUOTE_CACHE_TTL_SECONDS = 60  # re-fetch Finnhub at most once per minute
-_ETF_FETCH_SEMAPHORE = Semaphore(5)  # limit concurrent Finnhub calls to 5 to avoid rate limiting
+_ETF_FETCH_SEMAPHORE = Semaphore(8)  # limit concurrent Finnhub calls; paired with 0.5s sleep to stay under 60/min
 
 # Industries → ETF, organized by sector group
 INDUSTRIES: dict[str, dict[str, str]] = {
@@ -185,12 +185,14 @@ async def get_industry_quotes() -> dict:
             return cached
 
         async def fetch_one(industry: str, sector: str, etf: str):
-            try:
-                quote = await _fetch_quote_with_fallback(client, etf)
-                return industry, {"sector": sector, "etf": etf, **quote}
-            except Exception as exc:
-                logger.error("industry_quotes: all sources failed for %s (%s): %s", industry, etf, exc)
-                return industry, {"sector": sector, "etf": etf, "error": str(exc)}
+            async with _ETF_FETCH_SEMAPHORE:
+                await asyncio.sleep(0.5)
+                try:
+                    quote = await _fetch_quote_with_fallback(client, etf)
+                    return industry, {"sector": sector, "etf": etf, **quote}
+                except Exception as exc:
+                    logger.error("industry_quotes: all sources failed for %s (%s): %s", industry, etf, exc)
+                    return industry, {"sector": sector, "etf": etf, "error": str(exc)}
 
         async with httpx.AsyncClient(timeout=15) as client:
             tasks = [
@@ -263,6 +265,7 @@ async def get_industry_data(enrich_av: bool = False, force: bool = False) -> dic
         # Step 1: fetch all quotes (Finnhub → yfinance per symbol)
         async def fetch_one(industry: str, sector: str, etf: str):
             async with _ETF_FETCH_SEMAPHORE:
+                await asyncio.sleep(0.5)
                 try:
                     quote = await _fetch_quote_with_fallback(client, etf)
                     return industry, {"sector": sector, "etf": etf, **quote}
