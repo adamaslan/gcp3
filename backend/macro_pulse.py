@@ -1,6 +1,7 @@
 """Macro Pulse: VIX, bonds, dollar, gold, oil — macro regime signal."""
 import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
 import httpx
@@ -10,6 +11,42 @@ from firestore import get_cache, set_cache
 from data_client import get_finnhub_metrics
 
 logger = logging.getLogger(__name__)
+
+_YF_EXECUTOR = ThreadPoolExecutor(max_workers=2)
+
+# yfinance symbols for macro indicators where Finnhub returns c=0.
+# Finnhub's free /quote endpoint cannot price raw indices (VIX, DXY) and
+# returns c=0. These yfinance symbols are used as a fallback when the primary
+# Finnhub proxy also fails (e.g. VIXY after hours, UUP on thin-volume days).
+_YF_MACRO_SYMBOLS: dict[str, str] = {
+    "VIX": "^VIX",
+    "DXY": "DX-Y.NYB",
+}
+
+
+def _yf_macro_sync(yf_symbol: str) -> dict:
+    import requests
+    import yfinance as yf
+    from data_client import _YF_USER_AGENT
+    session = requests.Session()
+    session.headers.update({"User-Agent": _YF_USER_AGENT})
+    ticker = yf.Ticker(yf_symbol, session=session)
+    hist = ticker.history(period="2d")
+    if hist.empty:
+        raise ValueError(f"yfinance: no data for {yf_symbol}")
+    close_today = float(hist["Close"].iloc[-1])
+    close_prev = float(hist["Close"].iloc[-2]) if len(hist) > 1 else close_today
+    change = round(close_today - close_prev, 2)
+    change_pct = round((change / close_prev) * 100, 2) if close_prev else 0.0
+    return {
+        "price": round(close_today, 2),
+        "change_pct": change_pct,
+        "change": change,
+        "high": round(float(hist["High"].iloc[-1]), 2),
+        "low": round(float(hist["Low"].iloc[-1]), 2),
+        "source": "yfinance",
+    }
+
 
 # Macro proxy ETFs / tickers
 # VIX and DXY are indices — Finnhub's free /quote endpoint does not price
@@ -134,9 +171,17 @@ async def get_macro_pulse() -> dict:
             q = await _fetch_quote(client, meta["ticker"])
             return key, {**meta, **q}
         except ValueError as exc:
-            # Expected when an indicator has no Finnhub price data — log at
-            # WARNING, not ERROR; the indicator is dropped, pulse still serves.
-            logger.warning("macro_pulse: no data for %s — %s", key, exc)
+            # Finnhub proxy returned c=0 — try yfinance for known index symbols.
+            yf_symbol = _YF_MACRO_SYMBOLS.get(key)
+            if yf_symbol:
+                try:
+                    loop = asyncio.get_running_loop()
+                    yf_q = await loop.run_in_executor(_YF_EXECUTOR, _yf_macro_sync, yf_symbol)
+                    logger.info("macro_pulse: yfinance fallback ok key=%s yf=%s", key, yf_symbol)
+                    return key, {**meta, **yf_q}
+                except Exception as yf_exc:
+                    logger.warning("macro_pulse: yfinance fallback failed key=%s yf=%s: %s", key, yf_symbol, yf_exc)
+            logger.warning("macro_pulse failed %s: %s", key, exc)
             return key, {**meta, "error": str(exc)}
         except Exception as exc:
             logger.error("macro_pulse failed %s: %s", key, exc)
