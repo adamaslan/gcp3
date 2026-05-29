@@ -61,7 +61,6 @@ _AV_ANALYTICS_BASE = "https://www.alphavantage.co/query"
 _KEY_PATTERN = re.compile(r"token=[^&\s]+")
 
 # Finnhub: stay under 30 req/s hard limit
-_FH_SEMAPHORE = asyncio.Semaphore(25)
 _FH_REQUEST_DELAY = 0.05  # 50ms → ~20 req/s max under full concurrency
 # Jittered 429 retry backoff — avoids a synchronized retry herd.
 _FH_429_BACKOFF_MIN = 2.0
@@ -75,9 +74,27 @@ _AV_SYMBOLS_PER_CALL = 5
 # Semaphore caps concurrent yfinance calls to avoid rapid-burst 429s.
 # Target: ~40–80 req/min (well under the ~100–200/min threshold).
 _YF_EXECUTOR = ThreadPoolExecutor(max_workers=4)
-_YF_SEMAPHORE = asyncio.Semaphore(4)
 _YF_DELAY_MIN = 0.5   # seconds — randomized delay mimics human behavior
 _YF_DELAY_MAX = 1.5
+
+# Semaphores are lazy-initialized to avoid binding to the wrong event loop
+# when the module is imported at startup before an asyncio loop is running.
+_FH_SEMAPHORE: asyncio.Semaphore | None = None
+_YF_SEMAPHORE: asyncio.Semaphore | None = None
+
+
+def _fh_semaphore() -> asyncio.Semaphore:
+    global _FH_SEMAPHORE
+    if _FH_SEMAPHORE is None:
+        _FH_SEMAPHORE = asyncio.Semaphore(25)
+    return _FH_SEMAPHORE
+
+
+def _yf_semaphore() -> asyncio.Semaphore:
+    global _YF_SEMAPHORE
+    if _YF_SEMAPHORE is None:
+        _YF_SEMAPHORE = asyncio.Semaphore(4)
+    return _YF_SEMAPHORE
 # Real browser User-Agent reduces bot-detection risk
 _YF_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
@@ -156,7 +173,7 @@ async def finnhub_get(
     - Retries once on HTTP 429 with a jittered 2–4s backoff.
     """
     global _fh_429_count, _fh_429_since
-    async with _FH_SEMAPHORE:
+    async with _fh_semaphore():
         await asyncio.sleep(_FH_REQUEST_DELAY)
         try:
             r = await client.get(
@@ -509,7 +526,7 @@ async def get_quote(symbol: str, client: httpx.AsyncClient | None = None) -> dic
             return await _finnhub_quote(c, symbol)
         except Exception as fh_exc:
             logger.warning("data_client: Finnhub failed for %s (%s) — trying yfinance", symbol, fh_exc)
-            async with _YF_SEMAPHORE:
+            async with _yf_semaphore():
                 await asyncio.sleep(random.uniform(_YF_DELAY_MIN, _YF_DELAY_MAX))
                 loop = asyncio.get_running_loop()
                 return await loop.run_in_executor(_YF_EXECUTOR, _yf_quote_sync, symbol)
@@ -547,7 +564,7 @@ async def get_quotes(
             yf_quotes: dict[str, dict] = {}
             for _attempt in range(3):
                 try:
-                    async with _YF_SEMAPHORE:
+                    async with _yf_semaphore():
                         await asyncio.sleep(random.uniform(_YF_DELAY_MIN, _YF_DELAY_MAX))
                         loop = asyncio.get_running_loop()
                         yf_quotes = await loop.run_in_executor(_YF_EXECUTOR, _yf_bulk_sync, failed)

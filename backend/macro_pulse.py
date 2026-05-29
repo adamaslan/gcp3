@@ -25,8 +25,12 @@ _YF_MACRO_SYMBOLS: dict[str, str] = {
 
 
 def _yf_macro_sync(yf_symbol: str) -> dict:
+    import requests
     import yfinance as yf
-    ticker = yf.Ticker(yf_symbol)
+    from data_client import _YF_USER_AGENT
+    session = requests.Session()
+    session.headers.update({"User-Agent": _YF_USER_AGENT})
+    ticker = yf.Ticker(yf_symbol, session=session)
     hist = ticker.history(period="2d")
     if hist.empty:
         raise ValueError(f"yfinance: no data for {yf_symbol}")

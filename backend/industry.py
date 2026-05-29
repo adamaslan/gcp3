@@ -14,7 +14,6 @@ Permanent storage (etf_store):
   - Populates industry_cache collection consumed by industry_returns.py
 """
 import asyncio
-from asyncio import Semaphore
 import logging
 from datetime import date, datetime, timezone, timedelta
 from math import floor
@@ -43,10 +42,35 @@ import etf_store
 logger = logging.getLogger(__name__)
 
 _FIRESTORE_BATCH_MAX_OPS = 450  # stay under Firestore's 500-op batch limit
-_INDUSTRY_LOCK = Semaphore(1)  # serialize concurrent cache-miss rebuilds
-_QUOTES_LOCK = Semaphore(1)    # single-flight for quote rebuilds
 _QUOTE_CACHE_TTL_SECONDS = 60  # re-fetch Finnhub at most once per minute
-_ETF_FETCH_SEMAPHORE = Semaphore(8)  # limit concurrent Finnhub calls; paired with 0.5s sleep to stay under 60/min
+
+# Lazy-initialized semaphores: module-level asyncio.Semaphore() binds to
+# whatever event loop is running at import time, which may not be the loop
+# that actually services requests (FastAPI creates its own loop on startup).
+_INDUSTRY_LOCK: asyncio.Semaphore | None = None
+_QUOTES_LOCK: asyncio.Semaphore | None = None
+_ETF_FETCH_SEMAPHORE: asyncio.Semaphore | None = None
+
+
+def _industry_lock() -> asyncio.Semaphore:
+    global _INDUSTRY_LOCK
+    if _INDUSTRY_LOCK is None:
+        _INDUSTRY_LOCK = asyncio.Semaphore(1)
+    return _INDUSTRY_LOCK
+
+
+def _quotes_lock() -> asyncio.Semaphore:
+    global _QUOTES_LOCK
+    if _QUOTES_LOCK is None:
+        _QUOTES_LOCK = asyncio.Semaphore(1)
+    return _QUOTES_LOCK
+
+
+def _etf_fetch_semaphore() -> asyncio.Semaphore:
+    global _ETF_FETCH_SEMAPHORE
+    if _ETF_FETCH_SEMAPHORE is None:
+        _ETF_FETCH_SEMAPHORE = asyncio.Semaphore(8)
+    return _ETF_FETCH_SEMAPHORE
 
 # Industries → ETF, organized by sector group
 INDUSTRIES: dict[str, dict[str, str]] = {
@@ -179,14 +203,17 @@ async def get_industry_quotes() -> dict:
     if cached := get_cache(cache_key):
         return cached
 
-    async with _QUOTES_LOCK:
+    async with _quotes_lock():
         # Re-check after lock — another coroutine may have already built it
         if cached := get_cache(cache_key):
             return cached
 
         async def fetch_one(industry: str, sector: str, etf: str):
-            async with _ETF_FETCH_SEMAPHORE:
-                await asyncio.sleep(0.5)
+            # Sleep before acquiring so waiting coroutines stagger their entry
+            # times; sleeping inside the semaphore holds the slot while idle
+            # and prevents other coroutines from starting (defeating the point).
+            await asyncio.sleep(0.5)
+            async with _etf_fetch_semaphore():
                 try:
                     quote = await _fetch_quote_with_fallback(client, etf)
                     return industry, {"sector": sector, "etf": etf, **quote}
@@ -252,7 +279,7 @@ async def get_industry_data(enrich_av: bool = False, force: bool = False) -> dic
         logger.info("industry_data: cache_hit key=%s", cache_key)
         return cached
 
-    async with _INDUSTRY_LOCK:
+    async with _industry_lock():
         # Re-check cache after acquiring lock (another coroutine may have built it)
         if not force and (cached := get_cache(cache_key)):
             logger.info("industry_data: cache_hit key=%s (post-lock)", cache_key)
@@ -264,8 +291,11 @@ async def get_industry_data(enrich_av: bool = False, force: bool = False) -> dic
 
         # Step 1: fetch all quotes (Finnhub → yfinance per symbol)
         async def fetch_one(industry: str, sector: str, etf: str):
-            async with _ETF_FETCH_SEMAPHORE:
-                await asyncio.sleep(0.5)
+            # Sleep before acquiring so waiting coroutines stagger their entry
+            # times; sleeping inside the semaphore holds the slot while idle
+            # and prevents other coroutines from starting (defeating the point).
+            await asyncio.sleep(0.5)
+            async with _etf_fetch_semaphore():
                 try:
                     quote = await _fetch_quote_with_fallback(client, etf)
                     return industry, {"sector": sector, "etf": etf, **quote}
