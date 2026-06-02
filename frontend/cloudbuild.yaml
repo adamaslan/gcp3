@@ -1,9 +1,9 @@
 steps:
   - name: gcr.io/cloud-builders/docker
-    args: [build, -t, gcr.io/$PROJECT_ID/gcp3-frontend, .]
+    args: [build, -t, us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/gcp3-frontend, .]
 
   - name: gcr.io/cloud-builders/docker
-    args: [push, gcr.io/$PROJECT_ID/gcp3-frontend]
+    args: [push, us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/gcp3-frontend]
 
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: gcloud
@@ -11,7 +11,7 @@ steps:
       - run
       - deploy
       - gcp3-frontend
-      - --image=gcr.io/$PROJECT_ID/gcp3-frontend
+      - --image=us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/gcp3-frontend
       - --region=us-central1
       - --platform=managed
       - --allow-unauthenticated
@@ -31,4 +31,4 @@ availableSecrets:
       env: FRONTEND_URL
 
 images:
-  - gcr.io/$PROJECT_ID/gcp3-frontend
+  - us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/gcp3-frontend
