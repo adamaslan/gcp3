@@ -287,6 +287,11 @@ async def get_finnhub_metrics(symbols: list[str]) -> dict[str, dict]:
 
 # ── yfinance ──────────────────────────────────────────────────────────────────
 
+# Cloud Run containers may not have a writable home dir for yfinance's tz/cookie
+# cache. Redirect to /tmp so cache writes never fail with PermissionError.
+yf.set_tz_cache_location("/tmp/py-yfinance")
+
+
 def _yf_session() -> "requests.Session":
     """Create an httpx-compatible requests session with a browser User-Agent."""
     import requests
@@ -596,3 +601,82 @@ async def get_quotes(
         return await _fetch_all(client)
     async with httpx.AsyncClient(timeout=15) as c:
         return await _fetch_all(c)
+
+
+# Maximum age (seconds) for a yfinance batch result to be considered fresh.
+_YF_BATCH_MAX_AGE_SECONDS = 600  # 10 min — loose enough for midday snapshots
+
+
+async def get_quotes_yf_batch(
+    symbols: list[str],
+    client: httpx.AsyncClient | None = None,
+) -> dict[str, dict]:
+    """Fetch quotes for many symbols using a single yf.download() batch call.
+
+    Primary path for the A4 midday-yf refresh. Avoids the per-symbol Finnhub
+    fan-out that causes correlated 429s (incident-2026-05-21) by issuing one
+    network request for all symbols at once.
+
+    Validation gate: if the batch returns an empty frame or is missing expected
+    columns, falls back to get_quote() (Finnhub → yfinance) for the gaps only.
+    Every quote is tagged with 'source' and 'fetched_at' so callers can surface
+    freshness in the UI rather than silently serving stale data.
+
+    Args:
+        symbols: Ticker symbols to fetch.
+        client: Optional shared httpx client used for Finnhub gap-fill only.
+
+    Returns:
+        {symbol: quote_dict}. Symbols that failed both batch and gap-fill are absent.
+        Each quote_dict contains: price, change, change_pct, high, low, open,
+        prev_close, source ("yfinance" | "finnhub" | ...), fetched_at (ISO UTC).
+    """
+    if not symbols:
+        return {}
+
+    fetched_at = datetime.now(timezone.utc).isoformat()
+    results: dict[str, dict] = {}
+
+    # Step 1 — single batched yf.download call (runs in thread pool, sync lib)
+    try:
+        loop = asyncio.get_running_loop()
+        raw = await loop.run_in_executor(_YF_EXECUTOR, _yf_bulk_sync, symbols)
+        for sym, quote in raw.items():
+            results[sym] = {**quote, "fetched_at": fetched_at}
+        logger.info(
+            "get_quotes_yf_batch: batch returned %d/%d symbols",
+            len(results), len(symbols),
+        )
+    except Exception as exc:
+        logger.warning("get_quotes_yf_batch: batch download failed (%s) — falling back per-symbol", exc)
+
+    # Step 2 — gap-fill: any symbol the batch missed → Finnhub → yfinance via get_quote
+    missing = [s for s in symbols if s not in results]
+    if missing:
+        logger.info("get_quotes_yf_batch: gap-filling %d missing symbols via get_quote()", len(missing))
+
+        async def _gap_fill(c: httpx.AsyncClient) -> None:
+            tasks = [get_quote(sym, client=c) for sym in missing]
+            outcomes = await asyncio.gather(*tasks, return_exceptions=True)
+            for sym, outcome in zip(missing, outcomes):
+                if isinstance(outcome, Exception):
+                    logger.warning("get_quotes_yf_batch: gap-fill failed for %s: %s", sym, outcome)
+                else:
+                    results[sym] = {**outcome, "fetched_at": fetched_at}
+
+        if client is not None:
+            await _gap_fill(client)
+        else:
+            async with httpx.AsyncClient(timeout=15) as c:
+                await _gap_fill(c)
+
+    if not results:
+        raise RuntimeError(
+            f"get_quotes_yf_batch: all sources failed for all {len(symbols)} symbols"
+        )
+
+    failed = [s for s in symbols if s not in results]
+    if failed:
+        logger.warning("get_quotes_yf_batch: no data for %d symbols: %s", len(failed), failed)
+
+    return results

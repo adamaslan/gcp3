@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 
-from industry import audit_etf_history, compute_returns, get_industry_data, seed_etf_history
+from industry import audit_etf_history, compute_returns, get_industry_data, seed_etf_history, _FLAT as _INDUSTRY_FLAT
 from morning import get_morning_brief
 from screener import get_screener_data, build_screener_cache
 from swing_predictions import get_swing_predictions
@@ -30,7 +30,7 @@ from blog_reviewer import get_blog_review, refresh_blog_review
 from correlation_article import get_correlation_article, refresh_correlation_article
 from story_picker import get_story_article, refresh_story_article
 from firestore import db as firestore_db, write_checkpoint, read_checkpoint
-from data_client import fh_429_stats
+from data_client import fh_429_stats, get_quotes_yf_batch
 from market_calendar import trading_date, is_trading_day
 from datetime import date, datetime, timezone
 from contextlib import asynccontextmanager
@@ -1048,6 +1048,114 @@ async def refresh_intraday(
     total_ms = round((time.perf_counter() - overall_start) * 1000)
     logger.info("POST /refresh/intraday complete total_ms=%d", total_ms)
     return {"status": "refreshed", "stages": stages, "total_ms": total_ms}
+
+
+# ── POST /refresh/midday-yf — A4 yfinance-primary midday refresh (12:00 PM ET) ─
+@app.post("/refresh/midday-yf")
+async def refresh_midday_yf(request: Request) -> dict:
+    """A4 yfinance-primary midday refresh: batches all industry ETF quotes in one
+    yf.download() call, avoiding the per-symbol Finnhub fan-out that causes
+    correlated 429s (incident-2026-05-21).
+
+    Flow:
+        1. Single yf.download() batch for all ~50 industry ETFs
+        2. Finnhub gap-fill only for symbols the batch missed
+        3. Validate completeness — never promote an empty dataset
+        4. Write to gcp3_cache with 'midday_yf_quotes' key (6h TTL)
+        5. Write refresh_state:midday-yf checkpoint
+
+    Returns data_status block (expected/available/failed/partial) so the frontend
+    can render a freshness badge instead of silently serving stale data.
+    """
+    _verify_scheduler(request)
+    logger.info("POST /refresh/midday-yf started")
+
+    if not is_trading_day(trading_date()):
+        logger.info("refresh/midday-yf: skipping — not a trading day")
+        return {"status": "skipped", "reason": "not_trading_day"}
+
+    overall_start = time.perf_counter()
+    today = str(trading_date())
+
+    all_etfs: list[str] = sorted({etf for _, etf in _INDUSTRY_FLAT.values()})
+    expected = len(all_etfs)
+
+    try:
+        quotes = await get_quotes_yf_batch(all_etfs)
+    except Exception as exc:
+        logger.error("refresh/midday-yf: batch+gap-fill failed entirely: %s", exc)
+        write_checkpoint("midday-yf", "fetch_failed", [], ["yf_batch"])
+        raise HTTPException(status_code=503, detail=f"midday-yf: all sources failed: {exc}")
+
+    available = len(quotes)
+    failed_syms = [s for s in all_etfs if s not in quotes]
+    partial = bool(failed_syms)
+
+    if available == 0:
+        logger.error("refresh/midday-yf: zero quotes returned — refusing to promote")
+        write_checkpoint("midday-yf", "fetch_failed", [], ["yf_batch"])
+        raise HTTPException(status_code=503, detail="midday-yf: batch returned zero quotes")
+
+    data_status = {
+        "expected": expected,
+        "available": available,
+        "failed": len(failed_syms),
+        "partial": partial,
+        "failed_symbols": failed_syms,
+    }
+
+    from firestore import set_cache
+    set_cache(
+        "midday_yf_quotes",
+        {"quotes": quotes, "data_status": data_status, "trading_date": today},
+        ttl_hours=6,
+    )
+
+    status = "fetch_partial" if partial else "fetch_ok"
+    write_checkpoint(
+        "midday-yf",
+        status,
+        stages_completed=["yf_batch"],
+        stages_failed=(["gaps"] if partial else []),
+        extra={"data_status": data_status},
+    )
+
+    total_ms = round((time.perf_counter() - overall_start) * 1000)
+    logger.info(
+        "POST /refresh/midday-yf complete status=%s available=%d/%d total_ms=%d",
+        status, available, expected, total_ms,
+    )
+    return {
+        "status": status,
+        "trading_date": today,
+        "data_status": data_status,
+        "total_ms": total_ms,
+    }
+
+
+# ── GET /midday-quotes — Serve the latest midday-yf snapshot ──────────────────
+@app.get("/midday-quotes")
+async def get_midday_quotes() -> dict:
+    """Return the latest yfinance-primary midday quote snapshot.
+
+    Returns the cached midday_yf_quotes document, which includes the full
+    data_status block so the frontend can render freshness badges.
+    Raises 503 if no midday snapshot exists yet for today.
+    """
+    from firestore import get_cache, read_checkpoint
+    cached = get_cache("midday_yf_quotes")
+    if cached is None:
+        raise HTTPException(status_code=503, detail="No midday-yf snapshot available yet")
+    checkpoint = read_checkpoint("midday-yf")
+    return {
+        **cached,
+        "checkpoint_status": checkpoint.get("status") if checkpoint else None,
+        "checkpoint_written_at": (
+            checkpoint.get("written_at").isoformat()
+            if checkpoint and checkpoint.get("written_at")
+            else None
+        ),
+    }
 
 
 # ── POST /refresh/ai-summary — Legacy endpoint (kept for backwards compat) ───
