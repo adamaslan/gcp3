@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 
-from industry import audit_etf_history, compute_returns, get_industry_data, seed_etf_history, _FLAT as _INDUSTRY_FLAT
+from industry import audit_etf_history, compute_returns, get_industry_data, seed_etf_history, INDUSTRIES
 from morning import get_morning_brief
 from screener import get_screener_data, build_screener_cache
 from swing_predictions import get_swing_predictions
@@ -1077,7 +1077,7 @@ async def refresh_midday_yf(request: Request) -> dict:
     overall_start = time.perf_counter()
     today = str(trading_date())
 
-    all_etfs: list[str] = sorted({etf for _, etf in _INDUSTRY_FLAT.values()})
+    all_etfs: list[str] = sorted({etf for sector_dict in INDUSTRIES.values() for etf in sector_dict.values()})
     expected = len(all_etfs)
 
     try:

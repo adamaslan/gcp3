@@ -603,8 +603,6 @@ async def get_quotes(
         return await _fetch_all(c)
 
 
-# Maximum age (seconds) for a yfinance batch result to be considered fresh.
-_YF_BATCH_MAX_AGE_SECONDS = 600  # 10 min — loose enough for midday snapshots
 
 
 async def get_quotes_yf_batch(
