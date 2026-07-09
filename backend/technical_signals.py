@@ -33,7 +33,7 @@ ETF_UNIVERSE: list[str] = [
 ]
 
 
-def _data_quality_score(updated: str | None) -> str:
+def _data_quality_score(updated: object) -> str:
     """Classify data freshness as "fresh" / "stale" / "unknown" from an ISO timestamp.
 
     Reuses the same age-in-hours calculation and STALE_THRESHOLD_HOURS cutoff as
@@ -41,13 +41,17 @@ def _data_quality_score(updated: str | None) -> str:
     /debug-status never disagree about what counts as stale.
 
     Args:
-        updated: ISO-formatted timestamp string, or None if unknown.
+        updated: Expected to be an ISO-formatted timestamp string, but the value
+            comes from a Firestore-backed dict this function doesn't control the
+            origin of at every callsite — typed as `object` and validated below so
+            an unexpected type (e.g. a Firestore Timestamp) degrades to "unknown"
+            instead of raising.
 
     Returns:
-        "unknown" if updated is missing or unparseable, "stale" if older than
-        STALE_THRESHOLD_HOURS, otherwise "fresh".
+        "unknown" if updated is missing, not a string, or unparseable, "stale" if
+        older than STALE_THRESHOLD_HOURS, otherwise "fresh".
     """
-    if not updated:
+    if not isinstance(updated, str) or not updated:
         return "unknown"
     try:
         updated_dt = datetime.fromisoformat(updated)
