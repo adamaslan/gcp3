@@ -11,6 +11,7 @@ Signal logic (pure returns-based, no external API calls):
   Breadth   — rank among all 54 ETFs for each period
 """
 import logging
+import time
 from datetime import date, datetime, timezone
 
 from firestore import get_cache, set_cache
@@ -425,6 +426,7 @@ async def get_technical_signals(symbol: str | None = None) -> dict:
         logger.info("technical_signals cache hit key=%s", cache_key)
         return cached
 
+    started = time.perf_counter()
     logger.info("technical_signals building signals from industry_returns symbol=%s", symbol or "all")
     returns_data = await get_industry_returns()
     industries: list[dict] = returns_data.get("industries", [])
@@ -490,8 +492,18 @@ async def get_technical_signals(symbol: str | None = None) -> dict:
         }
 
     set_cache(cache_key, result, ttl_hours=2)
+    elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+    dq_score = result.get("data_quality_score", "n/a")
     logger.info(
-        "technical_signals built symbol=%s total=%d buys=%d holds=%d sells=%d total_signals=%d regime=%s",
-        symbol or "all", len(ranked), len(buys), len(holds), len(sells), total_signals, regime,
+        "technical_signals built symbol=%s total=%d buys=%d holds=%d sells=%d "
+        "total_signals=%d regime=%s data_quality_score=%s elapsed_ms=%.1f",
+        symbol or "all", len(ranked), len(buys), len(holds), len(sells),
+        total_signals, regime, dq_score, elapsed_ms,
     )
+    if dq_score == "stale":
+        logger.warning(
+            "technical_signals: data_quality_score=stale for symbol=%s — "
+            "signals may be based on outdated industry_cache data",
+            symbol or "all",
+        )
     return result
