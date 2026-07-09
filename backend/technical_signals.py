@@ -19,6 +19,10 @@ from industry_returns import get_industry_returns
 
 logger = logging.getLogger(__name__)
 
+# Bumped whenever the scoring formula in _score_etf changes — lets consumers detect
+# that two runs used different logic even when the underlying returns data is identical.
+ENGINE_VERSION = "technical_signals@1.0.0"
+
 # 54 industry ETFs — single source of truth from industry.py
 ETF_UNIVERSE: list[str] = [
     etf for sector in INDUSTRIES.values() for etf in sector.values()
@@ -366,6 +370,7 @@ def _score_etf(row: dict, rank_1d: int, total: int) -> dict:
         "change_pct": r1d,
         "signals": signals,
         "indicators": {"rsi": None, "macd": None, "adx": None},
+        "engine_version": ENGINE_VERSION,
         "industry": row.get("industry"),
         "returns": returns,
         "52w_high": row.get("52w_high"),
@@ -422,7 +427,12 @@ async def get_technical_signals(symbol: str | None = None) -> dict:
     if symbol and not ranked:
         result = {"date": str(date.today()), "symbol": symbol.upper(), "error": "not found"}
     elif symbol:
-        result = {"date": str(date.today()), "symbols": {ranked[0]["symbol"]: ranked[0]}, "total": 1}
+        result = {
+            "date": str(date.today()),
+            "updated": returns_data.get("updated"),
+            "symbols": {ranked[0]["symbol"]: ranked[0]},
+            "total": 1,
+        }
     else:
         result = {
             "date": str(date.today()),
