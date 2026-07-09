@@ -11,7 +11,7 @@ Signal logic (pure returns-based, no external API calls):
   Breadth   — rank among all 54 ETFs for each period
 """
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
 
 from firestore import get_cache, set_cache
 from industry import INDUSTRIES
@@ -23,10 +23,41 @@ logger = logging.getLogger(__name__)
 # that two runs used different logic even when the underlying returns data is identical.
 ENGINE_VERSION = "technical_signals@1.0.0"
 
+# Mirrors the staleness threshold used in backend/main.py's debug_status endpoint
+# (industry_cache freshness check) so both surfaces agree on what "stale" means.
+STALE_THRESHOLD_HOURS = 25
+
 # 54 industry ETFs — single source of truth from industry.py
 ETF_UNIVERSE: list[str] = [
     etf for sector in INDUSTRIES.values() for etf in sector.values()
 ]
+
+
+def _data_quality_score(updated: str | None) -> str:
+    """Classify data freshness as "fresh" / "stale" / "unknown" from an ISO timestamp.
+
+    Reuses the same age-in-hours calculation and STALE_THRESHOLD_HOURS cutoff as
+    backend/main.py's debug_status industry_cache freshness check, so /signals and
+    /debug-status never disagree about what counts as stale.
+
+    Args:
+        updated: ISO-formatted timestamp string, or None if unknown.
+
+    Returns:
+        "unknown" if updated is missing or unparseable, "stale" if older than
+        STALE_THRESHOLD_HOURS, otherwise "fresh".
+    """
+    if not updated:
+        return "unknown"
+    try:
+        updated_dt = datetime.fromisoformat(updated)
+        if updated_dt.tzinfo is None:
+            updated_dt = updated_dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return "unknown"
+    age_hours = (datetime.now(timezone.utc) - updated_dt).total_seconds() / 3600
+    return "stale" if age_hours > STALE_THRESHOLD_HOURS else "fresh"
+
 
 # 4 representative constituents per ETF — sourced from docs/tickers3.csv
 ETF_CONSTITUENTS: dict[str, list[str]] = {
@@ -430,6 +461,7 @@ async def get_technical_signals(symbol: str | None = None) -> dict:
         result = {
             "date": str(date.today()),
             "updated": returns_data.get("updated"),
+            "data_quality_score": _data_quality_score(returns_data.get("updated")),
             "symbols": {ranked[0]["symbol"]: ranked[0]},
             "total": 1,
         }
@@ -437,6 +469,7 @@ async def get_technical_signals(symbol: str | None = None) -> dict:
         result = {
             "date": str(date.today()),
             "updated": returns_data.get("updated"),
+            "data_quality_score": _data_quality_score(returns_data.get("updated")),
             "total": len(ranked),
             "symbols": {r["symbol"]: r for r in ranked},
             "ranked": ranked,
