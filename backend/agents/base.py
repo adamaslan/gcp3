@@ -82,6 +82,7 @@ class AgentLoop:
         "check_earnings_date",
         "get_correlation",
         "fetch_macro_indicator",
+        "explain_signal",
     ]
 
     def __init__(self, endpoint: str, model: str = "gemini-2.0-flash") -> None:
@@ -291,9 +292,37 @@ async def _fetch_macro_indicator(indicator: str) -> dict:
         return {"indicator": indicator, "error": str(e)}
 
 
+async def _explain_signal(ticker: str) -> dict:
+    """Look up the live scored signal for a ticker so the agent can explain
+    its reasoning (score, action, contributing signal count, data quality)
+    instead of guessing from the LLM's own knowledge.
+    """
+    try:
+        from technical_signals import get_technical_signals
+        data = await get_technical_signals(symbol=ticker)
+        row = (data.get("symbols") or {}).get(ticker.upper())
+        if row is None:
+            return {"ticker": ticker.upper(), "error": "no signal found for this ticker"}
+        return {
+            "ticker": ticker.upper(),
+            "action": row.get("ai_action"),
+            "confluence_score": row.get("confluence_score"),
+            "confidence": row.get("ai_confidence"),
+            "outlook": row.get("ai_outlook"),
+            "bull_count": row.get("bull_count"),
+            "bear_count": row.get("bear_count"),
+            "signal_count": row.get("signal_count"),
+            "data_quality_score": data.get("data_quality_score"),
+            "updated": data.get("updated"),
+        }
+    except Exception as e:
+        return {"ticker": ticker.upper(), "error": str(e)}
+
+
 # Register defaults
 register_tool("fetch_recent_news", _fetch_recent_news)
 register_tool("compute_return", _compute_return)
 register_tool("check_earnings_date", _check_earnings_date)
 register_tool("get_correlation", _get_correlation)
 register_tool("fetch_macro_indicator", _fetch_macro_indicator)
+register_tool("explain_signal", _explain_signal)

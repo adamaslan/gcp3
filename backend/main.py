@@ -38,9 +38,11 @@ from llm.cost_logger import get_daily_stats, top_endpoints_by_cost
 from calibration.fit import load_from_gcs
 from agents.swing_orchestrator import SwingOrchestrator, get_swing_run
 from agents.growth_orchestrator import GrowthOrchestrator, get_growth_run
+from agents.signal_chat_agent import SignalChatAgent
 from compliance.research_only import research_only_header_middleware
 from rag.chat_service import answer_run_question
 from schemas.rag import RagChatRequest
+from schemas.signal_chat import SignalChatRequest, SignalChatResponse
 
 import json as _json
 
@@ -120,7 +122,7 @@ class AgentChatBody(BaseModel):
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "version": APP_VERSION, "tools": 12}
+    return {"status": "ok", "version": APP_VERSION, "tools": 13}
 
 
 @app.get("/debug/status")
@@ -409,6 +411,25 @@ async def read_growth_agent_run(run_id: str) -> dict:
 async def chat_growth_agent_run(run_id: str, body: AgentChatBody) -> dict:
     response = await answer_run_question(RagChatRequest(run_id=run_id, question=body.question, ticker=body.ticker, system="growth", max_chunks=body.max_chunks))
     return response.model_dump(mode="json")
+
+
+@app.post("/signals/{ticker}/chat")
+async def chat_signal(ticker: str, body: SignalChatRequest) -> SignalChatResponse:
+    """Ask a free-form question about one ticker's live signal.
+
+    Interactivity Axis 2 (AI -> app): the agent must call explain_signal to
+    see the real score/action/data-quality before answering, rather than
+    guessing from the LLM's own training data.
+    """
+    ticker = ticker.upper().strip()
+    try:
+        answer, fallback_used, tool_calls = await SignalChatAgent().ask(ticker, body.question)
+        return SignalChatResponse(
+            ticker=ticker, answer=answer, tool_calls=tool_calls, fallback_used=fallback_used,
+        )
+    except Exception as exc:
+        logger.exception("POST /signals/%s/chat failed: %s", ticker, exc)
+        raise HTTPException(status_code=503, detail="Signal chat temporarily unavailable")
 
 
 # ── Earnings Radar (kept — used internally by /market-overview + /macro proxy) ─
