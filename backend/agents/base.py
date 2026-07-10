@@ -301,6 +301,8 @@ async def _explain_signal(ticker: str) -> dict:
     try:
         from technical_signals import get_technical_signals
         data = await get_technical_signals(symbol=ticker)
+        if not isinstance(data, dict):
+            return {"ticker": ticker, "error": "no signal data found"}
         row = (data.get("symbols") or {}).get(ticker)
         if not isinstance(row, dict):
             return {"ticker": ticker, "error": "no signal found for this ticker"}

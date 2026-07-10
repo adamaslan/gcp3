@@ -66,6 +66,24 @@ class SignalChatAgent(AgentLoop):
                 ),
             },
         )
+
+        # The system prompt instructs the model to call explain_signal before
+        # answering, but that's not enforced by the loop itself — a model can
+        # skip straight to a final answer with zero tool calls, which would be
+        # ungrounded/hallucinated signal data. Refuse rather than trust it.
+        if not session.tool_calls:
+            logger.warning(
+                "signal_chat_no_tool_call ticker=%s — model answered without "
+                "calling explain_signal, discarding its response",
+                ticker,
+            )
+            return (
+                "I wasn't able to look up that signal's real data just now — "
+                "please try again.",
+                True,
+                0,
+            )
+
         answer = result.answer if result is not None else (
             "I wasn't able to answer that — try rephrasing your question."
         )
