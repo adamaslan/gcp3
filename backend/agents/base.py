@@ -297,14 +297,15 @@ async def _explain_signal(ticker: str) -> dict:
     its reasoning (score, action, contributing signal count, data quality)
     instead of guessing from the LLM's own knowledge.
     """
+    ticker = ticker.strip().upper()
     try:
         from technical_signals import get_technical_signals
         data = await get_technical_signals(symbol=ticker)
-        row = (data.get("symbols") or {}).get(ticker.upper())
-        if row is None:
-            return {"ticker": ticker.upper(), "error": "no signal found for this ticker"}
+        row = (data.get("symbols") or {}).get(ticker)
+        if not isinstance(row, dict):
+            return {"ticker": ticker, "error": "no signal found for this ticker"}
         return {
-            "ticker": ticker.upper(),
+            "ticker": ticker,
             "action": row.get("ai_action"),
             "confluence_score": row.get("confluence_score"),
             "confidence": row.get("ai_confidence"),
@@ -316,7 +317,7 @@ async def _explain_signal(ticker: str) -> dict:
             "updated": data.get("updated"),
         }
     except Exception as e:
-        return {"ticker": ticker.upper(), "error": str(e)}
+        return {"ticker": ticker, "error": str(e)}
 
 
 # Register defaults
