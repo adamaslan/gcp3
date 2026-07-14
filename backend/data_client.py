@@ -100,13 +100,24 @@ _YF_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (
 
 # ── Firestore ─────────────────────────────────────────────────────────────────
 
-_fs_client: firestore.Client | None = None
+_fs_client = None
 
 
-def _fs() -> firestore.Client:
+def _fs():
+    """Firestore client, or the local SQLite shim when CACHE_BACKEND=sqlite.
+
+    Shares the same on-disk store as firestore.py's db() so local dev sees one
+    coherent cache. (firestore.Increment in _av_increment has no local analog and
+    is dropped by the shim's merge — the AV budget counter simply isn't tracked
+    locally, which is a prod-only concern.)
+    """
     global _fs_client
     if _fs_client is None:
-        _fs_client = firestore.Client(project=os.environ["GCP_PROJECT_ID"])
+        if os.getenv("CACHE_BACKEND", "firestore") == "sqlite":
+            from local_firestore import LocalFirestoreClient
+            _fs_client = LocalFirestoreClient(os.getenv("LOCAL_CACHE_DB", "./local_cache.db"))
+        else:
+            _fs_client = firestore.Client(project=os.environ["GCP_PROJECT_ID"])
     return _fs_client
 
 
