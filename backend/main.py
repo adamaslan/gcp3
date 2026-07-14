@@ -1585,3 +1585,17 @@ async def debug_evals(request: Request) -> dict:
     except Exception as exc:
         logger.exception("GET /debug/evals failed: %s", exc)
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+
+
+if __name__ == "__main__":
+    # Local dev entry point. Prod (Cloud Run / Docker) starts uvicorn via the
+    # container CMD, not this block. Pair with CACHE_BACKEND=sqlite to run without
+    # any GCP project or Firestore access — see run_local.sh.
+    import uvicorn
+
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "8080")),
+        reload=bool(os.getenv("RELOAD")),
+    )
