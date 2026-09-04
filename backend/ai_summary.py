@@ -1,10 +1,10 @@
-"""AI Market Summary: calls Gemini to synthesize all data sources into a daily brief."""
+"""AI Market Summary: calls an LLM to synthesize all data sources into a daily brief."""
 import asyncio
 import logging
 from datetime import date, datetime, timedelta, timezone
 
 from firestore import get_cache, set_cache, delete_cache
-from gemini_client import call_gemini
+from llm.legacy_client import call_llm
 from morning import get_morning_brief
 from sector_rotation import get_sector_rotation
 from macro_pulse import get_macro_pulse
@@ -83,9 +83,9 @@ async def get_ai_summary() -> dict:
 
     prompt = _build_prompt(morning, rotation, macro, screener, news)
 
-    logger.info("ai_summary: calling Gemini gemini-2.0-flash")
-    brief_text = await call_gemini(prompt)
-    logger.info("ai_summary: Gemini response received (%d chars)", len(brief_text))
+    logger.info("ai_summary: calling LLM (OpenRouter primary, Mistral fallback)")
+    brief_text = await call_llm(prompt)
+    logger.info("ai_summary: LLM response received (%d chars)", len(brief_text))
 
     result = {
         "date": str(date.today()),
@@ -99,7 +99,7 @@ async def get_ai_summary() -> dict:
         "sources": ["morning_brief", "sector_rotation", "macro_pulse", "screener", "news_sentiment"],
     }
 
-    # Cache until midnight UTC — one Gemini call per trading day, free tier friendly.
+    # Cache until midnight UTC — one LLM call per trading day, free tier friendly.
     now = datetime.now(timezone.utc)
     tomorrow_midnight = datetime(now.year, now.month, now.day, tzinfo=timezone.utc) + timedelta(days=1)
     ttl_hours = max(1, int((tomorrow_midnight - now).total_seconds() / 3600))

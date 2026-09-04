@@ -26,7 +26,7 @@ from datetime import date, datetime, timedelta, timezone
 import httpx
 
 from firestore import delete_cache, get_cache, get_cache_stale_prev, set_cache
-from gemini_client import call_gemini
+from llm.legacy_client import call_llm
 from morning import get_morning_brief
 from sector_rotation import get_sector_rotation
 from macro_pulse import get_macro_pulse
@@ -805,7 +805,7 @@ def _build_article_prompt(
     sources: dict,
     news_articles: list[dict],
 ) -> str:
-    """Build the Gemini prompt for the correlation article using all 9 data sources."""
+    """Build the LLM prompt for the correlation article using all 9 data sources."""
     focus_section = "\n".join(
         f"  - {p.pair_id}: {p.summary} (signal: {p.signal}, score: {p.score:.2f})"
         for p in focus_pairs[:5]
@@ -932,9 +932,9 @@ INSTRUCTIONS:
 12. Do NOT mention "Gemini", "Finnhub", "GCP", "Firestore", or internal tool names."""
 
 
-async def _call_gemini(prompt: str) -> str:
-    """Delegate to the shared Gemini client (retry + backoff)."""
-    return await call_gemini(prompt)
+async def _call_llm(prompt: str) -> str:
+    """Delegate to the shared LLM client (OpenRouter primary, Mistral fallback) (retry + backoff)."""
+    return await call_llm(prompt)
 
 
 async def refresh_correlation_article() -> dict:
@@ -946,7 +946,7 @@ async def refresh_correlation_article() -> dict:
 
 
 async def get_correlation_article() -> dict:
-    """Get today's correlation article (cached) or generate a new one via Gemini."""
+    """Get today's correlation article (cached) or generate a new one via the LLM."""
     today = date.today()
     cache_key = f"daily_correlation:{today}"
 
@@ -998,10 +998,10 @@ async def get_correlation_article() -> dict:
 
     # Generate article
     prompt = _build_article_prompt(focus_pairs, sources, news_articles)
-    article_text = await _call_gemini(prompt)
-    logger.info("correlation_article: Gemini response received (%d chars)", len(article_text))
+    article_text = await _call_llm(prompt)
+    logger.info("correlation_article: LLM response received (%d chars)", len(article_text))
 
-    # Generate catchy title + SEO slug via Gemini (grounded in focus pair signals)
+    # Generate catchy title + SEO slug via the LLM (grounded in focus pair signals)
     title, slug = await _generate_title_and_slug(focus_pairs, article_text)
 
     # Build result
@@ -1046,10 +1046,10 @@ async def get_correlation_article() -> dict:
 async def _generate_title_and_slug(
     pairs: list[CorrelationResult], article_text: str
 ) -> tuple[str, str]:
-    """Generate a catchy title and SEO-friendly slug via Gemini.
+    """Generate a catchy title and SEO-friendly slug via the LLM.
 
     Uses the same signal context as the rule-based title (divergence/agreement
-    counts, primary pair) but asks Gemini for a more engaging, click-worthy
+    counts, primary pair) but asks the LLM for a more engaging, click-worthy
     headline. Falls back to rule-based title on any error.
     """
     if not pairs:
@@ -1060,7 +1060,7 @@ async def _generate_title_and_slug(
     divergence_count = sum(1 for p in pairs if p.signal == "divergence")
     agreement_count = sum(1 for p in pairs if p.signal == "agreement")
 
-    # Build a concise signal summary as Gemini context (mirrors rule-based logic)
+    # Build a concise signal summary as LLM context (mirrors rule-based logic)
     if divergence_count >= 3:
         signal_context = f"{divergence_count} of {len(pairs)} pairs show divergence — signals and fundamentals are pulling apart"
     elif agreement_count >= 3:
@@ -1104,7 +1104,7 @@ async def _generate_title_and_slug(
     )
 
     try:
-        response = await _call_gemini(title_prompt)
+        response = await _call_llm(title_prompt)
         lines = {
             line.split(":", 1)[0].strip().upper(): line.split(":", 1)[1].strip()
             for line in response.strip().splitlines()
@@ -1114,9 +1114,9 @@ async def _generate_title_and_slug(
         slug = re.sub(r'[^a-z0-9-]', '', lines.get("SLUG", "").strip().strip("\"'").lower().replace(" ", "-"))
         # Validate: non-empty, reasonable length
         if title and slug and len(title) <= 120 and len(slug) <= 80:
-            logger.info("correlation_article: Gemini title=%s slug=%s", title, slug)
+            logger.info("correlation_article: LLM title=%s slug=%s", title, slug)
             return title, slug
-        logger.warning("correlation_article: Gemini title/slug out of spec — falling back")
+        logger.warning("correlation_article: LLM title/slug out of spec — falling back")
     except Exception as exc:
         logger.warning("correlation_article: title generation failed: %s — falling back", exc)
 
@@ -1129,7 +1129,7 @@ async def _generate_title_and_slug(
 def _generate_title_from_pairs(pairs: list[CorrelationResult]) -> str:
     """Generate a rule-based article title from the focus correlation pairs.
 
-    Used as fallback when Gemini title generation fails.
+    Used as fallback when LLM title generation fails.
     """
     if not pairs:
         return "Market Patterns Across Data Sources"

@@ -1,9 +1,9 @@
-"""Blog Reviewer: Gemini reads today's blog post and produces 3-5 improvement suggestions."""
+"""Blog Reviewer: an LLM reads today's blog post and produces 3-5 improvement suggestions."""
 import logging
 from datetime import date, datetime, timedelta, timezone
 
 from firestore import delete_cache, get_cache, set_cache
-from gemini_client import call_gemini
+from llm.legacy_client import call_llm
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ REVIEW_FOCUS = [
 
 
 def _build_review_prompt(blog: dict) -> str:
-    """Build the Gemini prompt for reviewing today's blog post."""
+    """Build the LLM prompt for reviewing today's blog post."""
     return f"""You are a senior finance content editor. Review the following blog post and provide 3-5 specific, actionable improvement suggestions.
 
 BLOG DATE: {blog['date']}
@@ -38,13 +38,13 @@ INSTRUCTIONS:
 - Format as clean markdown."""
 
 
-async def _call_gemini_review(prompt: str) -> str:
-    """Delegate to the shared Gemini client (retry + backoff)."""
-    return await call_gemini(prompt)
+async def _call_llm_review(prompt: str) -> str:
+    """Delegate to the shared LLM client (OpenRouter primary, Mistral fallback) (retry + backoff)."""
+    return await call_llm(prompt)
 
 
 async def get_blog_review() -> dict:
-    """Get today's blog review (cached) or generate a new one via Gemini."""
+    """Get today's blog review (cached) or generate a new one via the LLM."""
     today = date.today()
     cache_key = f"blog_review:{today}"
 
@@ -60,8 +60,8 @@ async def get_blog_review() -> dict:
 
     logger.info("blog_review cache miss — generating review for %s", today)
     prompt = _build_review_prompt(blog)
-    review_text = await _call_gemini_review(prompt)
-    logger.info("blog_review: Gemini response received (%d chars)", len(review_text))
+    review_text = await _call_llm_review(prompt)
+    logger.info("blog_review: LLM response received (%d chars)", len(review_text))
 
     result = {
         "date": str(today),

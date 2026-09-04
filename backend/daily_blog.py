@@ -1,15 +1,15 @@
-"""Daily Blog Generator: Gemini picks a theme from the 48-topic catalog and writes
+"""Daily Blog Generator: an LLM picks a theme from the 48-topic catalog and writes
 a short, engaging finance blog post grounded in that day's live market data.
 
 Runs once per day via Cloud Scheduler (after /refresh/all populates caches).
-Cached in Firestore with a to-midnight TTL so only one Gemini call per day.
+Cached in Firestore with a to-midnight TTL so only one LLM call per day.
 """
 import asyncio
 import logging
 from datetime import date, datetime, timedelta, timezone
 
 from firestore import get_cache, set_cache, delete_cache
-from gemini_client import call_gemini
+from llm.legacy_client import call_llm
 from morning import get_morning_brief
 from sector_rotation import get_sector_rotation
 from macro_pulse import get_macro_pulse
@@ -93,7 +93,7 @@ def _pick_theme_index(today: date) -> int:
 
 
 def _build_blog_prompt(theme: dict[str, str], market_snapshot: dict) -> str:
-    """Build the Gemini prompt for today's blog post."""
+    """Build the LLM prompt for today's blog post."""
     return f"""You are a witty, insightful finance blogger who writes for retail investors and trading enthusiasts. Write a short, engaging blog post (400-600 words) on the following theme, grounded in today's live market data.
 
 THEME: "{theme['title']}"
@@ -125,7 +125,7 @@ INSTRUCTIONS:
 async def _gather_market_snapshot() -> dict:
     """Fetch all live data sources concurrently and extract key fields.
 
-    Includes Massive top movers for enriched Gemini context.
+    Includes Massive top movers for enriched LLM context.
     """
     morning, rotation, macro, screener, news = await asyncio.gather(
         get_morning_brief(),
@@ -165,9 +165,9 @@ async def _gather_market_snapshot() -> dict:
     }
 
 
-async def _call_gemini(prompt: str) -> str:
-    """Delegate to the shared Gemini client (retry + backoff)."""
-    return await call_gemini(prompt)
+async def _call_llm(prompt: str) -> str:
+    """Delegate to the shared LLM client (OpenRouter primary, Mistral fallback) (retry + backoff)."""
+    return await call_llm(prompt)
 
 
 async def refresh_daily_blog() -> dict:
@@ -179,7 +179,7 @@ async def refresh_daily_blog() -> dict:
 
 
 async def get_daily_blog() -> dict:
-    """Get today's blog post (cached) or generate a new one via Gemini."""
+    """Get today's blog post (cached) or generate a new one via the LLM."""
     today = date.today()
     cache_key = f"daily_blog:{today}"
 
@@ -193,8 +193,8 @@ async def get_daily_blog() -> dict:
     snapshot = await _gather_market_snapshot()
     prompt = _build_blog_prompt(theme, snapshot)
 
-    blog_text = await _call_gemini(prompt)
-    logger.info("daily_blog: Gemini response received (%d chars)", len(blog_text))
+    blog_text = await _call_llm(prompt)
+    logger.info("daily_blog: LLM response received (%d chars)", len(blog_text))
 
     result = {
         "date": str(today),

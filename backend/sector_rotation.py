@@ -1,13 +1,13 @@
 """Sector Rotation: momentum scores across 11 GICS sectors + AI regime."""
 import asyncio
 import logging
-import os
 from datetime import date
 
 import httpx
 
 from data_client import finnhub_get
 from firestore import get_cache, set_cache
+from llm.legacy_client import call_llm
 
 logger = logging.getLogger(__name__)
 
@@ -71,28 +71,16 @@ SECTORS RANKED BY MOMENTUM (highest to lowest):
 Focus on: (1) what the rotation pattern signals about investor risk appetite, (2) which themes are driving leadership, (3) one tactical implication. Be specific and confident."""
 
 
-async def _gemini_rotation_analysis(ranked: list[dict]) -> str:
-    """Call Gemini for a real AI rotation narrative; fall back to rule-based if unavailable."""
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        logger.warning("sector_rotation: GEMINI_API_KEY not set, using rule-based analysis")
-        return _rule_based_rotation_analysis(ranked)
-
+async def _ai_rotation_analysis(ranked: list[dict]) -> str:
+    """Call the shared LLM client (OpenRouter primary, Mistral fallback) for
+    a real AI rotation narrative; fall back to rule-based if both fail."""
     prompt = _build_rotation_prompt(ranked)
-    url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        "gemini-2.0-flash:generateContent"
-    )
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.post(url, json=payload, headers={"x-goog-api-key": api_key})
-            resp.raise_for_status()
-            text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-            logger.info("sector_rotation: Gemini response received (%d chars)", len(text))
-            return text.strip()
+        text = await call_llm(prompt)
+        logger.info("sector_rotation: LLM response received (%d chars)", len(text))
+        return text.strip()
     except Exception as exc:
-        logger.error("sector_rotation: Gemini call failed: %s", exc)
+        logger.error("sector_rotation: LLM call failed: %s", exc)
         return _rule_based_rotation_analysis(ranked)
 
 
@@ -130,9 +118,9 @@ async def get_sector_rotation(force_rule_based: bool = False) -> dict:
     """Fetch and rank 11 GICS sector ETFs by momentum score.
 
     Args:
-        force_rule_based: If True, skip the Gemini API call and use rule-based
+        force_rule_based: If True, skip the AI call and use rule-based
             analysis. Used by the EOD scheduler refresh to avoid a 3rd daily
-            Gemini call when the midday cache has already expired.
+            LLM call when the midday cache has already expired.
     """
     cache_key = f"sector_rotation:{date.today()}"
     if cached := get_cache(cache_key):
@@ -163,10 +151,10 @@ async def get_sector_rotation(force_rule_based: bool = False) -> dict:
     laggards = ranked[max(n - 3, mid):] if n >= 2 else ranked[-1:]
 
     if force_rule_based:
-        logger.info("sector_rotation: skipping Gemini (force_rule_based=True)")
+        logger.info("sector_rotation: skipping AI call (force_rule_based=True)")
         ai_analysis = _rule_based_rotation_analysis(ranked)
     else:
-        ai_analysis = await _gemini_rotation_analysis(ranked)
+        ai_analysis = await _ai_rotation_analysis(ranked)
 
     result = {
         "date": str(date.today()),
