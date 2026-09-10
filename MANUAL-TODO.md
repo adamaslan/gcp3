@@ -36,23 +36,32 @@ variable, never the value.
   period while cold-starting back up — expected recovery behavior after a
   project reactivation, not a second fault.
 
-### Cloud Run cannot sustain an instance after the billing reactivation
-- **From**: 2026-09-10, immediately after billing was restored
-- **Blocked on**: a quota/throttle check in the Cloud Console for Cloud Run on
-  this project, or simply more time for the reactivation to settle.
-- **Why it can't be code**: the application is fine. A `/macro-pulse` request
-  returned **200 OK** at 21:38:43Z, then the instance shut down and every
-  request since has been `429 Rate exceeded` with
-  `The request was aborted because there was no available instance`.
-  The scaling config is not the cause: `minScale: 1`, `maxScale: 5`,
-  `containerConcurrency: 80` — a single request should never exhaust that.
-  This is Google Frontend refusing to scale the service up, which is
-  consistent with a post-reactivation quota restriction.
-- **Unblocks**: the cloud backend serving again, and with it the Vercel
-  frontend and the 8 scheduler jobs (all ENABLED and now firing against a
-  service that 429s).
-- **What to check**: Cloud Run instance quota for the project and region, and
-  whether the 429s clear on their own over a few hours.
+### Cloud Run dies under a cold-cache request storm after the outage
+- **From**: 2026-09-10, after billing was restored
+- **Blocked on**: a resource/concurrency decision — raise memory above 512Mi,
+  raise `maxScale` above 5, and/or warm the caches in a controlled order before
+  exposing the service to general traffic.
+- **Why it is not a code bug**: the deployed revision is **fine**. In the one
+  window where an instance lived (21:38:28-21:38:53Z) it served
+  `/industry-returns`, `/industry-intel` and `/signals` all 200 — `/signals`
+  built 54 symbols and 255 signals off the refreshed data. It then died, and
+  every request since is `429 Rate exceeded` / `no available instance`.
+- **What is actually happening**: two days of outage left **every cache key
+  cold**. On the first instance `morning_brief`, `sector_rotation`,
+  `macro_pulse`, `screener` and `news_sentiment` all cache-missed *at once* and
+  fanned out to Finnhub concurrently. The service is `memory=512Mi`, `cpu=1`,
+  `maxScale=5`, `containerConcurrency=80`, `timeout=300`. That burst kills the
+  instance; the next request finds none; callers retry; the retries deny it a
+  quiet start. A thundering herd on cold cache — a self-inflicted recovery
+  storm, not an external limit.
+- **Ruled out — NOT a project-wide quota throttle**: two sibling Cloud Run
+  services in the same project and region (`technical-analysis-api`,
+  `technical-analysis-mcp`) return 200 throughout. An earlier revision of this
+  entry blamed post-reactivation quota restriction; **that was wrong.**
+- **Ruled out — Finnhub is not the problem**: `/quote` returns 200 OK all
+  through those logs. Only `/stock/candle` is paid-tier.
+- **Unblocks**: the cloud backend serving again, and the 8 scheduler jobs that
+  are ENABLED and firing at a service that 429s.
 - **Not urgent for data**: tracker data is current through 2026-09-10 via the
   local path, which needs neither Cloud Run nor billing.
 - **Added**: 2026-09-10
