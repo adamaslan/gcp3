@@ -20,3 +20,12 @@ docs/
 .geminiignore
 GEMINI.md
 *_output.txt
+
+# env files with suffixes (e.g. .env.local.gcp3) — *.env does not match these
+.env.*
+!.env.example
+!.env.local.example
+
+# editor / build artifacts
+.vscode/
+*.tsbuildinfo
