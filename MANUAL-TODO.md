@@ -7,7 +7,7 @@ variable, never the value.
 
 ---
 
-### Re-enable billing on the `ttb-lang1` GCP project
+### ~~Re-enable billing on the `ttb-lang1` GCP project~~ — RESOLVED 2026-09-10
 - **From**: 2026-09-10 industry-tracker verification
 - **Blocked on**: a billing decision on GCP project `ttb-lang1` — whether
   this was a budget cap, an expired trial, a removed payment method, or a
@@ -29,6 +29,12 @@ variable, never the value.
   keeps tracker data current without Cloud Run. Data is fresh through
   2026-09-10 by that route.
 - **Added**: 2026-09-10
+- **RESOLVED 2026-09-10**: billing was re-enabled later the same day. Confirmed by
+  `gcloud scheduler jobs list` returning all 8 jobs ENABLED (it had returned
+  `BILLING_DISABLED`), and by the `billing is disabled` log entries stopping.
+  Cloud Run then returned 429 "Rate exceeded" / "no available instance" for a
+  period while cold-starting back up — expected recovery behavior after a
+  project reactivation, not a second fault.
 
 ### Create the DNS record for `sectors.nuwrrrld.com`
 - **From**: 2026-09-10 industry-tracker verification
