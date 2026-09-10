@@ -36,6 +36,27 @@ variable, never the value.
   period while cold-starting back up — expected recovery behavior after a
   project reactivation, not a second fault.
 
+### Cloud Run cannot sustain an instance after the billing reactivation
+- **From**: 2026-09-10, immediately after billing was restored
+- **Blocked on**: a quota/throttle check in the Cloud Console for Cloud Run on
+  this project, or simply more time for the reactivation to settle.
+- **Why it can't be code**: the application is fine. A `/macro-pulse` request
+  returned **200 OK** at 21:38:43Z, then the instance shut down and every
+  request since has been `429 Rate exceeded` with
+  `The request was aborted because there was no available instance`.
+  The scaling config is not the cause: `minScale: 1`, `maxScale: 5`,
+  `containerConcurrency: 80` — a single request should never exhaust that.
+  This is Google Frontend refusing to scale the service up, which is
+  consistent with a post-reactivation quota restriction.
+- **Unblocks**: the cloud backend serving again, and with it the Vercel
+  frontend and the 8 scheduler jobs (all ENABLED and now firing against a
+  service that 429s).
+- **What to check**: Cloud Run instance quota for the project and region, and
+  whether the 429s clear on their own over a few hours.
+- **Not urgent for data**: tracker data is current through 2026-09-10 via the
+  local path, which needs neither Cloud Run nor billing.
+- **Added**: 2026-09-10
+
 ### Create the DNS record for `sectors.nuwrrrld.com`
 - **From**: 2026-09-10 industry-tracker verification
 - **Blocked on**: adding the record in Cloudflare (zone for `nuwrrrld.com`)
