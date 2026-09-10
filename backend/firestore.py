@@ -1,10 +1,18 @@
-"""Firestore cache client. TTL-based get/set, no auth config needed on Cloud Run."""
-from google.cloud import firestore
+"""Firestore cache client. TTL-based get/set, no auth config needed on Cloud Run.
+
+Set CACHE_BACKEND=sqlite to run fully locally (no GCP project / Firestore / service
+account) against a SQLite file — see local_firestore.py. Default is firestore (prod
+behavior, unchanged). The google-cloud-firestore import is lazy so a local run never
+needs the library or GCP credentials just to import this module.
+"""
 from datetime import datetime, timedelta, timezone
 import os
 import time
 
 from market_calendar import trading_date
+
+# Cache backend db() returns: "firestore" (prod, default) | "sqlite" (local dev).
+CACHE_BACKEND = os.getenv("CACHE_BACKEND", "firestore")
 
 _db = None
 
@@ -15,10 +23,15 @@ _MEM_CACHE_MAX = 256
 _MEM_CACHE: dict[str, tuple[float, dict]] = {}
 
 
-def db() -> firestore.Client:
+def db():
     global _db
     if _db is None:
-        _db = firestore.Client(project=os.environ["GCP_PROJECT_ID"])
+        if CACHE_BACKEND == "sqlite":
+            from local_firestore import LocalFirestoreClient
+            _db = LocalFirestoreClient(os.getenv("LOCAL_CACHE_DB", "./local_cache.db"))
+        else:
+            from google.cloud import firestore
+            _db = firestore.Client(project=os.environ["GCP_PROJECT_ID"])
     return _db
 
 
