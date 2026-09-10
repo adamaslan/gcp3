@@ -15,7 +15,7 @@ except Exception:  # pragma: no cover - used in minimal local environments
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_LLM_PROVIDER_ORDER = ["openrouter_qwen3", "mistral", "gemini"]
+DEFAULT_LLM_PROVIDER_ORDER = ["openrouter_qwen3", "mistral"]
 
 DEFAULT_GROWTH_SCORING_THRESHOLDS: dict[str, Any] = {
     "revenue_cagr": {"excellent": 0.20, "good": 0.10, "positive": 0.03, "weak": 0.00},

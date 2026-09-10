@@ -17,11 +17,11 @@ from correlation_article import (
     _generate_title_and_slug,
 )
 from firestore import delete_cache, get_cache, get_cache_stale_prev, set_cache
-from gemini_client import call_gemini
+from llm.legacy_client import call_llm
 
 logger = logging.getLogger(__name__)
 
-# Per-key lock prevents concurrent requests from each triggering a separate Gemini call
+# Per-key lock prevents concurrent requests from each triggering a separate LLM call
 # on a cold cache (stampede). Only one generation runs at a time per cache key.
 _story_lock = asyncio.Lock()
 
@@ -125,7 +125,7 @@ _SOURCE_KEY_MAP = {
 
 
 def _build_story_prompt(pair: CorrelationResult, sources: dict) -> str:
-    """Build the Gemini prompt for the Story Picker article."""
+    """Build the LLM prompt for the Story Picker article."""
     # Extract base key and period suffix from source names
     source_a_key = next((v for k, v in _SOURCE_KEY_MAP.items() if pair.source_a.startswith(k)), pair.source_a.replace("-", "_"))
     source_b_key = next((v for k, v in _SOURCE_KEY_MAP.items() if pair.source_b.startswith(k)), pair.source_b.replace("-", "_"))
@@ -216,7 +216,7 @@ TONE RULES:
 
 
 async def get_story_article() -> dict:
-    """Get today's Story Picker article (cached) or generate via Gemini."""
+    """Get today's Story Picker article (cached) or generate via the LLM."""
     today = date.today()
     cache_key = f"daily_story:{today}"
 
@@ -224,7 +224,7 @@ async def get_story_article() -> dict:
         logger.info("story_picker cache hit key=%s", cache_key)
         return cached
 
-    # Lock prevents concurrent cold-cache requests from each triggering Gemini.
+    # Lock prevents concurrent cold-cache requests from each triggering the LLM.
     # The second caller re-checks cache after acquiring and returns if already populated.
     async with _story_lock:
         if cached := get_cache(cache_key):
@@ -258,8 +258,8 @@ async def get_story_article() -> dict:
         )
 
         prompt = _build_story_prompt(extreme_pair, sources)
-        article_text = await call_gemini(prompt)
-        logger.info("story_picker: Gemini response received (%d chars)", len(article_text))
+        article_text = await call_llm(prompt)
+        logger.info("story_picker: LLM response received (%d chars)", len(article_text))
 
         title, slug = await _generate_title_and_slug([extreme_pair], article_text)
 
