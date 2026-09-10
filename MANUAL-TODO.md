@@ -91,3 +91,36 @@ variable, never the value.
 - **Unblocks**: a real two-provider chain. Today, if OpenRouter fails the
   gateway degrades immediately.
 - **Added**: 2026-09-10
+
+### Replace the revoked `openrouter-api-key` secret in Secret Manager
+- **From**: 2026-09-10 Gemini→OpenRouter migration
+- **Blocked on**: a human minting a new OpenRouter key and pushing it to
+  Secret Manager. The stored `openrouter-api-key` value returns **401** from
+  `https://openrouter.ai/api/v1/key`; working copies exist in local `.env`
+  files, so this is a stale/revoked stored value, not a missing account.
+- **Why it can't be code**: the value is a credential. Per the global rule it
+  must go from file to CLI without passing through a chat session — use
+  `secrets-sync`, not a paste.
+- **Unblocks**: every LLM stage in the bake pipeline. With this key dead, the
+  OpenRouter chain fails auth on the first call and each run falls through to
+  the paid Mistral fallback — silently, and at cost.
+- **Note**: the sibling secret `OPENROUTER_API_KEY` (upper-case) exists with
+  **zero enabled versions**. Either populate that one and drop the lower-case
+  name, or delete the empty shell — two names for one credential is how this
+  became ambiguous.
+- **Added**: 2026-09-10
+
+### Bind `OPENROUTER_API_KEY` into the Cloud Run revision
+- **From**: 2026-09-10 Gemini→OpenRouter migration
+- **Blocked on**: a deploy-config decision. Revision `gcp3-backend-00061-qvm`
+  binds FINNHUB, GEMINI, SCHEDULER_SECRET, ALPHA_VANTAGE, MASSIVE, MISTRAL
+  and ZO_HYDRATE — but **not** OPENROUTER_API_KEY. So even with a valid
+  secret, the deployed backend cannot reach OpenRouter at all.
+- **Why it can't be code**: the binding lives in the service/cloudbuild
+  config, and changing it means a deploy someone has to authorize.
+- **Unblocks**: the OpenRouter chain in production. Until then the migration
+  is only live for local runs (`backend/run_local_backup.sh`), which pull the
+  secret directly.
+- **Related**: `GEMINI_API_KEY` can be unbound in the same change — nothing
+  reads it any more.
+- **Added**: 2026-09-10

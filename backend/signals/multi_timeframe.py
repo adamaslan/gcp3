@@ -163,7 +163,7 @@ async def build_timeframe_matrix(
     Args:
         ticker: Stock symbol.
         features_by_timeframe: Map of timeframe string to feature dict.
-        model: Gemini model ID.
+        model: OpenRouter model ID (see openrouter_client.MODEL_CHAIN).
         prompt_version: Prompt version tag.
 
     Returns:
