@@ -30,6 +30,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const data = await res.json();
   return NextResponse.json(data, {
-    headers: { "Cache-Control": "public, s-maxage=900, stale-while-revalidate=1800" },
+    headers: { "Cache-Control": "public, s-maxage=900, stale-while-revalidate=30" },
   });
 }

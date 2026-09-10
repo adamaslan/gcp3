@@ -112,7 +112,7 @@ ETF_CONSTITUENTS: dict[str, list[str]] = {
     "PAVE":  ["DE", "ETN", "TT", "EMR"],
     "XHB":   ["MOD", "OC", "WSM", "TOL"],
     "INDS":  ["EXR", "PSA", "SEGXF", "VICI"],
-    "PBS":   ["GOOG", "BIDU", "SPOT", "LYV"],
+    "XLC":   ["META", "GOOGL", "NFLX", "TMUS"],
     "PEJ":   ["EXPE", "ABNB", "MAR", "LVS"],
     "SOCL":  ["NHNCF", "KUASF", "PINS", "SNAP"],
     "XLU":   ["NEE", "SO", "DUK", "CEG"],

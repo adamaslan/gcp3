@@ -34,7 +34,7 @@ async function getData() {
   const base = process.env.BACKEND_URL;
   if (!base) return null;
   try {
-    const res = await fetch(`${base}/market-overview`, { next: { revalidate: 900 } });
+    const res = await fetch(`${base}/market-overview`);
     if (!res.ok) return null;
     return res.json();
   } catch {
