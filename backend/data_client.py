@@ -95,8 +95,6 @@ def _yf_semaphore() -> asyncio.Semaphore:
     if _YF_SEMAPHORE is None:
         _YF_SEMAPHORE = asyncio.Semaphore(4)
     return _YF_SEMAPHORE
-# Real browser User-Agent reduces bot-detection risk
-_YF_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
 # ── Firestore ─────────────────────────────────────────────────────────────────
 
@@ -303,16 +301,12 @@ async def get_finnhub_metrics(symbols: list[str]) -> dict[str, dict]:
 yf.set_tz_cache_location("/tmp/py-yfinance")
 
 
-def _yf_session() -> "requests.Session":
-    """Create an httpx-compatible requests session with a browser User-Agent."""
-    import requests
-    session = requests.Session()
-    session.headers.update({"User-Agent": _YF_USER_AGENT})
-    return session
-
-
 def _yf_quote_sync(symbol: str) -> dict:
-    ticker = yf.Ticker(symbol, session=_yf_session())
+    # No `session=`: current yfinance rejects a requests.Session with
+    # "Yahoo API requires curl_cffi session" and raises YFDataException before
+    # any request is sent — which silently failed every quote that fell back
+    # here. yfinance supplies its own curl_cffi session with a browser UA.
+    ticker = yf.Ticker(symbol)
     hist = ticker.history(period="2d")
     if hist.empty:
         raise ValueError(f"yfinance: no data for {symbol}")
