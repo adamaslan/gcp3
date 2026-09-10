@@ -1,7 +1,7 @@
 """Portfolio Analyzer: fetch live data for a ticker list + AI allocation insights."""
 import asyncio
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Optional
 
 import httpx
@@ -140,6 +140,7 @@ async def get_portfolio_analysis(tickers: Optional[list[str]] = None) -> dict:
         "holdings": holdings_map,
         "ai_grade": ai["grade"],
         "ai_concentration": ai["concentration"],
+        "ai_num_industries": ai["num_industries"],
         "ai_avg_change_pct": ai["avg_change_pct"],
         "ai_insights": ai["insights"],
         "ai_industry_breakdown": ai["industry_breakdown"],
@@ -149,3 +150,69 @@ async def get_portfolio_analysis(tickers: Optional[list[str]] = None) -> dict:
 
     set_cache(cache_key, result, ttl_hours=1)
     return result
+
+
+def _clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
+def to_health_contract(raw: dict) -> dict:
+    """Adapter: gcp3's `ai_*` analysis fields → the portal's PortfolioHealth
+    contract (`score` 0-100, `factors[]`, `summary`, `generated_at`).
+
+    The two sides share no field names natively (see
+    nuwrrrld-portal docs/wiki-portal/incident-2026-07-26-portfolio-health-endpoint-missing.md) —
+    this function is the only place that bridges them. A missing/zero `score`
+    here renders as Grade F on the portal, so every field must degrade to a
+    defined value, never be omitted.
+
+    Score deliberately excludes `avg_change_pct` (today's price move) — baking
+    daily noise into the headline number would make it jumpy day to day, which
+    defeats the point of a number users check as a habit. Momentum is reported
+    only as an informational factor.
+    """
+    concentration = float(raw.get("ai_concentration") or 0.0)
+    num_industries = int(raw.get("ai_num_industries") or 0)
+    avg_change_pct = float(raw.get("ai_avg_change_pct") or 0.0)
+    insights = raw.get("ai_insights") or []
+
+    diversification_component = min(num_industries, 6) / 6 * 55
+    concentration_component = (1 - concentration) * 45
+    score = round(_clamp(diversification_component + concentration_component, 0, 100))
+
+    def _impact(value: float, positive_at: float, negative_at: float) -> str:
+        if value >= positive_at:
+            return "positive"
+        if value <= negative_at:
+            return "negative"
+        return "neutral"
+
+    factors = [
+        {
+            "name": "Diversification",
+            "score": round(_clamp(min(num_industries, 6) / 6 * 100, 0, 100)),
+            "impact": _impact(num_industries, 5, 2),
+            "description": f"Holdings span {num_industries} industr{'y' if num_industries == 1 else 'ies'}.",
+        },
+        {
+            "name": "Concentration",
+            "score": round(_clamp((1 - concentration) * 100, 0, 100)),
+            "impact": "negative" if concentration > 0.5 else ("positive" if concentration < 0.35 else "neutral"),
+            "description": f"Largest single-industry concentration is {concentration * 100:.0f}% of holdings.",
+        },
+        {
+            "name": "Momentum",
+            "score": round(_clamp(50 + avg_change_pct * 10, 0, 100)),
+            "impact": _impact(avg_change_pct, 0.5, -0.5),
+            "description": f"Portfolio averaged {avg_change_pct:+.2f}% today (informational — not part of the score).",
+        },
+    ]
+
+    summary = " ".join(insights[:3]) if insights else "Not enough holding data to summarize."
+
+    return {
+        "score": score,
+        "factors": factors,
+        "summary": summary,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
