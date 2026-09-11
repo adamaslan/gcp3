@@ -69,9 +69,13 @@ echo "[backup] jobs: $SELECTED"
 # Same names the Cloud Run revision binds. A missing optional key degrades
 # gracefully (see concept-multi-source-fallback); FINNHUB_API_KEY is required.
 # load_secret VAR NAME [ALT_NAME...] - first name that yields a value wins.
-# Alternates exist because some secrets were re-created under a different case
-# and the original name survives as an empty shell with zero enabled versions
-# (e.g. OPENROUTER_API_KEY has none; openrouter-api-key holds the value).
+# Alternates exist because one credential ended up under two secret names.
+# Order matters and is not cosmetic: as of 2026-09-10 the lower-case
+# openrouter-api-key holds a REVOKED value that still returns 200 from
+# Secret Manager and 401 from OpenRouter. Preferring it would load a
+# working-looking key that fails every call, so the canonical upper-case
+# name - which matches both the env var and every other secret here - is
+# tried first.
 load_secret() {
   var="$1"; shift
   for name in "$@"; do
@@ -93,7 +97,7 @@ load_secret GEMINI_API_KEY     GEMINI_API_KEY
 load_secret ALPHA_VANTAGE_KEY  ALPHA_VANTAGE_KEY
 load_secret MASSIVE_API_KEY    MASSIVE_API_KEY
 load_secret MISTRAL_KEY        MISTRAL_KEY
-load_secret OPENROUTER_API_KEY openrouter-api-key OPENROUTER_API_KEY
+load_secret OPENROUTER_API_KEY OPENROUTER_API_KEY openrouter-api-key
 
 [ -n "${FINNHUB_API_KEY:-}" ] || { echo "[backup] FATAL: FINNHUB_API_KEY unavailable - no market data source" >&2; exit 1; }
 

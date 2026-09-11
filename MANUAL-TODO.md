@@ -92,35 +92,33 @@ variable, never the value.
   gateway degrades immediately.
 - **Added**: 2026-09-10
 
-### Replace the revoked `openrouter-api-key` secret in Secret Manager
-- **From**: 2026-09-10 Gemini→OpenRouter migration
-- **Blocked on**: a human minting a new OpenRouter key and pushing it to
-  Secret Manager. The stored `openrouter-api-key` value returns **401** from
-  `https://openrouter.ai/api/v1/key`; working copies exist in local `.env`
-  files, so this is a stale/revoked stored value, not a missing account.
-- **Why it can't be code**: the value is a credential. Per the global rule it
-  must go from file to CLI without passing through a chat session — use
-  `secrets-sync`, not a paste.
-- **Unblocks**: every LLM stage in the bake pipeline. With this key dead, the
-  OpenRouter chain fails auth on the first call and each run falls through to
-  the paid Mistral fallback — silently, and at cost.
-- **Note**: the sibling secret `OPENROUTER_API_KEY` (upper-case) exists with
-  **zero enabled versions**. Either populate that one and drop the lower-case
-  name, or delete the empty shell — two names for one credential is how this
-  became ambiguous.
+### ~~Replace the revoked `openrouter-api-key` secret~~ — RESOLVED 2026-09-10
+- **Done**: the working value was pushed from `backend/.env` into Secret
+  Manager as **`OPENROUTER_API_KEY`** (upper-case, version 1, 73 bytes) via
+  `sync-secrets.sh gcp-secret` — file to `gcloud` stdin, never through a chat
+  session. Verified: the stored version returns 200 from
+  `https://openrouter.ai/api/v1/key`.
+- **Done**: `OPENROUTER_API_KEY` is now bound into Cloud Run (revision
+  `gcp3-backend-00062-h7w`, serving 100%), with a per-secret
+  `secretAccessor` binding for the compute SA to match the pattern the
+  other secrets use.
+- **Still open — the stale lower-case twin.** `openrouter-api-key` still
+  exists with a **revoked** value. It is dangerous precisely because it
+  looks healthy: Secret Manager serves it 200 while OpenRouter rejects it
+  401. Nothing references it any more (the local runner was reordered to
+  prefer the upper-case name). Disabling version 1 is the safe step;
+  deleting the secret is destructive and needs a human decision.
 - **Added**: 2026-09-10
 
-### Bind `OPENROUTER_API_KEY` into the Cloud Run revision
-- **From**: 2026-09-10 Gemini→OpenRouter migration
-- **Blocked on**: a deploy-config decision. Revision `gcp3-backend-00061-qvm`
-  binds FINNHUB, GEMINI, SCHEDULER_SECRET, ALPHA_VANTAGE, MASSIVE, MISTRAL
-  and ZO_HYDRATE — but **not** OPENROUTER_API_KEY. So even with a valid
-  secret, the deployed backend cannot reach OpenRouter at all.
-- **Why it can't be code**: the binding lives in the service/cloudbuild
-  config, and changing it means a deploy someone has to authorize.
-- **Unblocks**: the OpenRouter chain in production. Until then the migration
-  is only live for local runs (`backend/run_local_backup.sh`), which pull the
-  secret directly.
-- **Related**: `GEMINI_API_KEY` can be unbound in the same change — nothing
-  reads it any more.
+### ~~Bind `OPENROUTER_API_KEY` into the Cloud Run revision~~ — RESOLVED 2026-09-10
+- **Done**: bound via `gcloud run services update --update-secrets`. New
+  revision `gcp3-backend-00062-h7w` deployed and serving 100% of traffic;
+  `/health`, `/industry-returns`, `/industry-intel` and `/signals` all
+  verified 200 on it afterwards.
+- **Still open — this does not activate the migration.** That revision runs
+  the **2026-07-12 image**, which predates the Gemini→OpenRouter work. The
+  binding is a prerequisite; production will not actually call OpenRouter
+  until the current code is built and deployed.
+- **Still open — `GEMINI_API_KEY` is still bound** and nothing reads it.
+  Unbind it in the same deploy that ships the new image.
 - **Added**: 2026-09-10

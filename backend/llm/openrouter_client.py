@@ -43,16 +43,23 @@ URL = "https://openrouter.ai/api/v1/chat/completions"
 # tried when an earlier one 429s past its retries or errors. Kept in sync with
 # the portal's FREE_MODEL_CHAIN philosophy (nuwrrrld-portal/lib/openrouter.ts)
 # but static — see the "Open question" note in llm/legacy_client.py.
-# Verified 2026-09-10 against the live /models list and a real json_schema
-# request each: all three return 200 and honor response_format. The previous
-# qwen3/llama-3.3 chain 404s in its entirety — the same retired-model-id
-# failure that took Gemini out, which is why the chain is now checked rather
-# than assumed, and why entries 1 and 2 are deliberately from different
-# providers so one provider's outage cannot empty the chain.
+# Verified 2026-09-10 against the live /models list, with 3-5 real
+# json_schema requests each: all three answered every time. The previous
+# qwen3/llama-3.3 chain 404'd in its entirety — the same retired-model-id
+# failure that took Gemini out — so the chain is now measured, not assumed.
+#
+# All three providers are distinct, so no single provider outage can empty
+# the chain. Latencies are why these three and not others: the free tier
+# also offers nemotron-3.5-lightning, which answers reliably but averages
+# ~91s — past DEFAULT_TIMEOUT_SECONDS below, and past the 180s
+# attemptDeadline the Cloud Scheduler jobs allow for a whole refresh — so
+# it would be a fallback that never completes. Rejected for the same reason:
+# gemma-4-* and ling-3.0-* (429/400 on every attempt), and north-mini-code
+# (fast, but a code model, and these prompts are financial prose).
 MODEL_CHAIN: tuple[str, ...] = (
-    "nvidia/nemotron-3-super-120b-a12b:free",   # 120B, 262k ctx
-    "nex-agi/nex-n2.5-pro:free",                # different provider
-    "nvidia/nemotron-3.5-lightning:free",       # 1M ctx, fastest
+    "nvidia/nemotron-3-super-120b-a12b:free",   # ~1.0-1.6s
+    "nex-agi/nex-n2.5-pro:free",                # ~2.1s
+    "dots-studio/dots-3-note-preview:free",     # ~4.0s
 )
 DEFAULT_MODEL = MODEL_CHAIN[0]
 

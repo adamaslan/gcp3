@@ -33,7 +33,7 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
         "cached_input_per_1m_usd": 0.0,
         "grounded_surcharge_per_request_usd": 0.02,
     },
-    "nvidia/nemotron-3.5-lightning:free": {
+    "dots-studio/dots-3-note-preview:free": {
         "input_per_1m_usd": 0.0,
         "output_per_1m_usd": 0.0,
         "cached_input_per_1m_usd": 0.0,
