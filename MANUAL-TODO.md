@@ -33,8 +33,9 @@ variable, never the value.
   `gcloud scheduler jobs list` returning all 8 jobs ENABLED (it had returned
   `BILLING_DISABLED`), and by the `billing is disabled` log entries stopping.
   Cloud Run then returned 429 "Rate exceeded" / "no available instance" for a
-  period while cold-starting back up — expected recovery behavior after a
-  project reactivation, not a second fault.
+  period while cold-starting back up — **this billing outage is resolved, but
+  that 429 period was NOT expected recovery behavior; see the entry directly
+  below, which is the actual diagnosis.**
 
 ### Cloud Run dies under a cold-cache request storm after the outage
 - **From**: 2026-09-10, after billing was restored
