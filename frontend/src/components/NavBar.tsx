@@ -12,6 +12,7 @@ const NAV_LINKS = [
   { href: "/macro", label: "Macro" },
   { href: "/content", label: "Content" },
   { href: "/content/archive", label: "Archive" },
+  { href: "/ticker-picker", label: "Tickers" },
 ];
 
 function AuthControl() {

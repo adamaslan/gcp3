@@ -103,7 +103,7 @@ INDUSTRIES: dict[str, dict[str, str]] = {
         "Commercial Real Estate": "INDS",
     },
     "Communications & Media": {
-        "Media": "PBS",
+        "Media": "XLC",
         "Entertainment": "PEJ",
         "Social Media": "SOCL",
     },

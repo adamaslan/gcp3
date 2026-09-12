@@ -147,6 +147,9 @@ def set_cache(key: str, value: dict, ttl_hours: int = 1, ttl_seconds: int | None
     """Set cache in both Firestore and in-memory.
 
     Ensures subsequent reads hit in-memory for 60s without Firestore round-trip.
+    Stamps `computed_at` (wall time, via `updated_at`) so the archiver (Tip 5,
+    docs/data-monetization-25-tips.md) can distinguish it from `as_of` (market
+    time), which callers should set on `value["as_of"]` when known.
     """
     now = datetime.now(timezone.utc)
     ttl_delta = timedelta(seconds=ttl_seconds) if ttl_seconds is not None else timedelta(hours=ttl_hours)

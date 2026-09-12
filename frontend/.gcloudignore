@@ -1,0 +1,17 @@
+.gcloudignore
+.git
+.gitignore
+
+# Built by Docker during Cloud Build — never upload
+node_modules/
+.next/
+
+# Local env and Vercel artifacts
+.env*.local
+.vercel/
+vercel_output.txt
+tsconfig.tsbuildinfo
+
+# Admin routes — local only
+src/app/admin/
+src/app/api/admin/

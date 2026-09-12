@@ -6,6 +6,8 @@ import time
 from typing import Optional
 
 import httpx
+import jwt
+import stripe
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -29,10 +31,12 @@ from daily_blog import get_daily_blog, refresh_daily_blog
 from blog_reviewer import get_blog_review, refresh_blog_review
 from correlation_article import get_correlation_article, refresh_correlation_article
 from story_picker import get_story_article, refresh_story_article
+from portfolio_analyzer import get_portfolio_analysis, to_health_contract
 from firestore import db as firestore_db, write_checkpoint, read_checkpoint
+from archiver import archive_expired_docs, ArchiveError
 from data_client import fh_429_stats, get_quotes_yf_batch
 from market_calendar import trading_date, is_trading_day
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from llm.cost_logger import get_daily_stats, top_endpoints_by_cost
 from calibration.fit import load_from_gcs
@@ -96,6 +100,19 @@ async def timed_stage(name: str, stages: dict, completed: list, failed: list):
 
 APP_VERSION = "2.1.0"
 app = FastAPI(title="GCP3 Finance API", version=APP_VERSION)
+
+# ── Stripe config ─────────────────────────────────────────────────────────────
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
+_STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+# Create in Stripe Dashboard → Products → NuWrrrld Financial Pro → $10/mo price
+_STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID", "")
+
+# ── Clerk session verification ────────────────────────────────────────────────
+# Frontend API domain decoded from the (public) Clerk publishable key
+# pk_live_Y2xlcmsubnV3cnJybGQuY29tJA — not a secret, safe to hardcode.
+# Override via CLERK_ISSUER if the instance ever changes.
+_CLERK_ISSUER = os.getenv("CLERK_ISSUER", "https://clerk.nuwrrrld.com")
+_clerk_jwks_client = jwt.PyJWKClient(f"{_CLERK_ISSUER}/.well-known/jwks.json", cache_keys=True)
 
 app.add_middleware(
     CORSMiddleware,
@@ -278,24 +295,33 @@ async def compute_returns_endpoint(request: Request) -> dict:
 # ── Admin: Purge expired cache (safety net for native TTL) ─────────────────────
 @app.post("/admin/purge-cache")
 async def purge_expired_cache(request: Request) -> dict:
-    """Delete expired documents from gcp3_cache collection.
+    """Archive, then delete, expired documents from gcp3_cache collection.
 
     Runs nightly as a safety net alongside native Firestore TTL (Phase 1A).
+    Before each batch is deleted it is first written to the GCS Parquet data
+    lake (see archiver.py / docs/data-monetization-25-tips.md Tips 1-2) so
+    that nightly TTL purge stops silently deleting the sellable history.
     Batches deletes to stay under Firestore's 500-operation batch limit.
     Called by Cloud Scheduler at 2:00 AM ET (6:00 AM UTC).
 
     Returns:
-        {"deleted": int, "timestamp": ISO string}
+        {"deleted": int, "archived": int, "timestamp": ISO string}
     """
     _verify_scheduler(request)
     logger.info("POST /admin/purge-cache triggered")
     now = datetime.now(timezone.utc)
     deleted = 0
-    batch = firestore_db().batch()
-    batch_count = 0
+    archived = 0
+    archive_failed = False
 
     try:
-        # Loop until no more expired docs remain (each pass handles up to 450)
+        # Loop until no more expired docs remain (each pass handles up to 450).
+        # Each page gets its own batch, committed immediately after that
+        # page's archive write succeeds — committing only at a 450-count
+        # threshold (the old logic) left a partial final page's deletes
+        # uncommitted, so the next query re-matched the same still-expired
+        # docs and re-archived + re-queued them every iteration until the
+        # threshold happened to be hit by coincidence.
         while True:
             query = (
                 firestore_db().collection("gcp3_cache")
@@ -305,23 +331,48 @@ async def purge_expired_cache(request: Request) -> dict:
             snaps = list(query.stream())
             if not snaps:
                 break
+
+            try:
+                archived += archive_expired_docs([(snap.id, snap.to_dict()) for snap in snaps])
+            except ArchiveError as exc:
+                # Archive-before-purge contract: a page that didn't reach the
+                # data lake must not be deleted. Stop rather than keep
+                # querying the same still-expired docs — a data-lake outage
+                # should pause the purge, not spin re-attempting archival on
+                # every loop iteration.
+                archive_failed = True
+                logger.error(
+                    "purge-cache: archive failed for a page of %d docs, stopping "
+                    "purge early (archived %d, deleted %d so far this run): %s",
+                    len(snaps), archived, deleted, exc,
+                )
+                break
+
+            batch = firestore_db().batch()
             for snap in snaps:
                 batch.delete(snap.reference)
-                batch_count += 1
                 deleted += 1
-                if batch_count >= 450:
-                    batch.commit()
-                    batch = firestore_db().batch()
-                    batch_count = 0
-
-        if batch_count > 0:
             batch.commit()
 
-        logger.info("purge-cache: deleted %d expired documents", deleted)
-        return {"deleted": deleted, "timestamp": now.isoformat()}
+        logger.info("purge-cache: archived %d, deleted %d expired documents", archived, deleted)
+        result = {"deleted": deleted, "archived": archived, "timestamp": now.isoformat()}
+        if archive_failed:
+            result["archive_failed"] = True
+        return result
     except Exception as exc:
         logger.exception("POST /admin/purge-cache failed: %s", exc)
         raise HTTPException(status_code=503, detail=str(exc))
+
+
+# ── Public read: latest signal digest (safe for Zo to poll) ──────────────────
+@app.get("/api/nwf-digest")
+async def get_nwf_digest() -> dict:
+    """Public read of the latest signal digest — real yfinance/Finnhub-computed
+    signals for Zo (or any consumer) to fetch instead of approximating via web search."""
+    doc = firestore_db().collection("nwf_digest").document("latest").get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="No digest available")
+    return doc.to_dict()
 
 
 # ── Stock Screener (kept — standalone, no overlap) ────────────────────────────
@@ -500,6 +551,39 @@ def _verify_scheduler(request: Request) -> None:
     manual_token = request.headers.get("X-Scheduler-Token")
     if not secret or manual_token != secret:
         raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+def _verify_clerk_session(request: Request) -> str:
+    """Verify a Clerk session JWT from the Authorization header.
+
+    Used by /checkout-session and /billing-portal so the caller's identity
+    (clerk_user_id) is cryptographically derived from a signed session token
+    instead of trusted from the request body — closes the IDOR where any
+    caller could impersonate another account by supplying its ID directly.
+
+    Returns the verified clerk_user_id (JWT `sub` claim). Raises 401 on any
+    missing/invalid/expired/wrong-issuer token.
+    """
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing session token")
+    token = auth_header[len("Bearer "):]
+    try:
+        signing_key = _clerk_jwks_client.get_signing_key_from_jwt(token)
+        claims = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["RS256"],
+            issuer=_CLERK_ISSUER,
+            options={"verify_aud": False},
+        )
+    except jwt.PyJWTError as exc:
+        logger.warning("Clerk session verification failed: %s", exc)
+        raise HTTPException(status_code=401, detail="Invalid session token")
+    clerk_user_id = claims.get("sub")
+    if not clerk_user_id:
+        raise HTTPException(status_code=401, detail="Invalid session token")
+    return clerk_user_id
 
 
 async def _warm_backend2(client: httpx.AsyncClient, path: str) -> dict:
@@ -1503,6 +1587,29 @@ async def ticker_signal_matrix(ticker: str, request: Request) -> dict:
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
 
+# ── GET /api/portfolio/health — deterministic health score ───────────────────
+@app.get("/api/portfolio/health")
+async def portfolio_health(tickers: str = Query("", description="Comma-separated ticker list")) -> dict:
+    """Stateless, ticker-keyed portfolio health score.
+
+    Intentionally takes no Clerk session — this is a pure function of the
+    ticker list (see get_portfolio_analysis's own `portfolio:{tickers}:{date}`
+    cache key). The caller (nuwrrrld-portal) resolves the user's own watchlist
+    from Neon and passes it here; this endpoint has no concept of "whose"
+    portfolio it is, only "which tickers." Falls back to a hardcoded 10-symbol
+    default set if `tickers` is empty — callers must not present that default
+    to a user as their own portfolio.
+    """
+    symbols = [s.strip().upper() for s in tickers.split(",") if s.strip()]
+    logger.info("GET /api/portfolio/health tickers=%s", symbols or "DEFAULT_PORTFOLIO")
+    try:
+        raw = await get_portfolio_analysis(symbols or None)
+        return to_health_contract(raw)
+    except Exception as exc:
+        logger.exception("GET /api/portfolio/health failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+
+
 # ── /debug/calibration — Calibration reliability diagram data ────────────────
 @app.get("/debug/calibration")
 async def debug_calibration(request: Request) -> dict:
@@ -1585,6 +1692,153 @@ async def debug_evals(request: Request) -> dict:
     except Exception as exc:
         logger.exception("GET /debug/evals failed: %s", exc)
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+
+
+# ── Stripe: checkout session ──────────────────────────────────────────────────
+
+class CheckoutRequest(BaseModel):
+    email: str
+    success_url: str = "https://financial.nuwrrrld.com/checkout/success"
+    cancel_url: str = "https://financial.nuwrrrld.com/checkout/cancel"
+
+
+@app.post("/checkout-session")
+async def create_checkout_session(body: CheckoutRequest, request: Request):
+    """Create a Stripe Checkout session for the $10/mo subscription.
+
+    Called by the mobile app after the user taps "Subscribe". Returns a
+    hosted Checkout URL the app opens in an in-app browser.
+
+    clerk_user_id is derived from the verified Clerk session token, never
+    trusted from the request body — otherwise any caller could attribute a
+    paid subscription to an arbitrary account.
+    """
+    clerk_user_id = _verify_clerk_session(request)
+    if not stripe.api_key:
+        raise HTTPException(status_code=503, detail="Stripe not configured")
+    if not _STRIPE_PRICE_ID:
+        raise HTTPException(status_code=503, detail="STRIPE_PRICE_ID not configured")
+
+    try:
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            mode="subscription",
+            line_items=[{"price": _STRIPE_PRICE_ID, "quantity": 1}],
+            customer_email=body.email,
+            metadata={"clerk_user_id": clerk_user_id},
+            success_url=body.success_url + "?session_id={CHECKOUT_SESSION_ID}",
+            cancel_url=body.cancel_url,
+        )
+        logger.info("checkout.session.created user=%s session=%s", clerk_user_id, session.id)
+        return {"url": session.url, "session_id": session.id}
+    except stripe.StripeError as exc:
+        logger.error("stripe checkout failed user=%s error=%s", clerk_user_id, exc)
+        raise HTTPException(status_code=502, detail="Checkout session creation failed")
+
+
+# ── Stripe: webhook ───────────────────────────────────────────────────────────
+
+@app.post("/webhooks/stripe")
+async def stripe_webhook(request: Request):
+    """Verify and process Stripe webhook events.
+
+    Requires STRIPE_WEBHOOK_SECRET env var. Persists subscription state
+    to Firestore under /users/{clerk_user_id}/subscription/current.
+    """
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
+
+    if not _STRIPE_WEBHOOK_SECRET:
+        logger.error("STRIPE_WEBHOOK_SECRET not set — webhook rejected")
+        raise HTTPException(status_code=500, detail="Webhook secret not configured")
+
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, _STRIPE_WEBHOOK_SECRET)
+    except stripe.SignatureVerificationError:
+        logger.warning("stripe webhook signature verification failed")
+        raise HTTPException(status_code=400, detail="Invalid signature")
+    except ValueError:
+        # construct_event raises ValueError on a malformed/non-JSON body, which
+        # would otherwise surface as an unhandled 500 and make Stripe retry a
+        # payload that can never parse.
+        logger.warning("stripe webhook payload was not valid JSON")
+        raise HTTPException(status_code=400, detail="Invalid payload")
+
+    etype = event["type"]
+    data = event["data"]["object"]
+    logger.info("stripe.webhook event=%s", etype)
+
+    if etype == "checkout.session.completed":
+        clerk_user_id = data.get("metadata", {}).get("clerk_user_id")
+        if clerk_user_id:
+            firestore_db().collection("users").document(clerk_user_id)\
+                .collection("subscription").document("current").set({
+                    "status": "active",
+                    "plan": "pro_10_monthly",
+                    "stripe_customer_id": data.get("customer"),
+                    "stripe_subscription_id": data.get("subscription"),
+                    "activated_at": datetime.now(timezone.utc).isoformat(),
+                })
+            logger.info("subscription.activated user=%s customer=%s", clerk_user_id, data.get("customer"))
+
+    elif etype == "customer.subscription.updated":
+        customer_id = data.get("customer")
+        new_status = data.get("status")
+        # Find user doc by stripe_customer_id
+        docs = firestore_db().collection_group("subscription")\
+            .where("stripe_customer_id", "==", customer_id).limit(1).stream()
+        for doc in docs:
+            doc.reference.update({"status": new_status, "updated_at": datetime.now(timezone.utc).isoformat()})
+            logger.info("subscription.updated customer=%s status=%s", customer_id, new_status)
+
+    elif etype == "customer.subscription.deleted":
+        customer_id = data.get("customer")
+        docs = firestore_db().collection_group("subscription")\
+            .where("stripe_customer_id", "==", customer_id).limit(1).stream()
+        for doc in docs:
+            doc.reference.update({"status": "canceled", "canceled_at": datetime.now(timezone.utc).isoformat()})
+            logger.info("subscription.canceled customer=%s", customer_id)
+
+    elif etype == "invoice.payment_failed":
+        logger.warning("invoice.payment_failed customer=%s", data.get("customer"))
+
+    return {"ok": True}
+
+
+# ── Stripe: billing portal ────────────────────────────────────────────────────
+
+class BillingPortalRequest(BaseModel):
+    return_url: str = "https://financial.nuwrrrld.com"
+
+
+@app.post("/billing-portal")
+async def billing_portal(body: BillingPortalRequest, request: Request):
+    """Create a Stripe Billing Portal session for self-serve subscription management.
+
+    stripe_customer_id is looked up server-side from the caller's own
+    subscription doc (keyed by the verified Clerk session), never trusted
+    from the request body — otherwise any caller could open another user's
+    billing portal by supplying their Stripe customer ID.
+    """
+    clerk_user_id = _verify_clerk_session(request)
+    if not stripe.api_key:
+        raise HTTPException(status_code=503, detail="Stripe not configured")
+
+    sub_doc = firestore_db().collection("users").document(clerk_user_id)\
+        .collection("subscription").document("current").get()
+    if not sub_doc.exists or not sub_doc.to_dict().get("stripe_customer_id"):
+        raise HTTPException(status_code=404, detail="No subscription found for this account")
+    stripe_customer_id = sub_doc.to_dict()["stripe_customer_id"]
+
+    try:
+        session = stripe.billing_portal.Session.create(
+            customer=stripe_customer_id,
+            return_url=body.return_url,
+        )
+        return {"url": session.url}
+    except stripe.StripeError as exc:
+        logger.error("stripe billing portal failed customer=%s error=%s", stripe_customer_id, exc)
+        raise HTTPException(status_code=502, detail="Billing portal session creation failed")
 
 
 if __name__ == "__main__":

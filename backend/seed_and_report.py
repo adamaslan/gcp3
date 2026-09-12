@@ -62,16 +62,16 @@ def _finnhub_candles(symbol: str, from_ts: int, to_ts: int) -> list[dict]:
 # ── yfinance ──────────────────────────────────────────────────────────────────
 
 def _yf_fetch(symbol: str, period: str):
-    """Single yfinance attempt with browser User-Agent. No retries."""
-    import requests
+    """Single yfinance attempt. No retries.
+
+    Deliberately passes no `session`: current yfinance rejects a
+    requests.Session ("Yahoo API requires curl_cffi session") and raises
+    YFDataException before any request goes out, which silently disabled the
+    whole fallback leg. yfinance builds its own curl_cffi session with a
+    browser User-Agent already, so the hand-rolled one bought nothing.
+    """
     import yfinance as yf
-    session = requests.Session()
-    session.headers["User-Agent"] = (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    )
-    ticker = yf.Ticker(symbol, session=session)
-    return ticker.history(period=period)
+    return yf.Ticker(symbol).history(period=period)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────

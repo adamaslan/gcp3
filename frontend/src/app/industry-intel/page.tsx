@@ -32,7 +32,7 @@ async function getData() {
   const base = process.env.BACKEND_URL;
   if (!base) return null;
   try {
-    const res = await fetch(`${base}/industry-intel`, { next: { revalidate: 60 } });
+    const res = await fetch(`${base}/industry-intel`);
     if (!res.ok) return null;
     return res.json();
   } catch {

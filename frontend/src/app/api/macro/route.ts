@@ -35,7 +35,7 @@ export async function GET(): Promise<NextResponse> {
     { macro_pulse, earnings_radar },
     {
       headers: {
-        "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=7200",
+        "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=30",
       },
     }
   );

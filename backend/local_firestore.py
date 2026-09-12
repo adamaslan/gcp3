@@ -96,6 +96,14 @@ class _DocumentRef:
     def delete(self) -> None:
         self._store._delete(self._collection, self._id)
 
+    def collection(self, name: str) -> "_CollectionRef":
+        """Subcollection. The kv table is flat, so a subcollection is modelled as
+        the synthetic collection name "<parent>/<doc_id>/<name>" — which is also
+        how Firestore itself addresses one. Used by etf_store.load_history and
+        industry.seed_etf_history for the per-symbol `years` subcollection.
+        """
+        return _CollectionRef(self._store, f"{self._collection}/{self._id}/{name}")
+
 
 class _Query:
     """Chainable query supporting only the (field, op, value) / order_by / limit
@@ -164,6 +172,32 @@ class _CollectionRef:
 
     def where(self, field: str, op: str, value: Any) -> _Query:
         return _Query(self._store, self._collection).where(field, op, value)
+
+    def order_by(self, field: str, direction: str = "ASCENDING") -> _Query:
+        return _Query(self._store, self._collection).order_by(field, direction)
+
+    def limit(self, n: int) -> _Query:
+        return _Query(self._store, self._collection).limit(n)
+
+    def stream(self) -> Iterator[_Snapshot]:
+        """Unfiltered scan of the whole collection.
+
+        _Query.stream() applies no filters when none were added, so this is just
+        that path with an empty filter list. Needed because several callers read
+        a collection with no query at all — industry_returns.get_industry_returns,
+        industry._attach_stored_returns and main.debug_status all do
+        `collection("industry_cache").stream()`. Without this the sqlite backend
+        raised AttributeError and /industry-returns returned 503.
+        """
+        return _Query(self._store, self._collection).stream()
+
+    def list_documents(self) -> Iterator[_DocumentRef]:
+        """Document refs without reading bodies — mirrors the real client's
+        list_documents(), used by industry._attach_stored_returns to find and
+        prune orphaned industry_cache docs.
+        """
+        for doc_id, _ in self._store._read_collection(self._collection):
+            yield _DocumentRef(self._store, self._collection, doc_id)
 
 
 class LocalFirestoreClient:
