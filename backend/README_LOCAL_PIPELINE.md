@@ -137,21 +137,24 @@ result = asyncio.run(sync_technical_signals())
 print(result)
 ```
 
-## Integration with Cloud Scheduler
+## Integration with Cloud Scheduler — not built yet
 
-On Cloud Run, this pipeline is triggered daily at 9:35 AM ET via Cloud Scheduler:
+This section previously described a `nuwrrrld-daily-pipeline` Cloud Scheduler
+job calling a `/refresh/daily` endpoint. **Neither exists.** Verified against
+the live project (`gcloud scheduler jobs list --project=ttb-lang1`): no job
+named `nuwrrrld-daily-pipeline` exists (the real jobs are all `gcp3-*`
+prefixed, e.g. `gcp3-ai-summary-refresh`, `gcp3-premarket-warmup`), and
+`backend/main.py` has no `/refresh/daily` route — `run_full_pipeline()`
+(`firebase_sync.py`) is CLI-only (`python firebase_sync.py [--date YYYY-MM-DD]`),
+never called over HTTP. The service account referenced
+(`nuwrrrld-scheduler@nuwrrrld-prod.iam.gserviceaccount.com`) also names a
+different GCP project (`nuwrrrld-prod`) than the one this backend actually
+runs in (`ttb-lang1`), another sign this section documented a plan rather
+than a deployed state.
 
-```yaml
-# Cloud Scheduler job
-name: nuwrrrld-daily-pipeline
-schedule: "35 13 * * 1-5"  # 1:35 PM UTC = 9:35 AM ET (Mon-Fri)
-http_target:
-  uri: https://nuwrrrld-api.run.app/refresh/daily
-  oidc_token:
-    service_account_email: nuwrrrld-scheduler@nuwrrrld-prod.iam.gserviceaccount.com
-```
-
-The Cloud Run backend endpoint (`/refresh/daily`) calls the same functions as this script.
+Until this integration is actually built, run this pipeline **locally, by
+hand** (the "Quick Start" above), or via `python firebase_sync.py`'s CLI
+directly.
 
 ## Files
 

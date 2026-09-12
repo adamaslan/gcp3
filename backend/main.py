@@ -33,7 +33,7 @@ from correlation_article import get_correlation_article, refresh_correlation_art
 from story_picker import get_story_article, refresh_story_article
 from portfolio_analyzer import get_portfolio_analysis, to_health_contract
 from firestore import db as firestore_db, write_checkpoint, read_checkpoint
-from archiver import archive_expired_docs
+from archiver import archive_expired_docs, ArchiveError
 from data_client import fh_429_stats, get_quotes_yf_batch
 from market_calendar import trading_date, is_trading_day
 from datetime import date, datetime, timedelta, timezone
@@ -312,11 +312,16 @@ async def purge_expired_cache(request: Request) -> dict:
     now = datetime.now(timezone.utc)
     deleted = 0
     archived = 0
-    batch = firestore_db().batch()
-    batch_count = 0
+    archive_failed = False
 
     try:
-        # Loop until no more expired docs remain (each pass handles up to 450)
+        # Loop until no more expired docs remain (each pass handles up to 450).
+        # Each page gets its own batch, committed immediately after that
+        # page's archive write succeeds — committing only at a 450-count
+        # threshold (the old logic) left a partial final page's deletes
+        # uncommitted, so the next query re-matched the same still-expired
+        # docs and re-archived + re-queued them every iteration until the
+        # threshold happened to be hit by coincidence.
         while True:
             query = (
                 firestore_db().collection("gcp3_cache")
@@ -327,22 +332,33 @@ async def purge_expired_cache(request: Request) -> dict:
             if not snaps:
                 break
 
-            archived += archive_expired_docs([(snap.id, snap.to_dict()) for snap in snaps])
+            try:
+                archived += archive_expired_docs([(snap.id, snap.to_dict()) for snap in snaps])
+            except ArchiveError as exc:
+                # Archive-before-purge contract: a page that didn't reach the
+                # data lake must not be deleted. Stop rather than keep
+                # querying the same still-expired docs — a data-lake outage
+                # should pause the purge, not spin re-attempting archival on
+                # every loop iteration.
+                archive_failed = True
+                logger.error(
+                    "purge-cache: archive failed for a page of %d docs, stopping "
+                    "purge early (archived %d, deleted %d so far this run): %s",
+                    len(snaps), archived, deleted, exc,
+                )
+                break
 
+            batch = firestore_db().batch()
             for snap in snaps:
                 batch.delete(snap.reference)
-                batch_count += 1
                 deleted += 1
-                if batch_count >= 450:
-                    batch.commit()
-                    batch = firestore_db().batch()
-                    batch_count = 0
-
-        if batch_count > 0:
             batch.commit()
 
         logger.info("purge-cache: archived %d, deleted %d expired documents", archived, deleted)
-        return {"deleted": deleted, "archived": archived, "timestamp": now.isoformat()}
+        result = {"deleted": deleted, "archived": archived, "timestamp": now.isoformat()}
+        if archive_failed:
+            result["archive_failed"] = True
+        return result
     except Exception as exc:
         logger.exception("POST /admin/purge-cache failed: %s", exc)
         raise HTTPException(status_code=503, detail=str(exc))

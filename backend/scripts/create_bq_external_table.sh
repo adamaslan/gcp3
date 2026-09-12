@@ -12,7 +12,11 @@ set -euo pipefail
 PROJECT_ID="${PROJECT_ID:-ttb-lang1}"
 DATASET="nwf"
 TABLE="gcp3_cache_archive"
-BUCKET_PREFIX="gs://nwf-data-lake/gcp3_cache/"
+# Same env var + default as backend/archiver.py's DATA_LAKE_BUCKET — a
+# deployment that overrides it must have this external table point at the
+# same bucket the archiver actually writes to, not a hardcoded name.
+DATA_LAKE_BUCKET="${NWF_DATA_LAKE_BUCKET:-nwf-data-lake}"
+BUCKET_PREFIX="gs://${DATA_LAKE_BUCKET}/gcp3_cache/"
 
 def_file="$(mktemp)"
 cat > "$def_file" <<EOF

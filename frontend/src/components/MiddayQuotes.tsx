@@ -29,7 +29,14 @@ interface MiddayPayload {
 }
 
 async function fetchMiddayQuotes(): Promise<MiddayPayload | null> {
-  const base = process.env.NEXT_PUBLIC_BASE_URL ?? "";
+  // This is a server component. NEXT_PUBLIC_BASE_URL doesn't exist anywhere
+  // in this codebase (no .env.example entry, no other reference) — it was
+  // always undefined, so `base` was always "", and Node's server-side fetch
+  // requires an absolute URL (no implicit browser-style origin resolution).
+  // Every fetch here has therefore always thrown and been swallowed by the
+  // catch below, silently returning null. NEXT_PUBLIC_APP_URL is the actual
+  // env var this repo uses for its own origin (frontend/.env.example).
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? "";
   try {
     const res = await fetch(`${base}/api/midday-quotes`, { next: { revalidate: 300 } });
     if (!res.ok) return null;

@@ -7,10 +7,15 @@ from dotenv import load_dotenv
 _HOMEBASE_ENV = Path.home() / "code" / "homebase" / ".env"
 _BACKEND_ENV = Path(__file__).parent / ".env"
 
-if _HOMEBASE_ENV.exists():
-    load_dotenv(_HOMEBASE_ENV, verbose=False)
+# load_dotenv() defaults to override=False, so it never touches a key
+# already in os.environ — meaning whichever load call runs FIRST wins
+# between the two files (a pre-existing process env var always wins over
+# both, regardless of order). "Backend keys take precedence" therefore
+# requires loading the backend file first, then homebase to fill gaps.
 if _BACKEND_ENV.exists():
     load_dotenv(_BACKEND_ENV, verbose=False)
+if _HOMEBASE_ENV.exists():
+    load_dotenv(_HOMEBASE_ENV, verbose=False)
 
 
 def get_config() -> dict:
@@ -57,11 +62,11 @@ if __name__ == "__main__":
     print("Configuration loaded:")
     print("-" * 60)
     for key, val in config.items():
-        if val:
-            preview = val[:20] + "..." if len(val) > 20 else val
-            print(f"  {key:30s} ✓ {preview}")
-        else:
-            print(f"  {key:30s} ✗ (not set)")
+        # Never print secret values or prefixes here — this script's stdout
+        # gets pasted into chats, logs, and CI output. "configured" is all
+        # this diagnostic needs to say.
+        status = "✓ configured" if val else "✗ (not set)"
+        print(f"  {key:30s} {status}")
     print("-" * 60)
     if valid:
         print("✅ All required keys configured")

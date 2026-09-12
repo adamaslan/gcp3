@@ -37,6 +37,7 @@ async def sync_cache_entry(
     value: dict | list,
     collection: str = "gcp3_cache",
     ttl_hours: int = 24,
+    dry_run: bool = False,
 ) -> bool:
     """Write a cache entry to Firestore with TTL.
 
@@ -45,10 +46,20 @@ async def sync_cache_entry(
         value: Data to write
         collection: Collection name (default: "gcp3_cache")
         ttl_hours: Hours until expiration (default: 24)
+        dry_run: If True, log what would be written and return True without
+            touching Firestore. This is the single write path every sync_*
+            stage funnels through, so this is the one place --no-sync needs
+            to actually take effect.
 
     Returns:
-        True if successful, False otherwise
+        True if successful (or dry_run), False otherwise
     """
+    if dry_run:
+        logger.info(
+            f"🧪 [dry-run] would sync {collection}/{key} "
+            f"({len(str(value))} bytes, TTL {ttl_hours}h) — no write made"
+        )
+        return True
     try:
         db = _get_db()
         now = datetime.now(timezone.utc)
@@ -69,7 +80,7 @@ async def sync_cache_entry(
         return False
 
 
-async def sync_technical_signals(target_date: date = None) -> dict | None:
+async def sync_technical_signals(target_date: date = None, dry_run: bool = False) -> dict | None:
     """Fetch technical signals and sync to Firebase."""
     try:
         from technical_signals import get_technical_signals
@@ -80,7 +91,7 @@ async def sync_technical_signals(target_date: date = None) -> dict | None:
         signals = await get_technical_signals()
         key = f"technical_signals:all:{target_date}"
 
-        success = await sync_cache_entry(key, signals, "gcp3_cache", ttl_hours=24)
+        success = await sync_cache_entry(key, signals, "gcp3_cache", ttl_hours=24, dry_run=dry_run)
         if success:
             return {
                 "stage": "technical_signals",
@@ -96,7 +107,7 @@ async def sync_technical_signals(target_date: date = None) -> dict | None:
     return None
 
 
-async def sync_ai_summary(target_date: date = None) -> dict | None:
+async def sync_ai_summary(target_date: date = None, dry_run: bool = False) -> dict | None:
     """Fetch AI summary and sync to Firebase."""
     try:
         from ai_summary import get_ai_summary
@@ -107,7 +118,7 @@ async def sync_ai_summary(target_date: date = None) -> dict | None:
         summary = await get_ai_summary()
         key = f"ai_summary:{target_date}"
 
-        success = await sync_cache_entry(key, summary, "gcp3_cache", ttl_hours=24)
+        success = await sync_cache_entry(key, summary, "gcp3_cache", ttl_hours=24, dry_run=dry_run)
         if success:
             brief_len = len(summary.get("brief", "")) if isinstance(summary, dict) else 0
             return {
@@ -124,7 +135,7 @@ async def sync_ai_summary(target_date: date = None) -> dict | None:
     return None
 
 
-async def sync_sector_rotation(target_date: date = None) -> dict | None:
+async def sync_sector_rotation(target_date: date = None, dry_run: bool = False) -> dict | None:
     """Fetch sector rotation and sync to Firebase."""
     try:
         from sector_rotation import get_sector_rotation
@@ -135,7 +146,7 @@ async def sync_sector_rotation(target_date: date = None) -> dict | None:
         rotation = await get_sector_rotation()
         key = f"sector_rotation:{target_date}"
 
-        success = await sync_cache_entry(key, rotation, "gcp3_cache", ttl_hours=24)
+        success = await sync_cache_entry(key, rotation, "gcp3_cache", ttl_hours=24, dry_run=dry_run)
         if success:
             leaders = len(rotation.get("leaders", [])) if isinstance(rotation, dict) else 0
             return {
@@ -152,7 +163,7 @@ async def sync_sector_rotation(target_date: date = None) -> dict | None:
     return None
 
 
-async def sync_macro_pulse(target_date: date = None) -> dict | None:
+async def sync_macro_pulse(target_date: date = None, dry_run: bool = False) -> dict | None:
     """Fetch macro pulse and sync to Firebase."""
     try:
         from macro_pulse import get_macro_pulse
@@ -163,7 +174,7 @@ async def sync_macro_pulse(target_date: date = None) -> dict | None:
         macro = await get_macro_pulse()
         key = f"macro_pulse:{target_date}"
 
-        success = await sync_cache_entry(key, macro, "gcp3_cache", ttl_hours=24)
+        success = await sync_cache_entry(key, macro, "gcp3_cache", ttl_hours=24, dry_run=dry_run)
         if success:
             return {
                 "stage": "macro_pulse",
@@ -178,7 +189,7 @@ async def sync_macro_pulse(target_date: date = None) -> dict | None:
     return None
 
 
-async def sync_morning_brief(target_date: date = None) -> dict | None:
+async def sync_morning_brief(target_date: date = None, dry_run: bool = False) -> dict | None:
     """Fetch morning brief and sync to Firebase."""
     try:
         from morning import get_morning_brief
@@ -189,7 +200,7 @@ async def sync_morning_brief(target_date: date = None) -> dict | None:
         brief = await get_morning_brief()
         key = f"morning_brief:{target_date}"
 
-        success = await sync_cache_entry(key, brief, "gcp3_cache", ttl_hours=24)
+        success = await sync_cache_entry(key, brief, "gcp3_cache", ttl_hours=24, dry_run=dry_run)
         if success:
             return {
                 "stage": "morning_brief",
@@ -204,16 +215,39 @@ async def sync_morning_brief(target_date: date = None) -> dict | None:
     return None
 
 
-async def run_full_pipeline(target_date: date = None) -> dict:
+async def run_full_pipeline(target_date: date = None, dry_run: bool = False) -> dict:
     """Run all pipeline stages and sync to Firebase.
 
     Args:
         target_date: Date to generate for (default: today)
+        dry_run: If True, compute each stage but don't write to Firestore
+            (see sync_cache_entry's dry_run — this is --no-sync's actual
+            effect; it used to be print-only and always synced anyway)
 
     Returns:
         Summary dict with results from each stage
     """
     target_date = target_date or date.today()
+
+    # Every sync_* producer's underlying get_*() call (get_technical_signals,
+    # get_ai_summary, get_sector_rotation, get_macro_pulse, get_morning_brief)
+    # takes no date argument — each always computes for the actual current
+    # moment, regardless of what target_date this function was called with.
+    # A historical target_date would therefore compute TODAY's real data and
+    # store it under a historical-looking key, silently mislabeling it.
+    # Threading target_date through all five (and verifying each underlying
+    # module actually supports historical computation) is real scope beyond
+    # this fix; reject non-today dates here instead so the mislabeling can't
+    # happen, until that support exists.
+    if target_date != date.today():
+        msg = (
+            f"run_full_pipeline({target_date}) requested, but every stage's "
+            "underlying get_*() call always computes for today — historical "
+            "target_date is not yet supported and would silently store "
+            "today's data under a historical-looking key. Not running."
+        )
+        print(f"❌ {msg}")
+        return {"status": "error", "error": msg, "date": str(target_date)}
 
     print()
     print("=" * 70)
@@ -230,11 +264,11 @@ async def run_full_pipeline(target_date: date = None) -> dict:
 
     # Run all stages in parallel
     results = await asyncio.gather(
-        sync_technical_signals(target_date),
-        sync_ai_summary(target_date),
-        sync_sector_rotation(target_date),
-        sync_macro_pulse(target_date),
-        sync_morning_brief(target_date),
+        sync_technical_signals(target_date, dry_run=dry_run),
+        sync_ai_summary(target_date, dry_run=dry_run),
+        sync_sector_rotation(target_date, dry_run=dry_run),
+        sync_macro_pulse(target_date, dry_run=dry_run),
+        sync_morning_brief(target_date, dry_run=dry_run),
     )
 
     successful = [r for r in results if r and r.get("status") == "success"]

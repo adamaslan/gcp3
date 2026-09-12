@@ -33,8 +33,8 @@ async function getData() {
   if (!base) return { macro: null, earnings: null };
   try {
     const [macroRes, earningsRes] = await Promise.allSettled([
-      fetch(`${base}/macro-pulse`),
-      fetch(`${base}/earnings-radar`),
+      fetch(`${base}/macro-pulse`, { next: { revalidate: 900 } }),
+      fetch(`${base}/earnings-radar`, { next: { revalidate: 21600 } }),
     ]);
 
     const macro =

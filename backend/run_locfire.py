@@ -11,11 +11,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 from local_config import validate_config
 
 
-async def run_full_pipeline(target_date=None):
+async def run_full_pipeline(target_date=None, dry_run=False):
     """Lazy import of firebase_sync to handle missing dependencies."""
     try:
         from firebase_sync import run_full_pipeline as _run
-        return await _run(target_date)
+        return await _run(target_date, dry_run=dry_run)
     except ModuleNotFoundError as e:
         print()
         print("⚠️  Missing dependency: google-cloud-firestore")
@@ -84,7 +84,7 @@ async def main():
         print("⚠️  Running in dry-run mode (no Firebase sync)")
         print()
 
-    result = await run_full_pipeline(target_date)
+    result = await run_full_pipeline(target_date, dry_run=args.no_sync)
 
     # Show success/failure
     if result.get("status") == "complete":
