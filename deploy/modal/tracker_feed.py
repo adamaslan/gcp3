@@ -4,8 +4,12 @@ Runs backend/feed_tracker.py (seed -> compute_returns -> freshness check) on a
 weekday cron, writing straight to Firestore. It does not call the Cloud Run
 backend, so it survives that service being down.
 
-Schedule: 23:30 UTC weekdays, after Cloud Scheduler (22:00) and GitHub Actions
-(23:00), so a vendor problem is not hit by all three at once.
+Schedule: full run at 23:30 UTC weekdays, after Cloud Scheduler (22:00) and
+GitHub Actions (23:00), so a vendor problem is not hit by all three at once.
+A quotes-only run at 17:30 UTC rebuilds the /industry-intel page cache, which
+nothing else refreshes intraday (GitHub Actions does the same at 17:00).
+
+FINNHUB_API_KEY is optional in the secret; without it quotes use yfinance.
 
 Deploy (one-time), from the repo root:
     pip install modal
@@ -51,7 +55,7 @@ image = (
 _SECRET = modal.Secret.from_name("gcp3-tracker-feed")
 
 
-def _run_feed(check_only: bool) -> int:
+def _run_feed(check_only: bool, quotes_only: bool = False) -> int:
     key_json = os.environ.get("GCP_SA_KEY_JSON", "")
     if not key_json or not os.environ.get("GCP_PROJECT_ID"):
         raise RuntimeError("GCP_SA_KEY_JSON and GCP_PROJECT_ID must be set in the gcp3-tracker-feed secret")
@@ -60,7 +64,7 @@ def _run_feed(check_only: bool) -> int:
     with open(key_path, "w", opener=lambda p, f: os.open(p, f, 0o600)) as fh:
         fh.write(key_json)
     env = {**os.environ, "GOOGLE_APPLICATION_CREDENTIALS": key_path}
-    args = [sys.executable, "feed_tracker.py"] + (["--check-only"] if check_only else [])
+    args = [sys.executable, "feed_tracker.py"] + (["--check-only"] if check_only else []) + (["--quotes-only"] if quotes_only else [])
     try:
         return subprocess.run(args, cwd=REMOTE_BACKEND, env=env).returncode
     finally:
@@ -78,6 +82,19 @@ def feed(check_only: bool = False) -> None:
     code = _run_feed(check_only)
     if code != 0:
         raise RuntimeError(f"feed_tracker exited {code}: tracker stale or seed failed")
+
+
+@app.function(
+    image=image,
+    secrets=[_SECRET],
+    schedule=modal.Cron("30 17 * * 1-5"),
+    timeout=10 * 60,
+    retries=modal.Retries(max_retries=1, initial_delay=60.0),
+)
+def refresh_quotes() -> None:
+    code = _run_feed(check_only=False, quotes_only=True)
+    if code != 0:
+        raise RuntimeError(f"feed_tracker --quotes-only exited {code}: too few live quotes")
 
 
 @app.local_entrypoint()

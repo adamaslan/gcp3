@@ -33,3 +33,12 @@ def test_freshness_threshold():
     assert freshness_is_ok({"tracked": 54, "fresh": 49, "stale": []})
     assert not freshness_is_ok({"tracked": 54, "fresh": 48, "stale": []})
     assert not freshness_is_ok({"tracked": 0, "fresh": 0, "stale": []})
+
+
+def test_quotes_threshold():
+    from feed_tracker import quotes_are_ok
+
+    assert quotes_are_ok({"data_status": {"available": 54, "expected": 54}})
+    assert quotes_are_ok({"data_status": {"available": 49, "expected": 54}})
+    assert not quotes_are_ok({"data_status": {"available": 40, "expected": 54}})
+    assert not quotes_are_ok({})

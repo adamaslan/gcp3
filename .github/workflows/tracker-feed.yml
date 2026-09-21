@@ -12,9 +12,15 @@ name: Industry tracker feed
 #   Modal            23:30 UTC   deploy/modal/tracker_feed.py
 # 23:00 UTC is 19:00 ET in summer and 18:00 ET in winter, past the settle margin
 # in both. GitHub cron is UTC-only, so the worse season sets the time.
+#
+# It also rebuilds the /industry-intel page cache (industry_data:{date}), which
+# nothing else refreshes intraday. A second, quotes-only run at 17:00 UTC
+# (13:00 EDT / 12:00 EST) keeps the page's prices from being frozen at whatever
+# the first visitor of the day triggered.
 on:
   schedule:
-    - cron: '0 23 * * 1-5'
+    - cron: '0 17 * * 1-5'   # quotes-only
+    - cron: '0 23 * * 1-5'   # full: seed + returns + quotes
   workflow_dispatch:
     inputs:
       checkOnly:
@@ -61,7 +67,9 @@ jobs:
         env:
           GCP_PROJECT_ID: ttb-lang1
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
           IN_CHECK_ONLY: ${{ github.event.inputs.checkOnly }}
+          IN_SCHEDULE: ${{ github.event.schedule }}
         run: |
           set -euo pipefail
           # The key goes to a runner-local file and is never echoed.
@@ -70,6 +78,7 @@ jobs:
           export GOOGLE_APPLICATION_CREDENTIALS="${RUNNER_TEMP}/sa.json"
           args=()
           [ "${IN_CHECK_ONLY}" = "true" ] && args+=("--check-only")
+          [ "${IN_SCHEDULE}" = "0 17 * * 1-5" ] && args+=("--quotes-only")
           python feed_tracker.py "${args[@]}"
 
       - name: Remove credentials file
