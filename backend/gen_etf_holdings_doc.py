@@ -103,13 +103,13 @@ INDUSTRIES: dict[str, dict[str, str]] = {
         "Commercial Real Estate": "INDS",
     },
     "Communications & Media": {
-        "Media": "XLC",
         "Entertainment": "PEJ",
         "Social Media": "SOCL",
     },
     "Other": {
         "Utilities": "XLU",
         "Agriculture": "DBA",
+        "Agribusiness": "MOO",
         "Cannabis": "MSOS",
         "ESG": "ESGU",
     },
