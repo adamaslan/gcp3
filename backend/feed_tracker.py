@@ -43,9 +43,9 @@ MIN_FRESH_RATIO = 0.9
 # Share of the tracked industries whose live quote must have loaded.
 MIN_QUOTE_RATIO = 0.9
 
-# Daily bars are final well after the 16:00 ET close. 21:30 UTC is 17:30 ET
-# in winter, the later of the two seasons, so a bar dated today is complete.
-SESSION_SETTLED_HOUR_UTC = 21
+# Daily bars are final well after the 16:00 ET close. 22:30 UTC is 17:30 ET
+# in winter (EST), the later of the two seasons, so a bar dated today is complete.
+SESSION_SETTLED_HOUR_UTC = 22
 SESSION_SETTLED_MINUTE_UTC = 30
 
 

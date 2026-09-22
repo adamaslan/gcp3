@@ -18,7 +18,13 @@ def test_before_settle_expects_previous_trading_day():
 
 
 def test_after_settle_expects_today():
-    assert expected_last_date(_utc(2026, 9, 21, 22)) == date(2026, 9, 21)
+    assert expected_last_date(_utc(2026, 9, 21, 23)) == date(2026, 9, 21)
+
+
+def test_standard_time_settle_boundary():
+    # 22:30 UTC is 17:30 EST; a minute earlier the bar is not yet trusted.
+    assert expected_last_date(_utc(2026, 12, 14, 22, 29)) == date(2026, 12, 11)
+    assert expected_last_date(_utc(2026, 12, 14, 22, 30)) == date(2026, 12, 14)
 
 
 def test_monday_morning_expects_friday():
