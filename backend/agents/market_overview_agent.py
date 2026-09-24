@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 from agents.base import AgentLoop
+from llm import openrouter_client
 from llm.grounded_call import generate_grounded
 
 logger = logging.getLogger(__name__)
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 class MarketOverviewAgent(AgentLoop):
     """Extends AgentLoop for /market-overview: grounded search + breadth/sector context."""
 
-    def __init__(self, model: str = "gemini-2.0-flash") -> None:
+    def __init__(self, model: str = openrouter_client.DEFAULT_MODEL) -> None:
         super().__init__(endpoint="market-overview", model=model)
 
     async def run_overview(

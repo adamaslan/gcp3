@@ -91,3 +91,34 @@ variable, never the value.
 - **Unblocks**: a real two-provider chain. Today, if OpenRouter fails the
   gateway degrades immediately.
 - **Added**: 2026-09-10
+
+### ~~Replace the revoked `openrouter-api-key` secret~~ — RESOLVED 2026-09-10
+- **Done**: the working value was pushed from `backend/.env` into Secret
+  Manager as **`OPENROUTER_API_KEY`** (upper-case, version 1, 73 bytes) via
+  `sync-secrets.sh gcp-secret` — file to `gcloud` stdin, never through a chat
+  session. Verified: the stored version returns 200 from
+  `https://openrouter.ai/api/v1/key`.
+- **Done**: `OPENROUTER_API_KEY` is now bound into Cloud Run (revision
+  `gcp3-backend-00062-h7w`, serving 100%), with a per-secret
+  `secretAccessor` binding for the compute SA to match the pattern the
+  other secrets use.
+- **Still open — the stale lower-case twin.** `openrouter-api-key` still
+  exists with a **revoked** value. It is dangerous precisely because it
+  looks healthy: Secret Manager serves it 200 while OpenRouter rejects it
+  401. Nothing references it any more (the local runner was reordered to
+  prefer the upper-case name). Disabling version 1 is the safe step;
+  deleting the secret is destructive and needs a human decision.
+- **Added**: 2026-09-10
+
+### ~~Bind `OPENROUTER_API_KEY` into the Cloud Run revision~~ — RESOLVED 2026-09-10
+- **Done**: bound via `gcloud run services update --update-secrets`. New
+  revision `gcp3-backend-00062-h7w` deployed and serving 100% of traffic;
+  `/health`, `/industry-returns`, `/industry-intel` and `/signals` all
+  verified 200 on it afterwards.
+- **Still open — this does not activate the migration.** That revision runs
+  the **2026-07-12 image**, which predates the Gemini→OpenRouter work. The
+  binding is a prerequisite; production will not actually call OpenRouter
+  until the current code is built and deployed.
+- **Still open — `GEMINI_API_KEY` is still bound** and nothing reads it.
+  Unbind it in the same deploy that ships the new image.
+- **Added**: 2026-09-10

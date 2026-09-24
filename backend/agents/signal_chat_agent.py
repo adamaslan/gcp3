@@ -12,6 +12,7 @@ import json
 import logging
 from typing import Any
 
+from llm import openrouter_client
 from agents.base import AgentLoop
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,7 @@ class SignalChatAgent(AgentLoop):
 
     AVAILABLE_TOOLS = ["explain_signal"]
 
-    def __init__(self, model: str = "gemini-2.0-flash") -> None:
+    def __init__(self, model: str = openrouter_client.DEFAULT_MODEL) -> None:
         super().__init__(endpoint="signals/chat", model=model)
 
     def _build_initial_prompt(self, ticker: str | None, context: dict[str, Any]) -> str:

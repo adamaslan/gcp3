@@ -38,7 +38,7 @@ BLOG_THEMES: list[dict[str, str]] = [
     {"id": "screener-ai-disagrees", "tool": "screener", "title": "When the AI Regime Disagrees With You", "angle": "Human vs machine intuition"},
     # Sector Rotation (13-16)
     {"id": "rotation-offense-defense", "tool": "sector-rotation", "title": "Offense vs Defense", "angle": "Reading sector rotation like a playbook"},
-    {"id": "rotation-gemini-calls", "tool": "sector-rotation", "title": "Gemini Calls the Shots", "angle": "How LLMs detect rotation patterns"},
+    {"id": "rotation-llm-calls", "tool": "sector-rotation", "title": "The Model Calls the Shots", "angle": "How LLMs detect rotation patterns"},
     {"id": "rotation-rule-fallback", "tool": "sector-rotation", "title": "Rule-Based Fallback", "angle": "When AI goes dark, math takes over"},
     {"id": "rotation-60-40", "tool": "sector-rotation", "title": "The 60/40 Momentum Score", "angle": "Weighting change % vs intraday position"},
     # Earnings Radar (17-20)
@@ -62,7 +62,7 @@ BLOG_THEMES: list[dict[str, str]] = [
     {"id": "portfolio-concentration", "tool": "portfolio-analyzer", "title": "Concentration Risk", "angle": "Why your 5-stock portfolio isn't diversified"},
     {"id": "portfolio-rebalance", "tool": "portfolio-analyzer", "title": "Winners, Losers, and What To Do", "angle": "Portfolio rebalancing signals"},
     # AI Summary (33-36)
-    {"id": "ai-five-sources", "tool": "ai-summary", "title": "Five Sources, One Story", "angle": "How Gemini synthesizes conflicting signals"},
+    {"id": "ai-five-sources", "tool": "ai-summary", "title": "Five Sources, One Story", "angle": "How the model synthesizes conflicting signals"},
     {"id": "ai-daily-narrative", "tool": "ai-summary", "title": "The Daily Market Narrative", "angle": "Why context beats raw numbers"},
     {"id": "ai-leading-lagging", "tool": "ai-summary", "title": "Leading vs Lagging Sectors", "angle": "What the AI picks up that humans miss"},
     {"id": "ai-regime-detection", "tool": "ai-summary", "title": "Regime Detection", "angle": "How tone + data = market regime classification"},
@@ -119,7 +119,7 @@ INSTRUCTIONS:
 4. End with a concise takeaway or "so what" for the reader.
 5. Tone: confident, conversational, occasionally playful. No jargon walls.
 6. Use short paragraphs. No bullet points — narrative only.
-7. Do NOT mention "Gemini", "Finnhub", "GCP", or internal tool names."""
+7. Do NOT mention "OpenRouter", "Mistral", "Qwen", "Llama", "Finnhub", "GCP", or internal tool names."""
 
 
 async def _gather_market_snapshot() -> dict:

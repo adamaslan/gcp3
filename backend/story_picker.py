@@ -211,7 +211,7 @@ TONE RULES:
 - Authoritative, sharp, evidence-based — never alarmist
 - No "kitchen sink" summaries — stay on this one pair only
 - {title_hint}
-- Do NOT mention "Gemini", "Finnhub", "GCP", "Firestore", or internal tool names
+- Do NOT mention "OpenRouter", "Mistral", "Qwen", "Llama", "Finnhub", "GCP", "Firestore", or internal tool names
 - Short paragraphs only. No bullet points."""
 
 

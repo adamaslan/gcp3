@@ -929,7 +929,7 @@ INSTRUCTIONS:
 9. End with 2-3 specific things to watch tomorrow, grounded in which correlations need resolution.
 10. Tone: authoritative but accessible. No jargon without explanation.
 11. Use short paragraphs. Subheadings welcome for 600+ word pieces.
-12. Do NOT mention "Gemini", "Finnhub", "GCP", "Firestore", or internal tool names."""
+12. Do NOT mention "OpenRouter", "Mistral", "Qwen", "Llama", "Finnhub", "GCP", "Firestore", or internal tool names."""
 
 
 async def _call_llm(prompt: str) -> str:

@@ -1,8 +1,14 @@
 """3-tier LLM wrapper for structured output (Weakness #7).
 
-Tier 1: native response_schema constrained decoding via google-genai SDK.
+Tier 1: response_format json_schema constrained decoding via OpenRouter.
 Tier 2: single retry with validation-error feedback injected into prompt.
 Tier 3: rule-based fallback — sets ai_degraded=True, logs warning.
+
+Formerly Gemini-backed through the google-generativeai SDK. Gemini retired
+the `gemini-2.0-*`/`gemini-1.5-*` ids this code pinned (404 as of
+2026-09-10), so the transport moved to llm/openrouter_client.py. This
+function stays synchronous: `signals/multi_timeframe.py` calls it through
+`asyncio.to_thread`, so it needs the blocking entry point.
 """
 from __future__ import annotations
 
@@ -14,6 +20,7 @@ from typing import Any, Type, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
+from llm import openrouter_client
 from llm.cost_logger import log_llm_call
 from llm.pricing import DEFAULT_MODEL
 
@@ -21,12 +28,10 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
-ALLOWED_MODELS = (
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
-    "gemini-1.5-flash",
-    "gemini-1.5-pro",
-)
+# Any model in the OpenRouter chain is acceptable; an unrecognized id is
+# coerced to DEFAULT_MODEL rather than rejected, so a caller passing a stale
+# Gemini id degrades to a working model instead of failing outright.
+ALLOWED_MODELS = openrouter_client.MODEL_CHAIN
 
 
 @dataclass
@@ -43,43 +48,28 @@ class StructuredResult:
     error: str | None = None
 
 
-def _call_gemini_raw(
+def _call_llm_raw(
     prompt: str,
     model: str,
     response_schema: dict | None,
     *,
     grounded: bool = False,
 ) -> tuple[str, int, int, int]:
-    """Call Gemini and return (text, input_tokens, output_tokens, cached_tokens).
+    """Call the LLM and return (text, input_tokens, output_tokens, cached_tokens).
+
+    `cached_tokens` is always 0: OpenRouter does not report a cache-hit token
+    split the way Gemini's usage_metadata did. The tuple keeps its shape so
+    the cost-logging call sites did not need to change.
 
     Raises on any API error.
     """
-    try:
-        import google.generativeai as genai  # type: ignore
-    except ImportError:
-        raise RuntimeError("google-generativeai package not installed")
-
-    generation_config: dict[str, Any] = {"temperature": 0.1}
-    if response_schema is not None:
-        generation_config["response_mime_type"] = "application/json"
-        generation_config["response_schema"] = response_schema
-
-    tools = []
-    if grounded:
-        tools.append({"google_search_retrieval": {}})
-
-    gemini_model = genai.GenerativeModel(
-        model_name=model,
-        generation_config=generation_config,
-        tools=tools or None,
+    response = openrouter_client.complete_sync(
+        [{"role": "user", "content": prompt}],
+        response_schema=response_schema,
+        online=grounded,
+        temperature=0.1,
     )
-    response = gemini_model.generate_content(prompt)
-    text = response.text or ""
-    usage = getattr(response, "usage_metadata", None)
-    input_tokens = getattr(usage, "prompt_token_count", 0) or 0
-    output_tokens = getattr(usage, "candidates_token_count", 0) or 0
-    cached_tokens = getattr(usage, "cached_content_token_count", 0) or 0
-    return text, input_tokens, output_tokens, cached_tokens
+    return response.text, response.input_tokens, response.output_tokens, 0
 
 
 def structured_generate(
@@ -99,7 +89,7 @@ def structured_generate(
         schema: Pydantic model class for the expected output.
         endpoint: Caller endpoint name (for cost logging).
         ticker: Ticker symbol for logging.
-        model: Gemini model ID.
+        model: OpenRouter model ID (see openrouter_client.MODEL_CHAIN).
         prompt_version: Prompt version tag.
         fallback_fn: Callable() -> dict for rule-based Tier 3 fallback.
 
@@ -115,7 +105,7 @@ def structured_generate(
 
     # Tier 1: native constrained decoding
     try:
-        text, in_tok, out_tok, cached_tok = _call_gemini_raw(prompt, model, schema_dict)
+        text, in_tok, out_tok, cached_tok = _call_llm_raw(prompt, model, schema_dict)
         parsed = schema.model_validate_json(text)
         latency_ms = (time.perf_counter() - t0) * 1000
         log_llm_call(
@@ -140,7 +130,7 @@ def structured_generate(
             f"[VALIDATION ERROR FROM PREVIOUS ATTEMPT — fix these issues and try again]\n{first_error}\n"
             f"Return ONLY valid JSON matching the schema."
         )
-        text, in_tok, out_tok, cached_tok = _call_gemini_raw(retry_prompt, model, schema_dict)
+        text, in_tok, out_tok, cached_tok = _call_llm_raw(retry_prompt, model, schema_dict)
         parsed = schema.model_validate_json(text)
         latency_ms = (time.perf_counter() - t0) * 1000
         log_llm_call(
