@@ -105,7 +105,7 @@ async def main():
     if exit_code == 0:
         target_date_str = (target_date or datetime.today().date()).strftime("%Y-%m-%d")
         print("🔗 View in Firebase Console:")
-        print("   → https://console.firebase.google.com/u/0/project/nuwrrrld-prod/firestore/data/gcp3_cache")
+        print("   → https://console.firebase.google.com/u/0/project/ttb-lang1/firestore/data/gcp3_cache")
         print()
         print(f"   Look for documents with suffix: :{target_date_str}")
         print()

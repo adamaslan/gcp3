@@ -33,7 +33,7 @@ def get_config() -> dict:
         "finnhub_webhook_secret": os.getenv("FINNHUB_WEBHOOK_SECRET"),
 
         # Firebase / GCP
-        "gcp_project_id": os.getenv("GCP_PROJECT_ID", "nuwrrrld-prod"),
+        "gcp_project_id": os.getenv("GCP_PROJECT_ID", "ttb-lang1"),
         "gcp_credentials_path": os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
 
         # Other services
