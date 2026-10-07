@@ -8,7 +8,7 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-import yfinance as yf
+from history_client import daily_history_days
 import pandas as pd
 import numpy as np
 from ta.momentum import RSIIndicator, StochasticOscillator, ROCIndicator
@@ -205,13 +205,13 @@ async def get_swing_predictions(
     async def analyze_symbol(symbol: str) -> Optional[tuple]:
         """Fetch and analyze a single symbol."""
         try:
-            # Run synchronous yfinance in a thread pool
+            # Run the synchronous history fetch (Alpaca first) in a thread pool
             loop = asyncio.get_running_loop()
             async with _YF_SEMAPHORE:
                 await asyncio.sleep(0.25)
                 df = await loop.run_in_executor(
                     None,
-                    lambda: yf.Ticker(symbol).history(start=start_date, end=end_date, interval="1d")
+                    lambda: daily_history_days(symbol, lookback_days)
                 )
 
             if df.empty or len(df) < 50:

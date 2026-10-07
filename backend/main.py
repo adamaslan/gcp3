@@ -1552,15 +1552,14 @@ async def ticker_signal_matrix(ticker: str, request: Request) -> dict:
         from feature_store import get_features
         from signals.multi_timeframe import build_timeframe_matrix
 
-        import yfinance as yf
+        from history_client import daily_history
 
         timeframes = ["1D", "5D", "1M", "3M", "6M", "1Y"]
         feature_names = ["bollinger", "volume", "rsi", "macd", "sector_relative"]
 
         # Fetch 2 years of daily closes once; slice per timeframe to compute period returns
         _tf_lookback = {"1D": 2, "5D": 7, "1M": 23, "3M": 65, "6M": 130, "1Y": 253}
-        ticker_obj = yf.Ticker(ticker)
-        hist_2y = await asyncio.to_thread(ticker_obj.history, period="2y")
+        hist_2y = await asyncio.to_thread(daily_history, ticker, "2y")
         closes_2y = hist_2y["Close"].dropna()
 
         def _period_return(closes, lookback: int) -> float:

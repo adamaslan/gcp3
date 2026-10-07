@@ -2,9 +2,11 @@
 
 Resolution chain for any quote request:
   1. Firestore cache  — instant, free, shared across instances
-  2. Finnhub          — real-time intraday (primary live source)
-                        rate-limited: semaphore(25) + 50ms stagger + 429 retry
-  3. yfinance         — free fallback, no API key, no quota
+  2. Alpaca           — PRIMARY: batched IEX snapshots (150 symbols/request),
+                        shared nwf_rate_budget (see alpaca_md.py)
+  3. Finnhub          — fallback for symbols Alpaca could not price
+                        paced at ~1 request/second (free key ≈ 60/min)
+  4. yfinance         — last resort, LOCAL RUNS ONLY (Yahoo blocks Cloud Run IPs)
                         rate-limited: semaphore(4) + randomized 0.5–1.5s delay
                         custom User-Agent to avoid bot detection
                         runs in a thread pool (sync library)
@@ -48,6 +50,8 @@ import httpx
 import yfinance as yf
 from google.cloud import firestore
 
+import alpaca_md
+
 logger = logging.getLogger(__name__)
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -60,8 +64,9 @@ _AV_BASE = "https://www.alphavantage.co/query"
 _AV_ANALYTICS_BASE = "https://www.alphavantage.co/query"
 _KEY_PATTERN = re.compile(r"token=[^&\s]+")
 
-# Finnhub: stay under 30 req/s hard limit
-_FH_REQUEST_DELAY = 0.05  # 50ms → ~20 req/s max under full concurrency
+# Finnhub: the free key allows ~60 calls/minute, so fallback traffic is paced at 1 request/second.
+_FH_REQUEST_DELAY = 1.0
+_FH_CONCURRENCY = 1
 # Jittered 429 retry backoff — avoids a synchronized retry herd.
 _FH_429_BACKOFF_MIN = 2.0
 _FH_429_BACKOFF_MAX = 4.0
@@ -86,7 +91,7 @@ _YF_SEMAPHORE: asyncio.Semaphore | None = None
 def _fh_semaphore() -> asyncio.Semaphore:
     global _FH_SEMAPHORE
     if _FH_SEMAPHORE is None:
-        _FH_SEMAPHORE = asyncio.Semaphore(25)
+        _FH_SEMAPHORE = asyncio.Semaphore(_FH_CONCURRENCY)
     return _FH_SEMAPHORE
 
 
@@ -178,7 +183,7 @@ async def finnhub_get(
 
     - API key sent via header, never in the URL.
     - Error messages are sanitized to remove the key.
-    - Global semaphore + 50ms delay keeps throughput under 30 req/s.
+    - Global semaphore + 1s delay keeps throughput at ~1 req/s (free-key limit).
     - Retries once on HTTP 429 with a jittered 2–4s backoff.
     """
     global _fh_429_count, _fh_429_since
@@ -299,6 +304,42 @@ async def get_finnhub_metrics(symbols: list[str]) -> dict[str, dict]:
 # Cloud Run containers may not have a writable home dir for yfinance's tz/cookie
 # cache. Redirect to /tmp so cache writes never fail with PermissionError.
 yf.set_tz_cache_location("/tmp/py-yfinance")
+
+
+def _alpaca_quotes_sync(symbols: list[str]) -> dict[str, dict]:
+    """Batched Alpaca IEX snapshots shaped like the other quote sources.
+
+    Never raises: a failure is logged at WARNING and every symbol is reported missing so the
+    caller falls through to Finnhub. Symbols Alpaca cannot price are simply absent.
+    """
+    if not symbols or not alpaca_md.is_configured():
+        if symbols:
+            logger.warning("data_client: Alpaca not configured — %d symbols fall back", len(symbols))
+        return {}
+    try:
+        snaps = alpaca_md.latest_prices(symbols)
+    except alpaca_md.AlpacaError as exc:
+        alpaca_md.warn_fallback("quotes", symbols, exc)
+        return {}
+    quotes: dict[str, dict] = {}
+    for sym, snap in snaps.items():
+        price, prev_close = snap["price"], snap["prev_close"] or snap["price"]
+        quotes[sym] = {
+            "price": _round2(price),
+            "change": _round2(price - prev_close),
+            "change_pct": _round2((price - prev_close) / prev_close * 100) if prev_close else 0.0,
+            "high": _round2(snap.get("day_high")),
+            "low": _round2(snap.get("day_low")),
+            "open": _round2(snap.get("day_open")),
+            "prev_close": _round2(prev_close),
+            "source": "alpaca",
+            "feed": snap["feed"],
+        }
+    return quotes
+
+
+def _yf_allowed() -> bool:
+    return not alpaca_md.on_datacenter_host()
 
 
 def _yf_quote_sync(symbol: str) -> dict:
@@ -525,16 +566,22 @@ async def av_analytics_batch(
 # ── Unified public API ────────────────────────────────────────────────────────
 
 async def get_quote(symbol: str, client: httpx.AsyncClient | None = None) -> dict:
-    """Fetch a single quote: Finnhub → yfinance fallback.
+    """Fetch a single quote: Alpaca → Finnhub → yfinance (local runs only).
 
     Args:
         symbol: Ticker symbol.
         client: Optional shared httpx client. Creates a new one if not provided.
     """
     async def _fetch(c: httpx.AsyncClient) -> dict:
+        loop = asyncio.get_running_loop()
+        alpaca = await loop.run_in_executor(_YF_EXECUTOR, _alpaca_quotes_sync, [symbol])
+        if symbol in alpaca:
+            return alpaca[symbol]
         try:
             return await _finnhub_quote(c, symbol)
         except Exception as fh_exc:
+            if not _yf_allowed():
+                raise
             logger.warning("data_client: Finnhub failed for %s (%s) — trying yfinance", symbol, fh_exc)
             async with _yf_semaphore():
                 await asyncio.sleep(random.uniform(_YF_DELAY_MIN, _YF_DELAY_MAX))
@@ -551,16 +598,22 @@ async def get_quotes(
     symbols: list[str],
     client: httpx.AsyncClient | None = None,
 ) -> dict[str, dict]:
-    """Fetch quotes for many symbols: Finnhub concurrent → yfinance bulk fallback.
+    """Fetch quotes for many symbols: Alpaca batch → Finnhub (paced) → yfinance bulk (local only).
 
     Returns:
         {symbol: quote_dict}. Failed symbols (both sources) are absent.
     """
     async def _fetch_all(c: httpx.AsyncClient) -> dict[str, dict]:
-        outcomes = await asyncio.gather(
-            *[_fetch_one(c, s) for s in symbols], return_exceptions=False
+        loop = asyncio.get_running_loop()
+        results: dict[str, dict] = await loop.run_in_executor(
+            _YF_EXECUTOR, _alpaca_quotes_sync, list(symbols)
         )
-        results: dict[str, dict] = {}
+        unpriced = [s for s in symbols if s not in results]
+        if unpriced:
+            alpaca_md.warn_fallback("quotes", unpriced, "no Alpaca snapshot")
+        outcomes = await asyncio.gather(
+            *[_fetch_one(c, s) for s in unpriced], return_exceptions=False
+        )
         failed: list[str] = []
         for sym, quote, exc in outcomes:
             if quote is not None:
@@ -569,6 +622,9 @@ async def get_quotes(
                 logger.warning("data_client: Finnhub failed for %s (%s) — queueing yfinance", sym, exc)
                 failed.append(sym)
 
+        if failed and not _yf_allowed():
+            logger.error("data_client: yfinance skipped on a datacenter host; no price for: %s", failed)
+            failed = []
         if failed:
             logger.info("data_client: fetching %d failed symbols via yfinance bulk", len(failed))
             yf_quotes: dict[str, dict] = {}
@@ -593,6 +649,9 @@ async def get_quotes(
             if still_failed:
                 logger.error("data_client: all sources failed for: %s", still_failed)
 
+        missing = [s for s in symbols if s not in results]
+        if missing:
+            logger.error("data_client: no price from any source for: %s", missing)
         return results
 
     async def _fetch_one(c: httpx.AsyncClient, sym: str):
@@ -614,9 +673,9 @@ async def get_quotes_yf_batch(
     symbols: list[str],
     client: httpx.AsyncClient | None = None,
 ) -> dict[str, dict]:
-    """Fetch quotes for many symbols using a single yf.download() batch call.
+    """Fetch quotes for many symbols in one batch (Alpaca snapshots; yfinance only locally).
 
-    Primary path for the A4 midday-yf refresh. Avoids the per-symbol Finnhub
+    Primary path for the A4 midday refresh. Avoids the per-symbol Finnhub
     fan-out that causes correlated 429s (incident-2026-05-21) by issuing one
     network request for all symbols at once.
 
@@ -632,7 +691,7 @@ async def get_quotes_yf_batch(
     Returns:
         {symbol: quote_dict}. Symbols that failed both batch and gap-fill are absent.
         Each quote_dict contains: price, change, change_pct, high, low, open,
-        prev_close, source ("yfinance" | "finnhub" | ...), fetched_at (ISO UTC).
+        prev_close, source ("alpaca" | "finnhub" | "yfinance"), fetched_at (ISO UTC).
     """
     if not symbols:
         return {}
@@ -640,10 +699,14 @@ async def get_quotes_yf_batch(
     fetched_at = datetime.now(timezone.utc).isoformat()
     results: dict[str, dict] = {}
 
-    # Step 1 — single batched yf.download call (runs in thread pool, sync lib)
+    # Step 1 — Alpaca batched snapshots (primary); yfinance bulk only for local runs
     try:
         loop = asyncio.get_running_loop()
-        raw = await loop.run_in_executor(_YF_EXECUTOR, _yf_bulk_sync, symbols)
+        raw = await loop.run_in_executor(_YF_EXECUTOR, _alpaca_quotes_sync, list(symbols))
+        unpriced = [s for s in symbols if s not in raw]
+        if unpriced and _yf_allowed():
+            alpaca_md.warn_fallback("quotes", unpriced, "no Alpaca snapshot")
+            raw.update(await loop.run_in_executor(_YF_EXECUTOR, _yf_bulk_sync, unpriced))
         for sym, quote in raw.items():
             results[sym] = {**quote, "fetched_at": fetched_at}
         logger.info(

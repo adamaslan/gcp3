@@ -11,6 +11,7 @@ from datetime import date
 from typing import Any
 
 from firestore import get_cache, set_cache
+from history_client import daily_history
 
 logger = logging.getLogger(__name__)
 
@@ -77,36 +78,28 @@ async def _compute_feature(
         yf_period = _TF_HISTORY_PERIOD.get(timeframe, "3mo")
 
         if feature_name == "bollinger":
-            import yfinance as yf
             from features_bollinger import compute_bollinger
-            ticker_obj = yf.Ticker(ticker)
-            hist = await asyncio.to_thread(ticker_obj.history, period=yf_period)
+            hist = await asyncio.to_thread(daily_history, ticker, yf_period)
             closes = hist["Close"].dropna()
             result = compute_bollinger(closes, timeframe=timeframe)
             return result.__dict__ if result else FEATURE_UNAVAILABLE
 
         if feature_name == "volume":
-            import yfinance as yf
             from features_volume import compute_volume_zscore
-            ticker_obj = yf.Ticker(ticker)
-            hist = await asyncio.to_thread(ticker_obj.history, period=yf_period)
+            hist = await asyncio.to_thread(daily_history, ticker, yf_period)
             hist = hist.rename(columns={c: c.lower() for c in hist.columns})
             result = compute_volume_zscore(hist[["volume", "close"]].dropna())
             return result.__dict__ if result else FEATURE_UNAVAILABLE
 
         if feature_name == "rsi":
-            import yfinance as yf
             from features_rsi import compute_rsi
-            ticker_obj = yf.Ticker(ticker)
-            hist = await asyncio.to_thread(ticker_obj.history, period=yf_period)
+            hist = await asyncio.to_thread(daily_history, ticker, yf_period)
             result = compute_rsi(hist["Close"].dropna())
             return result.__dict__ if result else FEATURE_UNAVAILABLE
 
         if feature_name == "macd":
-            import yfinance as yf
             from features_macd import compute_macd
-            ticker_obj = yf.Ticker(ticker)
-            hist = await asyncio.to_thread(ticker_obj.history, period=yf_period)
+            hist = await asyncio.to_thread(daily_history, ticker, yf_period)
             result = compute_macd(hist["Close"].dropna())
             return result.__dict__ if result else FEATURE_UNAVAILABLE
 
