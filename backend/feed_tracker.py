@@ -23,7 +23,8 @@ Usage (needs GCP_PROJECT_ID plus Application Default Credentials):
     python feed_tracker.py --quotes-only   # rebuild the /industry-intel cache only
     python feed_tracker.py --check-only    # freshness report, writes nothing
 
-FINNHUB_API_KEY is optional: without it quotes fall back to yfinance.
+ALPACA_API_KEY/ALPACA_API_SECRET make Alpaca the primary quote source; FINNHUB_API_KEY is the
+optional fallback. yfinance is only used on local runs.
 """
 import argparse
 import asyncio
