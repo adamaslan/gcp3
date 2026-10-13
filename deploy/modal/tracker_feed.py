@@ -9,7 +9,8 @@ GitHub Actions (23:00), so a vendor problem is not hit by all three at once.
 A quotes-only run at 17:30 UTC rebuilds the /industry-intel page cache, which
 nothing else refreshes intraday (GitHub Actions does the same at 17:00).
 
-FINNHUB_API_KEY is optional in the secret; without it quotes use yfinance.
+ALPACA_API_KEY / ALPACA_API_SECRET in the secret make Alpaca the primary quote source;
+FINNHUB_API_KEY is the optional fallback. yfinance is never called on Modal (Yahoo blocks it).
 
 Deploy (one-time), from the repo root:
     pip install modal
@@ -44,6 +45,8 @@ image = (
         "google-cloud-firestore==2.19.0",
         "google-auth==2.40.3",
         "yfinance==0.2.54",
+        "requests>=2.31.0,<3.0.0",
+        "boto3>=1.34.0,<2.0.0",
         "pandas>=2.0.0,<3.0.0",
         "numpy>=1.26.0,<3.0.0",
         "PyYAML>=6.0.0,<7.0.0",

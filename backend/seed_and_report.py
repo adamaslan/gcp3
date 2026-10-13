@@ -1,12 +1,15 @@
 """Seed ETF price history and print a CSV report.
 
 Strategy:
-  1. Finnhub /stock/candle  — 1yr daily OHLCV, fast, 50ms/request (primary)
-  2. yfinance period="max"  — full history fallback, single attempt per symbol
+  1. Alpaca all-adjusted bars for new histories and Alpaca all-adjusted deltas.
+  2. Legacy yfinance histories keep local dividend-adjusted yfinance deltas.
+     Datacenter runs fail closed for legacy histories until an approved migration.
+     (Finnhub /stock/candle was removed: it is a paid endpoint and returns 403 on the free key.)
      Note: Alpha Vantage only has aggregated analytics, not daily price history.
+     Different providers are never joined without an approved rebase.
 
 Usage:
-    GCP_PROJECT_ID=ttb-lang1 FINNHUB_API_KEY=<key> python seed_and_report.py
+    GCP_PROJECT_ID=ttb-lang1 ALPACA_API_KEY=<key> ALPACA_API_SECRET=<secret> python seed_and_report.py
 """
 import csv
 import logging
@@ -15,8 +18,9 @@ import sys
 import time
 from datetime import datetime, timezone
 
-import httpx
 import pandas as pd
+
+import alpaca_md
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,38 +29,31 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-_FINNHUB_BASE    = "https://finnhub.io/api/v1"
-_FH_DELAY        = 0.12   # 120ms between requests → ~8 req/s (safe under 30/s limit)
+ALPACA_HISTORY_DAYS = 3650  # Alpaca SIP daily bars go back roughly ten years
 _YF_DELAY        = 4.0    # seconds between yfinance fallback attempts
 
 
-# ── Finnhub ───────────────────────────────────────────────────────────────────
+# ── Alpaca ────────────────────────────────────────────────────────────────────
 
-def _finnhub_candles(symbol: str, from_ts: int, to_ts: int) -> list[dict]:
-    """Fetch daily OHLCV from Finnhub. Returns [{date, adjusted_close, volume}]."""
-    api_key = os.environ.get("FINNHUB_API_KEY", "")
-    if not api_key:
-        return []
-    time.sleep(_FH_DELAY)
-    params  = {"symbol": symbol, "resolution": "D", "from": from_ts, "to": to_ts}
-    headers = {"X-Finnhub-Token": api_key}
-    resp = httpx.get(f"{_FINNHUB_BASE}/stock/candle", params=params, headers=headers, timeout=15)
-    if resp.status_code == 429:
-        logger.warning("Finnhub 429 for %s — sleeping 3s then retrying", symbol)
-        time.sleep(3.0)
-        resp = httpx.get(f"{_FINNHUB_BASE}/stock/candle", params=params, headers=headers, timeout=15)
-    resp.raise_for_status()
-    data = resp.json()
-    if data.get("s") != "ok" or not data.get("t"):
-        return []
-    return [
-        {
-            "date": datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d"),
-            "adjusted_close": float(c),
-            "volume": int(v),
-        }
-        for ts, c, v in zip(data["t"], data["c"], data["v"])
-    ]
+def _alpaca_history(etfs: list[str], days: int) -> dict[str, pd.DataFrame]:
+    """One batched all-adjusted Alpaca pull; fail extraction when no fallback is allowed."""
+    if not alpaca_md.is_configured():
+        error = alpaca_md.AlpacaError("ALPACA_API_KEY/ALPACA_API_SECRET not set")
+        if alpaca_md.on_datacenter_host():
+            raise error
+        alpaca_md.warn_fallback("history", etfs, error)
+        return {}
+    try:
+        frames = alpaca_md.daily_bars_frames(etfs, days, adjustment="all")
+    except alpaca_md.AlpacaError as exc:
+        if alpaca_md.on_datacenter_host():
+            raise
+        alpaca_md.warn_fallback("history", etfs, exc)
+        return {}
+    return {
+        etf: df.rename(columns={"Close": "adjusted_close", "Volume": "volume"})[["adjusted_close", "volume"]]
+        for etf, df in frames.items()
+    }
 
 
 # ── yfinance ──────────────────────────────────────────────────────────────────
@@ -71,7 +68,7 @@ def _yf_fetch(symbol: str, period: str):
     browser User-Agent already, so the hand-rolled one bought nothing.
     """
     import yfinance as yf
-    return yf.Ticker(symbol).history(period=period)
+    return yf.Ticker(symbol).history(period=period, auto_adjust=True)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -81,13 +78,12 @@ def main() -> None:
     from industry import _FLAT
 
     unique_etfs     = sorted({etf for _, etf in _FLAT.values()})
-    fh_key_present  = bool(os.environ.get("FINNHUB_API_KEY"))
-    to_ts           = int(time.time())
-    from_ts         = to_ts - 365 * 24 * 3600  # 1 year (Finnhub free tier max)
+    alpaca_frames   = _alpaca_history(unique_etfs, ALPACA_HISTORY_DAYS)
+    yf_allowed      = not alpaca_md.on_datacenter_host()
 
     logger.info(
-        "Seeding %d ETFs | Finnhub=%s | yfinance fallback=yes",
-        len(unique_etfs), "yes" if fh_key_present else "NO KEY — fallback only",
+        "Seeding %d ETFs | Alpaca served %d | yfinance fallback=%s",
+        len(unique_etfs), len(alpaca_frames), "yes" if yf_allowed else "no (datacenter host)",
     )
 
     rows: list[dict] = []
@@ -100,31 +96,35 @@ def main() -> None:
         source_used = "none"
         stored      = 0
 
-        # ── 1. Finnhub (primary) ──────────────────────────────────────────────
-        if fh_key_present:
+        # ── 1. Alpaca (primary) ───────────────────────────────────────────────
+        df = alpaca_frames.get(etf)
+        if df is not None and not df.empty:
             try:
-                records = _finnhub_candles(etf, from_ts, to_ts)
-                if records:
-                    df = pd.DataFrame(records)
-                    df["date"] = pd.to_datetime(df["date"])
-                    df.set_index("date", inplace=True)
-                    if meta_before is None:
-                        stored = etf_store.store_history(etf, df, source="finnhub_seed")
-                    else:
-                        stored = etf_store.append_daily(etf, df, source="finnhub_delta")
-                    source_used = "finnhub"
-                    logger.info("✓ %s via Finnhub — %d rows", etf, stored)
+                if meta_before is None:
+                    stored = etf_store.store_history(etf, df, source="alpaca_all_seed")
                 else:
-                    logger.warning("Finnhub returned no data for %s", etf)
-            except Exception as exc:
-                logger.warning("Finnhub failed for %s: %s — trying yfinance", etf, exc)
+                    if not meta_before.get("source", "").startswith("alpaca_all_"):
+                        raise alpaca_md.AlpacaError(
+                            "legacy ETF history has an unverified adjustment basis; "
+                            "use local yfinance or an approved full-history migration"
+                        )
+                    delta = df.loc[df.index.strftime("%Y-%m-%d") > meta_before["last_date"]]
+                    stored = etf_store.append_daily(etf, delta, source="alpaca_all_delta")
+                source_used = "alpaca"
+                logger.info("✓ %s via Alpaca — %d rows", etf, stored)
+            except Exception as exc:  # Firestore write errors vary; keep seeding the rest
+                logger.error("store failed for %s after Alpaca fetch: %s", etf, exc)
+        else:
+            alpaca_md.warn_fallback("history", [etf], "no Alpaca bars")
 
         # ── 2. yfinance fallback ──────────────────────────────────────────────
-        if source_used == "none":
+        if (source_used == "none" and yf_allowed
+                and (meta_before is None
+                     or meta_before.get("source", "").startswith("yfinance"))):
             if i > 1:
                 time.sleep(_YF_DELAY)
             try:
-                period = "max" if meta_before is None else "3mo"
+                period = "max"
                 hist   = _yf_fetch(etf, period)
                 if not hist.empty:
                     hist = hist.rename(columns={"Close": "adjusted_close", "Volume": "volume"})
@@ -148,7 +148,7 @@ def main() -> None:
             "first_date":  meta_after.get("first_date", "") if meta_after else "",
             "last_date":   meta_after.get("last_date",  "") if meta_after else "",
             "total_days":  meta_after.get("total_days",  0) if meta_after else 0,
-            "status":      "ok" if stored > 0 else "no_data",
+            "status":      "ok" if source_used != "none" else "no_data",
         })
 
     # ── CSV to stdout ─────────────────────────────────────────────────────────
@@ -165,6 +165,11 @@ def main() -> None:
         "Done: %d/%d seeded, %d total rows | failed: %s",
         ok, len(unique_etfs), total, failed or "none",
     )
+
+    if failed:
+        raise alpaca_md.AlpacaError(
+            f"ETF seed failed for {len(failed)} symbols; verify provider and adjustment basis"
+        )
 
 
 if __name__ == "__main__":
