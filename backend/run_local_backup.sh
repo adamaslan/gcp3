@@ -67,7 +67,7 @@ echo "[backup] jobs: $SELECTED"
 
 # --- secrets: Secret Manager → process env, never printed -------------------
 # Same names the Cloud Run revision binds. A missing optional key degrades
-# gracefully (see concept-multi-source-fallback); FINNHUB_API_KEY is required.
+# gracefully; FINNHUB_API_KEY is required only by Finnhub-dependent jobs.
 # load_secret VAR NAME [ALT_NAME...] - first name that yields a value wins.
 # Alternates exist because one credential ended up under two secret names.
 # Order matters and is not cosmetic: as of 2026-09-10 the lower-case
@@ -99,7 +99,16 @@ load_secret MASSIVE_API_KEY    MASSIVE_API_KEY
 load_secret MISTRAL_KEY        MISTRAL_KEY
 load_secret OPENROUTER_API_KEY OPENROUTER_API_KEY openrouter-api-key
 
-[ -n "${FINNHUB_API_KEY:-}" ] || { echo "[backup] FATAL: FINNHUB_API_KEY unavailable - no market data source" >&2; exit 1; }
+if [ $DRY_RUN -eq 0 ]; then
+  for j in $SELECTED; do
+    case "$j" in
+      fetch|bake|midday-yf|intraday)
+        [ -n "${FINNHUB_API_KEY:-}" ] || {
+          echo "[backup] FATAL: FINNHUB_API_KEY unavailable for job $j" >&2; exit 1;
+        } ;;
+    esac
+  done
+fi
 
 # A run-scoped token for the _verify_scheduler shared-secret fallback. Never the
 # production SCHEDULER_SECRET: this server is bound to loopback and dies with
@@ -113,11 +122,17 @@ export PORT
 export RELOAD=""
 
 # --- boot the production app locally ---------------------------------------
+command -v lsof >/dev/null || { echo "[backup] FATAL: lsof required to verify app listener" >&2; exit 1; }
+if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null | grep -q .; then
+  echo "[backup] FATAL: port $PORT already has a listener" >&2; exit 1
+fi
 LOG="$(mktemp -t gcp3-local-backup)"
+RESP="$(mktemp -t gcp3-backup-resp)"
 echo "[backup] starting app (log: $LOG)"
 python main.py >"$LOG" 2>&1 &
 APP_PID=$!
 cleanup() {
+  rm -f "$RESP"
   if kill -0 "$APP_PID" 2>/dev/null; then
     echo "[backup] stopping app (pid $APP_PID)"
     kill "$APP_PID" 2>/dev/null || true
@@ -128,14 +143,18 @@ trap cleanup EXIT
 
 i=0
 while [ $i -lt 60 ]; do
-  if curl -fsS --max-time 3 "$BASE/health" >/dev/null 2>&1; then break; fi
   if ! kill -0 "$APP_PID" 2>/dev/null; then
     echo "[backup] FATAL: app exited during startup - last 30 log lines:" >&2
     tail -30 "$LOG" >&2; exit 1
   fi
+  if lsof -nP -a -p "$APP_PID" -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null | grep -qx "$APP_PID" &&
+      curl -fsS --max-time 3 "$BASE/health" >/dev/null 2>&1 &&
+      kill -0 "$APP_PID" 2>/dev/null; then break; fi
   sleep 1; i=$((i+1))
 done
-curl -fsS --max-time 5 "$BASE/health" || { echo "[backup] FATAL: /health never came up" >&2; tail -30 "$LOG" >&2; exit 1; }
+[ $i -lt 60 ] && kill -0 "$APP_PID" 2>/dev/null &&
+  lsof -nP -a -p "$APP_PID" -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null | grep -qx "$APP_PID" &&
+  curl -fsS --max-time 5 "$BASE/health" || { echo "[backup] FATAL: /health never came up" >&2; tail -30 "$LOG" >&2; exit 1; }
 echo
 echo "[backup] app healthy"
 
@@ -146,15 +165,15 @@ fi
 
 # --- run the jobs, in table (dependency) order -----------------------------
 FAILED=0
-RESP=/tmp/gcp3-backup-resp.json
 for j in $(job_rows | awk -F'|' '{print $1}'); do
   case " $SELECTED " in *" $j "*) ;; *) continue ;; esac
   method="$(job_field "$j" 2)"
   path="$(job_field "$j" 3)"
   printf '[backup] %-12s %s %s ... ' "$j" "$method" "$path"
   start=$(date +%s)
-  code=$(curl -s -o "$RESP" -w '%{http_code}' \
-    -X "$method" -H "X-Scheduler-Token: $SCHEDULER_SECRET" \
+  code=$(printf 'X-Scheduler-Token: %s\n' "$SCHEDULER_SECRET" | \
+    curl -s -o "$RESP" -w '%{http_code}' \
+    -X "$method" -H @- \
     --max-time 900 "$BASE$path" || echo 000)
   echo "HTTP $code ($(( $(date +%s) - start ))s)"
   echo "[backup]   -> $(head -c 240 "$RESP")"

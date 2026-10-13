@@ -1,6 +1,7 @@
 """Macro-pulse specialist agent for /macro-pulse endpoint."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -36,7 +37,8 @@ class MacroAgent(AgentLoop):
         # Grounded generation for news/market context
         grounded_summary = ""
         try:
-            grounded = generate_grounded(
+            grounded = await asyncio.to_thread(
+                generate_grounded,
                 prompt=(
                     "Summarize today's key macro events affecting US equities: "
                     "Fed signals, Treasury yields, DXY moves, credit spreads, "

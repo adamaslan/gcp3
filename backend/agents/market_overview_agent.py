@@ -1,6 +1,7 @@
 """Market overview specialist agent for /market-overview endpoint."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -35,7 +36,8 @@ class MarketOverviewAgent(AgentLoop):
         """
         grounded_summary = ""
         try:
-            grounded = generate_grounded(
+            grounded = await asyncio.to_thread(
+                generate_grounded,
                 prompt=(
                     "Summarize today's US stock market overview: S&P 500 breadth, "
                     "sector leadership, notable movers, and investor sentiment. "

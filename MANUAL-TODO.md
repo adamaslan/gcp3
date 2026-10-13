@@ -122,3 +122,11 @@ variable, never the value.
 - **Still open — `GEMINI_API_KEY` is still bound** and nothing reads it.
   Unbind it in the same deploy that ships the new image.
 - **Added**: 2026-09-10
+
+### Verify OpenRouter web-search account credits
+- **From**: PR #81 grounded-call review.
+- **Blocked on**: account credits sufficient for web search on the account used by `OPENROUTER_API_KEY`; account funding has not been verified.
+- **Why it cannot be code**: `:free:online` requests can incur search charges; code cannot fund the deployment account.
+- **Unblocks**: grounded `online=True` requests for macro and market-overview agents.
+- **🖱 Dashboard**: https://openrouter.ai/settings/credits — inspect available credits and decide whether to fund search usage. Expected result: sufficient account credits for web-search requests.
+- **Added**: 2026-10-12

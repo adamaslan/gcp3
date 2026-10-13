@@ -124,6 +124,31 @@ def _api_key() -> str:
     return key
 
 
+def _strict_schema(schema: Any, *, schema_map: bool = False) -> Any:
+    """Copy a JSON schema into provider strict mode without changing public models."""
+    if isinstance(schema, list):
+        return [_strict_schema(item) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+    if schema_map:
+        return {key: _strict_schema(value) for key, value in schema.items()}
+    result = {
+        key: _strict_schema(value, schema_map=key in {"properties", "$defs", "definitions", "patternProperties"})
+        for key, value in schema.items() if key != "default"
+    }
+    if result.get("type") == "object" or "properties" in result:
+        result["additionalProperties"] = False
+        result["required"] = list(result.get("properties", {}))
+    return result
+
+
+def _remaining(deadline: float) -> float:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise OpenRouterError("OpenRouter total deadline exceeded")
+    return remaining
+
+
 def _payload(
     messages: Sequence[dict[str, Any]],
     model: str,
@@ -145,7 +170,7 @@ def _payload(
             "json_schema": {
                 "name": "response",
                 "strict": True,
-                "schema": response_schema,
+                "schema": _strict_schema(response_schema),
             },
         }
     return payload
@@ -245,8 +270,15 @@ def complete_sync(
     online: bool = False,
     temperature: float = 0.1,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    deadline_seconds: float | None = None,
 ) -> LLMResponse:
-    """Blocking completion. For callers already running in a worker thread."""
+    """Blocking completion with one shared deadline across models and retries.
+
+    The total budget defaults to timeout; request phase timeouts are capped
+    to the remaining budget. For callers already running in a worker thread.
+    """
+    deadline = time.monotonic() + (timeout if deadline_seconds is None else deadline_seconds)
+    _remaining(deadline)
     headers = _headers()
     models = _models(online)
     last_exc: Exception | None = None
@@ -254,12 +286,15 @@ def complete_sync(
     with httpx.Client(timeout=timeout) as client:
         for model in models:
             for attempt in range(1, MAX_ATTEMPTS_PER_MODEL + 1):
+                remaining = _remaining(deadline)
                 try:
                     resp = client.post(
                         URL,
                         json=_payload(messages, model, response_schema, temperature),
                         headers=headers,
+                        timeout=min(timeout, remaining),
                     )
+                    _remaining(deadline)
                     resp.raise_for_status()
                     result = _parse(resp.json(), model)
                     _log_recovered(model, models, attempt)
@@ -274,6 +309,8 @@ def complete_sync(
                         "openrouter: 429 model=%s attempt=%d/%d - waiting %ss",
                         model, attempt, MAX_ATTEMPTS_PER_MODEL, wait,
                     )
+                    if wait >= _remaining(deadline):
+                        break
                     time.sleep(wait)
 
     raise OpenRouterError(f"all OpenRouter models failed: {last_exc}")
@@ -286,8 +323,11 @@ async def complete(
     online: bool = False,
     temperature: float = 0.1,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    deadline_seconds: float | None = None,
 ) -> LLMResponse:
-    """Async completion. Same chain and retry policy as complete_sync."""
+    """Async completion with a total deadline (defaults to timeout)."""
+    deadline = time.monotonic() + (timeout if deadline_seconds is None else deadline_seconds)
+    _remaining(deadline)
     headers = _headers()
     models = _models(online)
     last_exc: Exception | None = None
@@ -295,12 +335,18 @@ async def complete(
     async with httpx.AsyncClient(timeout=timeout) as client:
         for model in models:
             for attempt in range(1, MAX_ATTEMPTS_PER_MODEL + 1):
+                remaining = _remaining(deadline)
                 try:
-                    resp = await client.post(
-                        URL,
-                        json=_payload(messages, model, response_schema, temperature),
-                        headers=headers,
+                    resp = await asyncio.wait_for(
+                        client.post(
+                            URL,
+                            json=_payload(messages, model, response_schema, temperature),
+                            headers=headers,
+                            timeout=min(timeout, remaining),
+                        ),
+                        timeout=remaining,
                     )
+                    _remaining(deadline)
                     resp.raise_for_status()
                     result = _parse(resp.json(), model)
                     _log_recovered(model, models, attempt)
@@ -315,6 +361,8 @@ async def complete(
                         "openrouter: 429 model=%s attempt=%d/%d - waiting %ss",
                         model, attempt, MAX_ATTEMPTS_PER_MODEL, wait,
                     )
+                    if wait >= _remaining(deadline):
+                        break
                     await asyncio.sleep(wait)
 
     raise OpenRouterError(f"all OpenRouter models failed: {last_exc}")
