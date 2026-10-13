@@ -100,7 +100,7 @@ def compute_bollinger(
 
 
 def format_bb_for_prompt(bb: BollingerPosition) -> str:
-    """Compact Gemini prompt fragment for a single timeframe BB reading."""
+    """Compact LLM prompt fragment for a single timeframe BB reading."""
     sq = "true" if bb.squeeze else "false"
     return f"<bb_{bb.timeframe.lower()}>pos={bb.position}({bb.position_pct:.2f}) bw={bb.band_width_pct:.1%} squeeze={sq}</bb_{bb.timeframe.lower()}>"
 

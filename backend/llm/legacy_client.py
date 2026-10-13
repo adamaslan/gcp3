@@ -28,17 +28,17 @@ import os
 
 import httpx
 
+from llm import openrouter_client
+
 logger = logging.getLogger(__name__)
 
-_OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-# Ordered fallback chain of $0-priced OpenRouter models. Static rather than
-# live-refreshed like the portal's FREE_MODEL_CHAIN (nuwrrrld-portal's
-# scripts/refresh-free-models.mjs) — see "Open question" below.
-_OPENROUTER_MODEL_CHAIN = (
-    "qwen/qwen3-235b-a22b:free",
-    "qwen/qwen3-30b-a3b:free",
-    "meta-llama/llama-3.3-70b-instruct:free",
-)
+# The chain and endpoint live in llm/openrouter_client.py so there is exactly
+# one list to correct when models are retired. This module kept its own copy
+# until 2026-09-10, and that copy had gone entirely stale — all three of its
+# qwen3/llama-3.3 ids 404'd, meaning every call here fell through to the
+# Mistral fallback on every run without anything reporting the chain as dead.
+_OPENROUTER_URL = openrouter_client.URL
+_OPENROUTER_MODEL_CHAIN = openrouter_client.MODEL_CHAIN
 _MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions"
 _MISTRAL_MODEL = "mistral-small-latest"
 _MAX_ATTEMPTS_PER_MODEL = 2

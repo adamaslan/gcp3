@@ -1,10 +1,12 @@
 """Macro-pulse specialist agent for /macro-pulse endpoint."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
 from agents.base import AgentLoop
+from llm import openrouter_client
 from llm.grounded_call import generate_grounded
 
 logger = logging.getLogger(__name__)
@@ -13,7 +15,7 @@ logger = logging.getLogger(__name__)
 class MacroAgent(AgentLoop):
     """Extends AgentLoop for /macro-pulse: grounded generation + tool calls."""
 
-    def __init__(self, model: str = "gemini-2.0-flash") -> None:
+    def __init__(self, model: str = openrouter_client.DEFAULT_MODEL) -> None:
         super().__init__(endpoint="macro-pulse", model=model)
 
     async def run_macro(
@@ -35,7 +37,8 @@ class MacroAgent(AgentLoop):
         # Grounded generation for news/market context
         grounded_summary = ""
         try:
-            grounded = generate_grounded(
+            grounded = await asyncio.to_thread(
+                generate_grounded,
                 prompt=(
                     "Summarize today's key macro events affecting US equities: "
                     "Fed signals, Treasury yields, DXY moves, credit spreads, "
