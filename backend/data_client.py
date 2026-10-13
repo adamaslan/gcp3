@@ -675,12 +675,11 @@ async def get_quotes_yf_batch(
 ) -> dict[str, dict]:
     """Fetch quotes for many symbols in one batch (Alpaca snapshots; yfinance only locally).
 
-    Primary path for the A4 midday refresh. Avoids the per-symbol Finnhub
-    fan-out that causes correlated 429s (incident-2026-05-21) by issuing one
-    network request for all symbols at once.
+    Primary path for the A4 midday refresh. Batch Alpaca snapshots first,
+    then pace Finnhub gap requests and use local yfinance for remaining gaps.
 
     Validation gate: if the batch returns an empty frame or is missing expected
-    columns, falls back to get_quote() (Finnhub → yfinance) for the gaps only.
+    columns, falls back to Finnhub then local yfinance for the gaps only.
     Every quote is tagged with 'source' and 'fetched_at' so callers can surface
     freshness in the UI rather than silently serving stale data.
 
@@ -703,10 +702,6 @@ async def get_quotes_yf_batch(
     try:
         loop = asyncio.get_running_loop()
         raw = await loop.run_in_executor(_YF_EXECUTOR, _alpaca_quotes_sync, list(symbols))
-        unpriced = [s for s in symbols if s not in raw]
-        if unpriced and _yf_allowed():
-            alpaca_md.warn_fallback("quotes", unpriced, "no Alpaca snapshot")
-            raw.update(await loop.run_in_executor(_YF_EXECUTOR, _yf_bulk_sync, unpriced))
         for sym, quote in raw.items():
             results[sym] = {**quote, "fetched_at": fetched_at}
         logger.info(
@@ -716,13 +711,13 @@ async def get_quotes_yf_batch(
     except Exception as exc:
         logger.warning("get_quotes_yf_batch: batch download failed (%s) — falling back per-symbol", exc)
 
-    # Step 2 — gap-fill: any symbol the batch missed → Finnhub → yfinance via get_quote
+    # Step 2 — gap-fill: any symbol the batch missed → Finnhub, without repeating Alpaca
     missing = [s for s in symbols if s not in results]
     if missing:
-        logger.info("get_quotes_yf_batch: gap-filling %d missing symbols via get_quote()", len(missing))
+        logger.info("get_quotes_yf_batch: gap-filling %d missing symbols via Finnhub", len(missing))
 
         async def _gap_fill(c: httpx.AsyncClient) -> None:
-            tasks = [get_quote(sym, client=c) for sym in missing]
+            tasks = [_finnhub_quote(c, sym) for sym in missing]
             outcomes = await asyncio.gather(*tasks, return_exceptions=True)
             for sym, outcome in zip(missing, outcomes):
                 if isinstance(outcome, Exception):
@@ -735,6 +730,20 @@ async def get_quotes_yf_batch(
         else:
             async with httpx.AsyncClient(timeout=15) as c:
                 await _gap_fill(c)
+
+    unresolved = [s for s in symbols if s not in results]
+    if unresolved and _yf_allowed():
+        alpaca_md.warn_fallback("quotes", unresolved, "Alpaca and Finnhub unavailable")
+        try:
+            async with _yf_semaphore():
+                await asyncio.sleep(random.uniform(_YF_DELAY_MIN, _YF_DELAY_MAX))
+                loop = asyncio.get_running_loop()
+                quotes = await loop.run_in_executor(_YF_EXECUTOR, _yf_bulk_sync, unresolved)
+            for sym in unresolved:
+                if sym in quotes:
+                    results[sym] = {**quotes[sym], "fetched_at": fetched_at}
+        except Exception as exc:
+            logger.warning("get_quotes_yf_batch: yfinance gap-fill failed: %s", exc)
 
     if not results:
         raise RuntimeError(

@@ -46,7 +46,7 @@ def test_local_run_falls_back_to_yfinance():
             patch.dict("sys.modules", {"yfinance": fake_yf}):
         out = history_client.daily_history("ZZZ", "3mo")
     assert len(out) == 3
-    fake_yf.Ticker.return_value.history.assert_called_once_with(period="3mo")
+    fake_yf.Ticker.return_value.history.assert_called_once_with(period="3mo", auto_adjust=False)
 
 
 def test_datacenter_host_returns_empty_without_calling_yfinance(monkeypatch):
@@ -56,8 +56,19 @@ def test_datacenter_host_returns_empty_without_calling_yfinance(monkeypatch):
             patch.dict("sys.modules", {"yfinance": fake_yf}):
         out = history_client.daily_history("ZZZ", "3mo")
     assert out.empty
+    assert list(out.columns) == ["Open", "High", "Low", "Close", "Volume"]
+    assert out["Close"].empty
     fake_yf.Ticker.assert_not_called()
 
 
 def test_ytd_days_is_positive():
     assert history_client.period_to_days("ytd") >= (date.today() - date(date.today().year, 1, 1)).days
+
+
+def test_empty_local_fallback_has_documented_columns():
+    fake_yf = MagicMock()
+    fake_yf.Ticker.return_value.history.return_value = pd.DataFrame()
+    with patch.object(history_client.alpaca_md, "daily_bars_frames", return_value={}), \
+            patch.dict("sys.modules", {"yfinance": fake_yf}):
+        out = history_client.daily_history("ZZZ")
+    assert out["Close"].empty

@@ -85,3 +85,32 @@ def test_get_quote_prefers_alpaca():
             patch.object(data_client, "_finnhub_quote") as fh:
         assert _run(data_client.get_quote("A"))["source"] == "alpaca"
     fh.assert_not_called()
+
+
+def test_yf_batch_uses_one_alpaca_call_then_finnhub_then_yfinance():
+    events = []
+
+    def alpaca(_symbols):
+        events.append("alpaca")
+        return {"A": {"price": 1, "source": "alpaca"}}
+
+    async def finnhub(_client, symbol):
+        events.append("finnhub:" + symbol)
+        if symbol == "C":
+            raise ValueError("unavailable")
+        return {"price": 2, "source": "finnhub"}
+
+    def yahoo(symbols):
+        events.append("yfinance")
+        assert symbols == ["C"]
+        return {"C": {"price": 3, "source": "yfinance"}, "B": {"price": 99}}
+
+    with patch.object(data_client, "_alpaca_quotes_sync", side_effect=alpaca) as batch, \
+            patch.object(data_client, "_finnhub_quote", side_effect=finnhub), \
+            patch.object(data_client, "_yf_bulk_sync", side_effect=yahoo), \
+            patch.object(data_client.asyncio, "sleep"):
+        quotes = _run(data_client.get_quotes_yf_batch(["A", "B", "C"]))
+    batch.assert_called_once_with(["A", "B", "C"])
+    assert events == ["alpaca", "finnhub:B", "finnhub:C", "yfinance"]
+    assert quotes["B"]["price"] == 2
+    assert quotes["C"]["source"] == "yfinance"

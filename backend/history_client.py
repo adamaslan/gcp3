@@ -55,10 +55,18 @@ def daily_history_days(symbol: str, days: int, *, yf_period: str | None = None) 
         logger.warning("history_client: Alpaca not configured; %s falls back", symbol)
     if alpaca_md.on_datacenter_host():
         logger.error("history_client: yfinance skipped on a datacenter host; no history for %s", symbol)
-        return pd.DataFrame()
+        return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"],
+                            index=pd.DatetimeIndex([]))
     import yfinance as yf
 
     if yf_period:
-        return yf.Ticker(symbol).history(period=yf_period)
-    start = date.today() - timedelta(days=days)
-    return yf.Ticker(symbol).history(start=start, end=date.today() + timedelta(days=1), interval="1d")
+        frame = yf.Ticker(symbol).history(period=yf_period, auto_adjust=False)
+    else:
+        start = date.today() - timedelta(days=days)
+        frame = yf.Ticker(symbol).history(
+            start=start, end=date.today() + timedelta(days=1), interval="1d", auto_adjust=False
+        )
+    if frame.empty:
+        return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"],
+                            index=pd.DatetimeIndex([]))
+    return frame

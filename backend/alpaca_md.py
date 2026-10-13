@@ -19,6 +19,7 @@ import datetime as dt
 import logging
 import os
 import time
+from threading import Lock
 from typing import Iterable, Sequence
 
 import requests
@@ -40,6 +41,7 @@ SIP_DELAY_MINUTES = 20  # SIP is only served for bars older than ~15 min on the 
 _budget_table = None
 _budget_disabled_reason: str | None = None
 _last_request_at = 0.0
+_local_budget_lock = Lock()
 
 
 class AlpacaError(RuntimeError):
@@ -95,14 +97,20 @@ def _get_budget_table():
     return _budget_table
 
 
-def _take_token(n: int = 1) -> None:
+def _pace_locally() -> None:
+    """Reserve one local request slot, including concurrent callers."""
     global _last_request_at
-    table = _get_budget_table()
-    if table is None:
+    with _local_budget_lock:
         wait = LOCAL_MIN_INTERVAL_SECONDS - (time.monotonic() - _last_request_at)
         if wait > 0:
             time.sleep(wait)
         _last_request_at = time.monotonic()
+
+
+def _take_token(n: int = 1) -> None:
+    table = _get_budget_table()
+    if table is None:
+        _pace_locally()
         return
     from botocore.exceptions import ClientError
 
@@ -119,6 +127,7 @@ def _take_token(n: int = 1) -> None:
         except ClientError as exc:
             if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
                 log.warning("alpaca rate budget write failed (%s); pacing locally", exc)
+                _pace_locally()
                 return
             time.sleep(60 - (time.time() % 60) + 1)  # wait for the next minute, never switch vendor
     raise AlpacaBudgetExhausted("shared Alpaca budget still exhausted after waiting")
@@ -132,7 +141,7 @@ def _get(path: str, params: dict) -> dict:
         _take_token(1)
         try:
             resp = requests.get(DATA_URL + path, params=params, headers=headers,
-                                timeout=HTTP_TIMEOUT_SECONDS)
+                                timeout=HTTP_TIMEOUT_SECONDS, allow_redirects=False)
         except requests.RequestException as exc:
             last = exc
         else:
@@ -141,6 +150,8 @@ def _get(path: str, params: dict) -> dict:
                 retry_after = float(resp.headers.get("Retry-After", 0) or 0)
                 if retry_after:
                     time.sleep(min(retry_after, 60))
+            elif 300 <= resp.status_code < 400:
+                raise AlpacaError("alpaca redirect refused")
             elif resp.status_code >= 400:
                 raise AlpacaError(f"alpaca {resp.status_code}: {resp.text[:200]}")
             else:
@@ -156,18 +167,21 @@ def _chunks(items: Sequence[str], size: int) -> Iterable[list[str]]:
 
 # -- public API ----------------------------------------------------------------------
 def daily_bars(symbols: Sequence[str], start: dt.date, end: dt.date | None = None, *,
-               feed: str = "sip") -> dict[str, list[dict]]:
-    """Raw split-adjusted daily bars keyed by the caller's (Yahoo-style) ticker."""
+               feed: str = "sip", adjustment: str = "split") -> dict[str, list[dict]]:
+    """Daily bars keyed by caller ticker; split adjusted unless explicitly overridden."""
     wanted = {to_alpaca_symbol(s): s for s in dict.fromkeys(symbols)}
-    end_ts = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=SIP_DELAY_MINUTES)
-              if end is None else dt.datetime.combine(end + dt.timedelta(days=1), dt.time(),
-                                                      dt.timezone.utc))
+    now = dt.datetime.now(dt.timezone.utc)
+    delayed_now = now - dt.timedelta(minutes=SIP_DELAY_MINUTES)
+    end_ts = delayed_now if end is None else min(
+        dt.datetime.combine(end + dt.timedelta(days=1), dt.time(), dt.timezone.utc),
+        delayed_now,
+    )
     out: dict[str, list[dict]] = {}
     for chunk in _chunks(list(wanted), SYMBOLS_PER_REQUEST):
         token: str | None = None
         while True:
             params = {"symbols": ",".join(chunk), "timeframe": "1Day", "start": start.isoformat(),
-                      "end": end_ts.strftime("%Y-%m-%dT%H:%M:%SZ"), "adjustment": "split",
+                      "end": end_ts.strftime("%Y-%m-%dT%H:%M:%SZ"), "adjustment": adjustment,
                       "feed": feed, "limit": 10000}
             if token:
                 params["page_token"] = token
@@ -180,13 +194,14 @@ def daily_bars(symbols: Sequence[str], start: dt.date, end: dt.date | None = Non
     return out
 
 
-def daily_bars_frames(symbols: Sequence[str], days: int = 120, *, feed: str = "sip") -> dict:
+def daily_bars_frames(symbols: Sequence[str], days: int = 120, *, feed: str = "sip",
+                      adjustment: str = "split") -> dict:
     """yfinance-shaped DataFrames per ticker; tickers Alpaca could not serve are absent."""
     import pandas as pd
 
     start = dt.datetime.now(dt.timezone.utc).date() - dt.timedelta(days=days)
     frames = {}
-    for sym, rows in daily_bars(symbols, start, feed=feed).items():
+    for sym, rows in daily_bars(symbols, start, feed=feed, adjustment=adjustment).items():
         df = pd.DataFrame(rows)
         if df.empty:
             continue
