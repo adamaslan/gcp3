@@ -4,7 +4,7 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 
 from firestore import get_cache, set_cache, delete_cache
-from llm.legacy_client import call_llm
+from llm.legacy_client import LLMUnavailableError, call_llm
 from morning import get_morning_brief
 from sector_rotation import get_sector_rotation
 from macro_pulse import get_macro_pulse
@@ -12,6 +12,8 @@ from screener import get_screener_data
 from news_sentiment import get_news_sentiment
 
 logger = logging.getLogger(__name__)
+FAILURE_CACHE_TTL_SECONDS = 600
+_FAILURE_MESSAGE = "AI market summary temporarily unavailable; retry after the provider cooldown."
 
 
 def _build_prompt(morning: dict, rotation: dict, macro: dict, screener: dict, news: dict) -> str:
@@ -66,10 +68,15 @@ async def refresh_ai_summary() -> dict:
 
 
 async def get_ai_summary() -> dict:
+    """Return today's summary, cooling down briefly when LLM providers fail."""
     cache_key = f"ai_summary:{date.today()}"
     if cached := get_cache(cache_key):
         logger.info("ai_summary cache hit key=%s", cache_key)
         return cached
+
+    failure_key = f"ai_summary_failed:{date.today()}"
+    if get_cache(failure_key):
+        raise LLMUnavailableError(_FAILURE_MESSAGE)
 
     logger.info("ai_summary cache miss — gathering all data sources")
 
@@ -84,7 +91,12 @@ async def get_ai_summary() -> dict:
     prompt = _build_prompt(morning, rotation, macro, screener, news)
 
     logger.info("ai_summary: calling LLM (OpenRouter primary, Mistral fallback)")
-    brief_text = await call_llm(prompt)
+    try:
+        brief_text = await call_llm(prompt)
+    except LLMUnavailableError:
+        # Keep provider diagnostics out of persistent cache and public responses.
+        set_cache(failure_key, {"error": _FAILURE_MESSAGE}, ttl_seconds=FAILURE_CACHE_TTL_SECONDS)
+        raise LLMUnavailableError(_FAILURE_MESSAGE) from None
     logger.info("ai_summary: LLM response received (%d chars)", len(brief_text))
 
     result = {
