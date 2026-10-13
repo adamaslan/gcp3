@@ -8,7 +8,7 @@ from pathlib import Path
 # Add backend to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from local_config import validate_config
+from local_config import get_config, validate_config
 
 
 async def run_full_pipeline(target_date=None, dry_run=False):
@@ -105,7 +105,8 @@ async def main():
     if exit_code == 0:
         target_date_str = (target_date or datetime.today().date()).strftime("%Y-%m-%d")
         print("🔗 View in Firebase Console:")
-        print("   → https://console.firebase.google.com/u/0/project/ttb-lang1/firestore/data/gcp3_cache")
+        project_id = get_config()["gcp_project_id"]
+        print(f"   → https://console.firebase.google.com/u/0/project/{project_id}/firestore/data/gcp3_cache")
         print()
         print(f"   Look for documents with suffix: :{target_date_str}")
         print()
