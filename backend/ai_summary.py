@@ -74,7 +74,7 @@ async def get_ai_summary() -> dict:
         logger.info("ai_summary cache hit key=%s", cache_key)
         return cached
 
-    failure_key = f"ai_summary_failed:{date.today()}"
+    failure_key = "ai_summary_failed"
     if get_cache(failure_key):
         raise LLMUnavailableError(_FAILURE_MESSAGE)
 

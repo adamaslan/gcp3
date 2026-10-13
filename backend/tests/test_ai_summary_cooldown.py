@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 from types import ModuleType
 from unittest.mock import AsyncMock, Mock
+from datetime import date, timedelta
 
 import pytest
 
@@ -65,6 +66,31 @@ def test_scheduled_refresh_respects_cooldown(summary):
     with pytest.raises(legacy_client.LLMUnavailableError):
         asyncio.run(module.refresh_ai_summary())
     assert module.call_llm.await_count == 1
+
+
+def test_failure_cooldown_survives_midnight(summary, monkeypatch):
+    module, _, gathers, clock = summary
+
+    class TestDate(date):
+        current = date(2026, 10, 12)
+
+        @classmethod
+        def today(cls):
+            return cls.current
+
+    monkeypatch.setattr(module, "date", TestDate)
+    with pytest.raises(legacy_client.LLMUnavailableError):
+        asyncio.run(module.get_ai_summary())
+    TestDate.current += timedelta(days=1)
+    clock[0] = 60
+    with pytest.raises(legacy_client.LLMUnavailableError):
+        asyncio.run(module.get_ai_summary())
+    assert module.call_llm.await_count == 1
+    assert all(gather.await_count == 1 for gather in gathers)
+    clock[0] = 601
+    module.call_llm.side_effect = None
+    module.call_llm.return_value = "Recovered after midnight"
+    assert asyncio.run(module.get_ai_summary())["brief"] == "Recovered after midnight"
 
 
 def test_unrelated_errors_are_not_cached(summary):
