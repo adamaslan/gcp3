@@ -1,0 +1,111 @@
+name: Slot 1 scheduler (replaces Cloud Scheduler)
+
+# Each cron maps to one or more slot 1 jobs. A job runs only if its name is in
+# the repo variable SLOT1_GHA_JOBS. Cutover per job = add the name here AND
+# pause the matching Cloud Scheduler job. Rollback = the reverse.
+on:
+  schedule:
+    - cron: '0 6 * * *'      # purge
+    - cron: '30 13 * * 1-5'  # fetch → bake
+    - cron: '0 16 * * 1-5'   # intraday-midday; midday-yf (EDT)
+    - cron: '0 17 * * 1-5'   # midday-yf (EST)
+    - cron: '15 20 * * 1-5'  # intraday-eod
+    - cron: '30 20 * * 1-5'  # daily-analysis (EDT)
+    - cron: '30 21 * * 1-5'  # daily-analysis (EST)
+  workflow_dispatch:
+    inputs:
+      jobs:
+        description: 'Comma list to run now (ignores SLOT1_GHA_JOBS), e.g. purge,fetch'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: slot1-scheduler-${{ github.event.schedule || 'manual' }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GCP3_BACKEND_URL: ${{ secrets.GCP3_BACKEND_URL }}
+      SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
+      ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.jobs || vars.SLOT1_GHA_JOBS }}
+      CRON: ${{ github.event.schedule }}
+    steps:
+      - name: Resolve which jobs this run owns
+        id: plan
+        run: |
+          set -euo pipefail
+          ny_hour=$(TZ=America/New_York date +%H)
+          case "${CRON}" in
+            '0 6 * * *')      want="purge" ;;
+            '30 13 * * 1-5')  want="fetch bake" ;;
+            '0 16 * * 1-5')   want="intraday-midday"; [ "$ny_hour" = "12" ] && want="$want midday-yf" ;;
+            '0 17 * * 1-5')   want=""; [ "$ny_hour" = "12" ] && want="midday-yf" ;;
+            '15 20 * * 1-5')  want="intraday-eod" ;;
+            '30 20 * * 1-5'|'30 21 * * 1-5') want=""; [ "$ny_hour" = "16" ] && want="daily-analysis" ;;
+            '')               want="$(echo "${ENABLED}" | tr ',' ' ')" ;;  # manual
+          esac
+          run=""
+          for j in $want; do
+            case ",${ENABLED}," in *",$j,"*) run="$run $j" ;; esac
+          done
+          echo "jobs=${run# }" >> "$GITHUB_OUTPUT"
+          echo "cron='${CRON}' ny_hour=${ny_hour} wanted='${want}' enabled='${ENABLED}' → running='${run# }'"
+
+      - name: Trigger gcp3-backend routes
+        if: steps.plan.outputs.jobs != ''
+        run: |
+          set -euo pipefail
+          [ -n "${GCP3_BACKEND_URL}" ] && [ -n "${SCHEDULER_SECRET}" ] \
+            || { echo "::error::GCP3_BACKEND_URL / SCHEDULER_SECRET not set"; exit 1; }
+          route() {
+            case "$1" in
+              purge)           echo "/admin/purge-cache" ;;
+              fetch)           echo "/refresh/fetch" ;;
+              bake)            echo "/refresh/bake" ;;
+              intraday-midday|intraday-eod) echo "/refresh/intraday?skip_gemini=true" ;;
+              midday-yf)       echo "/refresh/midday-yf" ;;
+              *)               echo "" ;;
+            esac
+          }
+          for j in ${{ steps.plan.outputs.jobs }}; do
+            path=$(route "$j")
+            [ -n "$path" ] || continue   # daily-analysis is handled below
+            echo "::group::$j → POST $path"
+            code=$(curl -sS -o body.json -w '%{http_code}' --max-time 900 -X POST \
+              -H "X-Scheduler-Token: ${SCHEDULER_SECRET}" "${GCP3_BACKEND_URL}${path}")
+            head -c 2000 body.json; echo
+            echo "::endgroup::"
+            [ "$code" = "200" ] || { echo "::error::$j returned HTTP $code"; exit 1; }
+          done
+
+      - name: Auth to GCP (daily-analysis only)
+        if: contains(steps.plan.outputs.jobs, 'daily-analysis')
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up gcloud (daily-analysis only)
+        if: contains(steps.plan.outputs.jobs, 'daily-analysis')
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Publish daily-analysis trigger
+        if: contains(steps.plan.outputs.jobs, 'daily-analysis')
+        run: |
+          gcloud pubsub topics publish daily-analysis-trigger --project=ttb-lang1 \
+            --message='{"trigger":"scheduled","type":"daily"}'
+
+      - name: Open an issue on failure
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --label pipeline-failure \
+            --title "slot1-scheduler failed: ${{ steps.plan.outputs.jobs }} ($(date -u +%F))" \
+            --body "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
