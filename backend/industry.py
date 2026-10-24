@@ -27,7 +27,6 @@ def _now_est_iso() -> str:
     return datetime.now(_EST).isoformat()
 
 import httpx
-import pandas as pd
 
 from data_client import (
     av_analytics_batch,
@@ -513,6 +512,7 @@ async def seed_etf_history(force: bool = False, symbols: list[str] | None = None
     Returns:
         Dict mapping ETF symbol → rows stored/appended.
     """
+    import pandas as pd
     import yfinance as yf
 
     unique_etfs = list({etf for _, etf in _FLAT.values()})
@@ -667,6 +667,7 @@ async def audit_etf_history(drift_threshold_pct: float = 1.0) -> dict:
           "drifting": [{symbol, stored_close, yfinance_close, drift_pct, stored_date, yfinance_date}],
         }
     """
+    import pandas as pd
     import yfinance as yf
 
     unique_etfs = list({etf for _, etf in _FLAT.values()})

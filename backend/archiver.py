@@ -14,7 +14,6 @@ import os
 import uuid
 from datetime import date, datetime, timezone
 
-import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +88,7 @@ def archive_expired_docs(docs: list[tuple[str, dict]], source: str = "gcp3_cache
 
     buf_path = None
     try:
+        import pandas as pd
         from google.cloud import storage  # type: ignore
 
         rows = [_row_from_doc(doc_id, data) for doc_id, data in docs]
