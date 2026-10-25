@@ -35,14 +35,18 @@ _OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 # live-refreshed like the portal's FREE_MODEL_CHAIN (nuwrrrld-portal's
 # scripts/refresh-free-models.mjs) — see "Open question" below.
 _OPENROUTER_MODEL_CHAIN = (
-    "qwen/qwen3-235b-a22b:free",
-    "qwen/qwen3-30b-a3b:free",
-    "meta-llama/llama-3.3-70b-instruct:free",
+    "google/gemma-4-31b-it:free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
+    "google/gemma-4-26b-a4b-it:free",
+    "liquid/lfm-2.5-2.6b:free",
 )
 _MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions"
 _MISTRAL_MODEL = "mistral-small-latest"
 _MAX_ATTEMPTS_PER_MODEL = 2
 _BACKOFF_BASE = 5  # seconds; doubles each retry within a model: 5, 10
+# Whole OpenRouter chain budget. Without it, a chain of slow or rate-limited
+# models could run for minutes before the Mistral fallback even starts.
+_CHAIN_DEADLINE_SECONDS = 20
 
 # Shared client for connection pooling across calls.
 _shared_client: httpx.AsyncClient | None = None
@@ -153,7 +157,7 @@ async def call_llm(prompt: str) -> str:
             unset).
     """
     try:
-        return await _call_openrouter(prompt)
+        return await asyncio.wait_for(_call_openrouter(prompt), timeout=_CHAIN_DEADLINE_SECONDS)
     except Exception as exc:
         logger.warning("legacy_client: OpenRouter chain exhausted — falling back to Mistral: %s", exc)
 
