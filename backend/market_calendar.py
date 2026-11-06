@@ -1,6 +1,6 @@
 """Market calendar utilities for trading day awareness and market hours detection."""
 
-from datetime import date, datetime, timedelta, time
+from datetime import date, datetime, timedelta, time, timezone
 from zoneinfo import ZoneInfo
 import logging
 
@@ -47,6 +47,29 @@ _NYSE_HOLIDAYS_2028 = {
 
 _NYSE_HOLIDAYS = _NYSE_HOLIDAYS_2026 | _NYSE_HOLIDAYS_2027 | _NYSE_HOLIDAYS_2028
 
+# Daily bars are final only well after the 16:00 ET close; 22:30 UTC is
+# 17:30 ET in winter (EST), the later of the two seasons. A bar dated today
+# must be treated as still-forming before this UTC time. Shared by the seed
+# path (industry.seed_etf_history) and feed_tracker so every ingest route
+# applies the same margin.
+SESSION_SETTLED_HOUR_UTC = 22
+SESSION_SETTLED_MINUTE_UTC = 30
+
+
+def today_et() -> date:
+    """Current calendar date in America/New_York — the session date."""
+    return datetime.now(_ET).date()
+
+
+def session_settled(now_utc: datetime | None = None) -> bool:
+    """True when the current ET session's daily bar should be final.
+
+    Before this time a bar dated today is still forming (or not yet revised
+    final) and must not be persisted as a completed close.
+    """
+    now_utc = now_utc or datetime.now(timezone.utc)
+    return (now_utc.hour, now_utc.minute) >= (SESSION_SETTLED_HOUR_UTC, SESSION_SETTLED_MINUTE_UTC)
+
 # Warn if accessing holidays for years beyond what we've defined
 _SUPPORTED_YEARS = {2026, 2027, 2028}
 
@@ -64,6 +87,21 @@ def is_trading_day(d: date) -> bool:
             d.year, sorted(_SUPPORTED_YEARS)
         )
     return d.weekday() < 5 and d not in _NYSE_HOLIDAYS
+
+
+def trading_day_gap(start: date, end: date) -> int:
+    """Count NYSE trading days in (start, end].
+
+    How many sessions of data a history ending at `start` is missing relative
+    to `end`. 0 when end <= start.
+    """
+    gap = 0
+    d = start
+    while d < end:
+        d = d + timedelta(days=1)
+        if is_trading_day(d):
+            gap += 1
+    return gap
 
 
 def trading_date() -> date:
