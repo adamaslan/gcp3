@@ -1,5 +1,9 @@
 """Technical Signals: derives BUY/HOLD/SELL signals from industry_cache returns data.
 
+Directional calls are withheld (ai_action = "WITHHELD") whenever the stored
+price history behind a row is stale or of unknown freshness — stale data never
+masquerades as a current BUY, HOLD, or SELL recommendation.
+
 Data source: Firestore industry_cache collection (populated by industry.py + etf_store).
 Covers all 54 industry ETFs across 13 return periods — no dependency on gcp-app-w-mcp1.
 
@@ -17,12 +21,13 @@ from datetime import date, datetime, timezone
 from firestore import get_cache, set_cache
 from industry import INDUSTRIES
 from industry_returns import get_industry_returns
+from market_calendar import trading_date, trading_day_gap
 
 logger = logging.getLogger(__name__)
 
 # Bumped whenever the scoring formula in _score_etf changes — lets consumers detect
 # that two runs used different logic even when the underlying returns data is identical.
-ENGINE_VERSION = "technical_signals@1.0.0"
+ENGINE_VERSION = "technical_signals@1.1.0"
 
 # Mirrors the staleness threshold used in backend/main.py's debug_status endpoint
 # (industry_cache freshness check) so both surfaces agree on what "stale" means.
@@ -62,6 +67,50 @@ def _data_quality_score(updated: object) -> str:
         return "unknown"
     age_hours = (datetime.now(timezone.utc) - updated_dt).total_seconds() / 3600
     return "stale" if age_hours > STALE_THRESHOLD_HOURS else "fresh"
+
+
+# Freshness tolerance for the underlying stored price history: the newest stored
+# bar may lag the most recent completed trading day by one session (the daily
+# history seed runs after close); anything older is stale. A bar dated the
+# reference session itself is trusted as completed because the ingest path
+# (industry.seed_etf_history) only persists the current session's bar after the
+# daily-settle margin (market_calendar.session_settled); anything stored before
+# that invariant existed ages into stale/unknown as sessions pass.
+DATA_AS_OF_MAX_GAP_TRADING_DAYS = 1
+
+
+def _data_as_of_score(as_of: object, today: date | None = None) -> str:
+    """Classify stored-price-history freshness as "fresh" / "stale" / "unknown".
+
+    _data_quality_score() ages the industry_cache write timestamp, which every
+    scheduled refresh re-stamps — it can look fresh while the price bars behind
+    it are days old (the batch-timestamp blind spot). This ages the actual
+    newest stored bar against the trading calendar instead.
+
+    Args:
+        as_of: "YYYY-MM-DD" date of the newest stored bar, or missing.
+        today: Reference date; defaults to market_calendar.trading_date() (most
+            recent completed trading day, ET). Injectable for deterministic tests.
+
+    Returns:
+        "unknown" if as_of is missing, unparseable, or dated after the most
+        recent completed trading day (the seed only writes completed sessions,
+        so a future-dated bar is anomalous and unverifiable), "stale" if more
+        than DATA_AS_OF_MAX_GAP_TRADING_DAYS trading days behind today, else
+        "fresh".
+    """
+    if not isinstance(as_of, str) or not as_of:
+        return "unknown"
+    try:
+        as_of_date = date.fromisoformat(as_of)
+    except ValueError:
+        return "unknown"
+    ref = today or trading_date()
+    if as_of_date > ref:
+        return "unknown"
+    if trading_day_gap(as_of_date, ref) <= DATA_AS_OF_MAX_GAP_TRADING_DAYS:
+        return "fresh"
+    return "stale"
 
 
 # 4 representative constituents per ETF — sourced from docs/tickers3.csv
@@ -131,10 +180,10 @@ ALL_SIGNAL_TICKERS: list[str] = list(dict.fromkeys(
 # Legacy alias — kept for any callers that reference TRACKED_SYMBOLS directly
 TRACKED_SYMBOLS = ALL_SIGNAL_TICKERS
 
-_ACTION_ORDER = {"BUY": 0, "HOLD": 1, "SELL": 2}
+_ACTION_ORDER = {"BUY": 0, "HOLD": 1, "SELL": 2, "WITHHELD": 3}
 
 
-def _score_etf(row: dict, rank_1d: int, total: int) -> dict:
+def _score_etf(row: dict, rank_1d: int, total: int, today: date | None = None) -> dict:
     """Derive BUY/HOLD/SELL + signals list from an industry_cache row.
 
     Each signal carries:
@@ -390,6 +439,25 @@ def _score_etf(row: dict, rank_1d: int, total: int) -> dict:
             f"above recent highs or breakdown below support before acting."
         )
 
+    # Freshness gate: never emit any call from unverified or stale price
+    # history — not even HOLD, which would read as a current "stay put"
+    # recommendation. Scores stay visible (they describe what the dated data
+    # said) but the action is WITHHELD and the row says why.
+    data_as_of = row.get("data_as_of")
+    as_of_score = _data_as_of_score(data_as_of, today)
+    if as_of_score != "fresh":
+        logger.info(
+            "technical_signals: withholding %s for %s — stored history %s (as_of=%s)",
+            ai_action, row.get("etf", ""), as_of_score, data_as_of,
+        )
+        ai_outlook = (
+            f"Call withheld (computed {ai_action}): the price history behind these "
+            f"signals is {'stale' if as_of_score == 'stale' else 'of unknown freshness'} "
+            f"(newest stored bar: {data_as_of or 'missing'}). The scores below "
+            f"describe that dated data, not the current market. "
+        ) + ai_outlook
+        ai_action = "WITHHELD"
+
     return {
         "symbol": row.get("etf", ""),
         "ai_action": ai_action,
@@ -412,6 +480,8 @@ def _score_etf(row: dict, rank_1d: int, total: int) -> dict:
         "52w_high": row.get("52w_high"),
         "52w_low": row.get("52w_low"),
         "updated": row.get("updated"),
+        "data_as_of": data_as_of,
+        "data_quality_score": as_of_score,
     }
 
 
@@ -430,6 +500,9 @@ async def get_technical_signals(symbol: str | None = None) -> dict:
     logger.info("technical_signals building signals from industry_returns symbol=%s", symbol or "all")
     returns_data = await get_industry_returns()
     industries: list[dict] = returns_data.get("industries", [])
+    # One reference trading date for the whole build so per-symbol freshness
+    # checks are consistent within this response and testable.
+    today = trading_date()
 
     # Rank all ETFs by 1d return for relative strength signal
     with_1d = [(i, (i.get("returns") or {}).get("1d") or 0.0) for i in industries]
@@ -443,9 +516,9 @@ async def get_technical_signals(symbol: str | None = None) -> dict:
         if symbol and etf != symbol.upper():
             continue
         rank_1d = rank_map.get(etf, total)
-        scored.append(_score_etf(row, rank_1d, total))
+        scored.append(_score_etf(row, rank_1d, total, today))
 
-    # Sort: BUY first, then HOLD, then SELL; within each by confluence_score desc
+    # Sort: BUY, then HOLD, then SELL, then WITHHELD; within each by confluence_score desc
     ranked = sorted(
         scored,
         key=lambda x: (_ACTION_ORDER.get(x["ai_action"], 1), -x.get("confluence_score", 0)),
@@ -453,12 +526,39 @@ async def get_technical_signals(symbol: str | None = None) -> dict:
     buys  = [r for r in ranked if r["ai_action"] == "BUY"]
     sells = [r for r in ranked if r["ai_action"] == "SELL"]
     holds = [r for r in ranked if r["ai_action"] == "HOLD"]
+    withheld = [r for r in ranked if r["ai_action"] == "WITHHELD"]
 
     total_signals = sum(r["signal_count"] for r in ranked)
-    regime = (
-        "Bullish" if len(buys) > len(sells) * 1.5 and len(buys) > total * 0.4
-        else "Bearish" if len(sells) > len(buys) * 1.5 and len(sells) > total * 0.4
-        else "Mixed"
+    if ranked and len(withheld) == len(ranked):
+        # Every row rests on stale/unknown history — there is no truthful
+        # market-regime read to give.
+        regime = "Indeterminate"
+    else:
+        regime = (
+            "Bullish" if len(buys) > len(sells) * 1.5 and len(buys) > total * 0.4
+            else "Bearish" if len(sells) > len(buys) * 1.5 and len(sells) > total * 0.4
+            else "Mixed"
+        )
+
+    # Batch freshness is the worse of the cache-write age and the stored-history
+    # age: a fresh recompute over old bars is still stale data. The as-of side
+    # is the WORST per-row score, not the newest as-of across rows — a batch
+    # headline must not look fresh because one ETF seeded while 53 lagged.
+    # (With a single-symbol request this reduces to that symbol's own score.)
+    batch_updated_score = _data_quality_score(returns_data.get("updated"))
+    row_scores = [r["data_quality_score"] for r in ranked]
+    if row_scores:
+        batch_as_of_score = (
+            "stale" if "stale" in row_scores
+            else "unknown" if "unknown" in row_scores
+            else "fresh"
+        )
+    else:
+        batch_as_of_score = _data_as_of_score(returns_data.get("data_as_of"), today)
+    batch_dq = (
+        "stale" if "stale" in (batch_updated_score, batch_as_of_score)
+        else "unknown" if "unknown" in (batch_updated_score, batch_as_of_score)
+        else "fresh"
     )
 
     if symbol and not ranked:
@@ -467,7 +567,8 @@ async def get_technical_signals(symbol: str | None = None) -> dict:
         result = {
             "date": str(date.today()),
             "updated": returns_data.get("updated"),
-            "data_quality_score": _data_quality_score(returns_data.get("updated")),
+            "data_as_of": returns_data.get("data_as_of"),
+            "data_quality_score": batch_dq,
             "symbols": {ranked[0]["symbol"]: ranked[0]},
             "total": 1,
         }
@@ -475,7 +576,8 @@ async def get_technical_signals(symbol: str | None = None) -> dict:
         result = {
             "date": str(date.today()),
             "updated": returns_data.get("updated"),
-            "data_quality_score": _data_quality_score(returns_data.get("updated")),
+            "data_as_of": returns_data.get("data_as_of"),
+            "data_quality_score": batch_dq,
             "total": len(ranked),
             "symbols": {r["symbol"]: r for r in ranked},
             "ranked": ranked,
@@ -486,6 +588,7 @@ async def get_technical_signals(symbol: str | None = None) -> dict:
                 "buy_count": len(buys),
                 "sell_count": len(sells),
                 "hold_count": len(holds),
+                "withheld_count": len(withheld),
                 "total_signals": total_signals,
                 "ai_regime": regime,
             },
@@ -500,10 +603,10 @@ async def get_technical_signals(symbol: str | None = None) -> dict:
         symbol or "all", len(ranked), len(buys), len(holds), len(sells),
         total_signals, regime, dq_score, elapsed_ms,
     )
-    if dq_score == "stale":
+    if dq_score in ("stale", "unknown"):
         logger.warning(
-            "technical_signals: data_quality_score=stale for symbol=%s — "
-            "signals may be based on outdated industry_cache data",
-            symbol or "all",
+            "technical_signals: data_quality_score=%s for symbol=%s — "
+            "calls are withheld where stored history is stale or unverifiable",
+            dq_score, symbol or "all",
         )
     return result

@@ -12,7 +12,7 @@ interface Signal {
 
 interface TickerData {
   symbol: string;
-  ai_action: "BUY" | "HOLD" | "SELL";
+  ai_action: "BUY" | "HOLD" | "SELL" | "WITHHELD";
   ai_summary: string;
   ai_outlook?: string;
   ai_score?: number;
@@ -34,6 +34,7 @@ interface SignalSummary {
   buy_count: number;
   sell_count: number;
   hold_count: number;
+  withheld_count?: number;
   ai_regime: string;
 }
 
@@ -48,9 +49,10 @@ interface TechnicalSignalsData {
 }
 
 const ACTION_STYLE: Record<string, string> = {
-  BUY:  "bg-green-700 text-green-100",
-  HOLD: "bg-gray-700 text-gray-300",
-  SELL: "bg-red-700 text-red-100",
+  BUY:      "bg-green-700 text-green-100",
+  HOLD:     "bg-gray-700 text-gray-300",
+  SELL:     "bg-red-700 text-red-100",
+  WITHHELD: "bg-amber-700 text-amber-100",
 };
 
 const STRENGTH_DOT: Record<string, string> = {

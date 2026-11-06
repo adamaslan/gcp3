@@ -456,8 +456,10 @@ def _attach_stored_returns(industries: dict) -> None:
         etf = data.get("etf")
         returns = etf_returns.get(etf) if etf else None
         if returns:
+            data["data_as_of"] = returns.get("as_of")
             data["returns"] = {k: v for k, v in returns.items()
-                               if not k.endswith("_high") and not k.endswith("_low")}
+                               if not k.endswith("_high") and not k.endswith("_low")
+                               and k != "as_of"}
             data["52w_high"] = returns.get("52w_high")
             data["52w_low"] = returns.get("52w_low")
         elif industry in cached_docs:
@@ -469,6 +471,7 @@ def _attach_stored_returns(industries: dict) -> None:
                 data["52w_high"] = cached["52w_high"]
             if cached.get("52w_low") is not None:
                 data["52w_low"] = cached["52w_low"]
+            data["data_as_of"] = cached.get("data_as_of")
 
         # Persist to industry_cache for industry_returns.py
         doc_ref = db.collection("industry_cache").document(industry)
@@ -479,6 +482,7 @@ def _attach_stored_returns(industries: dict) -> None:
             "returns": data.get("returns", {}),
             "52w_high": data.get("52w_high"),
             "52w_low": data.get("52w_low"),
+            "data_as_of": data.get("data_as_of"),
             "updated": now_str,
         })
         ops += 1
@@ -493,6 +497,44 @@ def _attach_stored_returns(industries: dict) -> None:
         "industry_cache: write_complete industries=%d timestamp=%s",
         len(industries), now_str,
     )
+
+    # Freshness is a property of the stored bars, not of this write. Warn per
+    # lagging industry — the refresh ran, but the returns it persisted for
+    # those describe old prices. Checking only the NEWEST as_of would stay
+    # silent when one ETF seeded fresh while the rest lagged.
+    try:
+        from market_calendar import trading_date, trading_day_gap
+        ref = trading_date()
+        lagging: list[tuple[str, str, int]] = []
+        missing = 0
+        for name, d in industries.items():
+            as_of = d.get("data_as_of")
+            if not as_of:
+                missing += 1
+                continue
+            try:
+                gap = trading_day_gap(date.fromisoformat(as_of), ref)
+            except (TypeError, ValueError):
+                missing += 1
+                continue
+            if gap > 1:
+                lagging.append((name, as_of, gap))
+        if lagging:
+            logger.warning(
+                "industry_cache: %d/%d industries' stored price history lags "
+                "the trading calendar (ref %s): %s — persisted returns for "
+                "those are stale",
+                len(lagging), len(industries), ref,
+                ", ".join(f"{n} as_of={a} gap={g}d" for n, a, g in lagging[:8]),
+            )
+        if missing:
+            logger.warning(
+                "industry_cache: %d/%d industries have no usable data_as_of — "
+                "etf_store history missing or predates as-of tracking",
+                missing, len(industries),
+            )
+    except Exception:
+        logger.exception("industry_cache: data_as_of lag check failed")
 
 
 async def seed_etf_history(force: bool = False, symbols: list[str] | None = None) -> dict[str, int]:
@@ -636,6 +678,8 @@ async def seed_etf_history(force: bool = False, symbols: list[str] | None = None
                     "volume": volume_series
                 }).dropna()
 
+                # etf_store drops any in-progress session bar at the storage
+                # layer (settle margin) — no per-caller filtering needed here.
                 if source == "yfinance_seed":
                     rows = etf_store.store_history(etf, hist, source=source)
                 else:

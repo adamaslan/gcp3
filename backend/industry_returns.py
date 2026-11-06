@@ -112,6 +112,7 @@ async def get_industry_returns(force: bool = False) -> dict:
             "52w_high": i.get("52w_high"),
             "52w_low": i.get("52w_low"),
             "updated": i.get("updated"),
+            "data_as_of": i.get("data_as_of"),
         }
         for i in industries
     ]
@@ -119,6 +120,18 @@ async def get_industry_returns(force: bool = False) -> dict:
     result = {
         "date": str(date.today()),
         "updated": updated,
+        # Newest stored-bar date across industries (lexicographic max is safe
+        # for YYYY-MM-DD). This is the BEST case; per-industry values can be
+        # older — data_as_of_oldest is the worst case. `updated` above is
+        # only when the recompute last ran, not when prices did.
+        "data_as_of": max(
+            (i.get("data_as_of") for i in industries if i.get("data_as_of")),
+            default=None,
+        ),
+        "data_as_of_oldest": min(
+            (i.get("data_as_of") for i in industries if i.get("data_as_of")),
+            default=None,
+        ),
         "total": len(industries),
         "industries": industries_list,
         "leaders": leaders,
