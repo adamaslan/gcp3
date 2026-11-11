@@ -13,7 +13,10 @@ def frame(dates, closes):
 def compute(df):
     with patch.object(etf_store, 'load_history', return_value=df), patch.object(etf_store, 'datetime', wraps=datetime) as clock:
         clock.now.return_value = datetime(2026, 11, 11, 17, tzinfo=timezone.utc)
-        return etf_store.compute_returns('TEST')
+        try:
+            return etf_store.compute_returns('TEST')
+        except etf_store.InvalidHistory:
+            return None
 
 
 def test_positive_control():
@@ -69,3 +72,11 @@ def test_finite_prices_cannot_emit_infinite_percentage():
 @pytest.mark.parametrize('bad', [float('nan'), 'bad'])
 def test_nonnumeric_price_withholds_history(bad):
     assert compute(frame(['2026-11-10', '2026-11-09'], [110, bad])) is None
+
+
+def test_invalid_is_distinct_from_missing_history():
+    with patch.object(etf_store, 'load_history', return_value=frame(['2026-11-10', '2026-11-09'], [110, -1])):
+        with pytest.raises(etf_store.InvalidHistory):
+            etf_store.compute_returns('TEST')
+    with patch.object(etf_store, 'load_history', return_value=None):
+        assert etf_store.compute_returns('TEST') is None
