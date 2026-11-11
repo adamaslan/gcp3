@@ -204,27 +204,35 @@ def get_metadata(symbol: str) -> Optional[dict]:
                                "last_date", "total_days", "storage_mode") if k in d}
 
 
+class InvalidHistory(ValueError):
+    """Stored history exists but cannot safely produce returns."""
+
+
 def compute_returns(symbol: str) -> Optional[dict]:
     """Calculate multi-period % returns from stored history.
 
     Returns dict keyed by period string (e.g. '1m': 4.2) or None.
     """
     df = load_history(symbol)
-    if df is None or df.empty or "adjusted_close" not in df.columns:
+    if df is None or df.empty:
         return None
+    if "adjusted_close" not in df.columns:
+        raise InvalidHistory("missing close column")
 
     # Validate the entire stored close series before arithmetic. A column name
     # is not proof of an adjusted-price basis; this check grants no such claim.
     closes = pd.to_numeric(df["adjusted_close"], errors="coerce")
-    if len(closes) < 2 or any(not math.isfinite(float(v)) or v <= 0 for v in closes):
+    if any(not math.isfinite(float(v)) or v <= 0 for v in closes):
+        raise InvalidHistory("non-positive or non-finite close")
+    if len(closes) < 2:
         return None
     if not isinstance(closes.index, pd.DatetimeIndex) or closes.index.hasnans:
-        return None
+        raise InvalidHistory("invalid daily index")
     # Normalize a daily index, rejecting conflicting values for the same day.
     closes = closes.copy()
     closes.index = pd.to_datetime([d.date() for d in closes.index])
     if (closes.groupby(level=0).nunique() > 1).any():
-        return None
+        raise InvalidHistory("conflicting same-day closes")
     closes = closes[~closes.index.duplicated()].sort_index(ascending=False)
     if len(closes) < 2:
         return None
@@ -232,7 +240,7 @@ def compute_returns(symbol: str) -> Optional[dict]:
     today = closes.index[0]
     age = (datetime.now(tz=timezone.utc).date() - today.date()).days
     if age < 0 or age > 7:
-        return None
+        raise InvalidHistory("future or stale latest close")
     returns: dict[str, Optional[float]] = {}
 
     for period, days in _PERIOD_DAYS_MAP.items():
