@@ -447,15 +447,27 @@ def _attach_stored_returns(industries: dict) -> None:
 
     # Deduplicate ETFs (multiple industries may share one ETF)
     etf_returns: dict[str, dict | None] = {}
+    invalid_etfs: set[str] = set()
     for data in industries.values():
         etf = data.get("etf")
         if etf and etf not in etf_returns:
-            etf_returns[etf] = etf_store.compute_returns(etf)
+            try:
+                etf_returns[etf] = etf_store.compute_returns(etf)
+            except etf_store.InvalidHistory as exc:
+                logger.warning("industry: withholding invalid history for %s: %s", etf, exc)
+                etf_returns[etf] = None
+                invalid_etfs.add(etf)
 
     for industry, data in industries.items():
         etf = data.get("etf")
         returns = etf_returns.get(etf) if etf else None
-        if returns:
+        if etf in invalid_etfs:
+            # Never revive cached returns after current history failed validation.
+            data["returns"] = {}
+            data["52w_high"] = data["52w_low"] = None
+            data["data_as_of"] = None
+            data["return_data_status"] = "invalid_history"
+        elif returns:
             data["returns"] = {k: v for k, v in returns.items()
                                if not k.endswith("_high") and not k.endswith("_low")}
             data["52w_high"] = returns.get("52w_high")
@@ -477,6 +489,7 @@ def _attach_stored_returns(industries: dict) -> None:
             "sector": data.get("sector"),
             "etf": etf,
             "returns": data.get("returns", {}),
+            "return_data_status": data.get("return_data_status"),
             "52w_high": data.get("52w_high"),
             "52w_low": data.get("52w_low"),
             "updated": now_str,
