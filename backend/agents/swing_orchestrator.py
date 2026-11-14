@@ -90,7 +90,7 @@ class SwingOrchestrator:
         if verdict == "reject":
             return "reject", "Hard blocker or low-quality critique rejected the candidate"
         if verdict == "needs_review":
-            return "needs_review", "Required data was stale or incomplete"
+            return "needs_review", "Required price context or other research data was missing, stale or incomplete"
         if total >= self.config.accept_threshold and verdict == "pass":
             return "accept", "Score met accept threshold and critique passed"
         if total >= self.config.watchlist_threshold:
@@ -102,4 +102,3 @@ class SwingOrchestrator:
 
 def get_swing_run(run_id: str) -> dict | None:
     return read_agent_document("swing_runs", run_id)
-
