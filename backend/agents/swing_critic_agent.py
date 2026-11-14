@@ -27,25 +27,12 @@ class SwingCriticAgent:
             base -= 0.08
             risk_flags.append("unclear_direction")
 
-        entry_zone = {"low": round(base * 100, 2), "high": round((base * 100) + 1.5, 2)}
-        invalidation_level = round(entry_zone["low"] * 0.97, 2) if direction == "long" else round(entry_zone["high"] * 1.03, 2)
-        reward_risk = 2.0 if base >= 0.65 else 1.2 if base >= 0.50 else 0.8
-        if reward_risk < 1.0:
-            blockers.append("reward_risk_below_floor")
-
-        score = max(0.0, min(1.0, base - risk_penalty - stale_penalty + (0.05 if reward_risk >= 2 else 0)))
-        if blockers:
-            verdict = "reject"
-        elif evidence_packet.is_stale:
-            verdict = "needs_review"
-        elif score >= config.accept_threshold:
-            verdict = "pass"
-        elif score >= config.watchlist_threshold:
-            verdict = "watch"
-        elif score >= config.reject_threshold:
-            verdict = "mutate"
-        else:
-            verdict = "reject"
+        # Discovery emits normalized scores, not a verified entry price, stop,
+        # target, spread or transaction cost. Multiplying a score by 100 cannot
+        # manufacture these inputs or a measured reward/risk ratio.
+        risk_flags.extend(["verified_price_context_missing", "reward_risk_unavailable"])
+        score = max(0.0, min(1.0, base - risk_penalty - stale_penalty))
+        verdict = "needs_review"
 
         packet = SwingCritiquePacket(
             run_id=evidence_packet.run_id,
@@ -53,14 +40,14 @@ class SwingCriticAgent:
             iteration_number=evidence_packet.iteration_number,
             swing_critic_score=round(score, 4),
             verdict=verdict,
-            entry_zone=entry_zone,
-            invalidation_level=invalidation_level,
-            reward_risk_estimate=reward_risk,
+            entry_zone={},
+            invalidation_level=None,
+            reward_risk_estimate=None,
             risk_penalty=min(risk_penalty, 0.35),
             stale_data_penalty=min(stale_penalty, 0.30),
             hard_blockers=blockers,
-            supporting_evidence=[f"Rule critique verdict {verdict}", f"Reward/risk estimate {reward_risk:.1f}"],
-            counter_evidence=evidence_packet.counter_evidence,
+            supporting_evidence=["Rule-only critique: no verified entry, invalidation or reward/risk inputs; manual review required"],
+            counter_evidence=evidence_packet.counter_evidence + ["Discovery confidence is not a price or a reward/risk measurement"],
             risk_flags=sorted(set(risk_flags)),
             ai_degraded=True,
         )
@@ -70,4 +57,3 @@ class SwingCriticAgent:
             packet.model_dump(mode="json"),
         )
         return packet
-
