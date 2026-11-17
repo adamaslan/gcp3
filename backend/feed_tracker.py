@@ -31,7 +31,7 @@ import logging
 import sys
 from datetime import date, datetime, timedelta, timezone
 
-from market_calendar import is_trading_day
+from market_calendar import is_trading_day, session_settled
 
 logger = logging.getLogger("feed_tracker")
 
@@ -43,17 +43,13 @@ MIN_FRESH_RATIO = 0.9
 # Share of the tracked industries whose live quote must have loaded.
 MIN_QUOTE_RATIO = 0.9
 
-# Daily bars are final well after the 16:00 ET close. 22:30 UTC is 17:30 ET
-# in winter (EST), the later of the two seasons, so a bar dated today is complete.
-SESSION_SETTLED_HOUR_UTC = 22
-SESSION_SETTLED_MINUTE_UTC = 30
-
+# The settle margin itself lives in market_calendar (SESSION_SETTLED_* /
+# session_settled) so the seed path and this checker share one definition.
 
 def expected_last_date(now: datetime) -> date:
     """Return the newest trading day whose daily bar should be settled at ``now``."""
     day = now.date()
-    settled = (now.hour, now.minute) >= (SESSION_SETTLED_HOUR_UTC, SESSION_SETTLED_MINUTE_UTC)
-    if not settled:
+    if not session_settled(now):
         day -= timedelta(days=1)
     while not is_trading_day(day):
         day -= timedelta(days=1)

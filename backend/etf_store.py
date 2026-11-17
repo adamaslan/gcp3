@@ -15,6 +15,7 @@ from typing import Optional
 import pandas as pd
 
 from firestore import db as _db
+from market_calendar import session_settled, today_et
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,29 @@ _PERIOD_DAYS_MAP = {
 # Write helpers
 # ---------------------------------------------------------------------------
 
+def _drop_unsettled_today(df: pd.DataFrame) -> pd.DataFrame:
+    """Remove the current session's still-forming bar before the settle margin.
+
+    Storage-layer enforcement for EVERY ingest caller (seed_etf_history,
+    seed_and_report.py, /refresh/fetch at 9:30am ET, manual admin seeds):
+    yfinance/Finnhub daily frames include the in-progress bar mid-session, and
+    a partial bar persisted as the newest close silently poisons every
+    downstream return (the 2026-10-30 incident). At/after the margin the bar
+    is final and passes through unchanged.
+    """
+    if df is None or df.empty or session_settled():
+        return df
+    today_str = today_et().isoformat()
+    dates = df.index.strftime("%Y-%m-%d")
+    dropped = int((dates == today_str).sum())
+    if dropped:
+        logger.info(
+            "etf_store: dropping %d in-progress bar(s) dated %s (session not settled)",
+            dropped, today_str,
+        )
+    return df[dates < today_str]
+
+
 def store_history(symbol: str, df: pd.DataFrame, source: str = "yfinance") -> int:
     """Store full price history. Call once per ETF; use append_daily after that.
 
@@ -46,6 +70,7 @@ def store_history(symbol: str, df: pd.DataFrame, source: str = "yfinance") -> in
         Number of rows stored.
     """
     symbol = symbol.upper()
+    df = _drop_unsettled_today(df)
     if df.empty:
         return 0
 
@@ -94,6 +119,7 @@ def append_daily(symbol: str, df: pd.DataFrame, source: str = "finnhub") -> int:
         Number of new rows appended (0 if already current).
     """
     symbol = symbol.upper()
+    df = _drop_unsettled_today(df)
     if df.empty:
         return 0
 
@@ -101,12 +127,13 @@ def append_daily(symbol: str, df: pd.DataFrame, source: str = "finnhub") -> int:
     if meta is None:
         return store_history(symbol, df, source)
 
-    # First-pass filter: only keep rows newer than the stored last_date. The
+    # First-pass filter: keep rows at or newer than the stored last_date. The
     # second-pass dedup against existing_dates catches the corruption mode
     # where two upstream sources emitted the same date with different prices
     # (ArrayUnion only dedupes on exact dict equality, so those would both
     # have persisted and corrupted downstream return computations).
-    candidate_records = [r for r in _to_records(df) if r["date"] > meta["last_date"]]
+    today_str = today_et().isoformat()
+    candidate_records = [r for r in _to_records(df) if r["date"] >= meta["last_date"]]
     if not candidate_records:
         return 0
 
@@ -131,12 +158,23 @@ def append_daily(symbol: str, df: pd.DataFrame, source: str = "finnhub") -> int:
                     existing_dates.add(r["date"])
 
     new_records = [r for r in candidate_records if r["date"] not in existing_dates]
-    if not new_records:
+    # Same-session replacement: _drop_unsettled_today above guarantees only
+    # settled (final) bars for today's date reach this point, so a same-date
+    # record REPLACES the stored one — e.g. a post-settle final overwrites a
+    # partial snapshot persisted by an older writer. A partial can never
+    # overwrite a completed bar, because partials are dropped at the gate.
+    # Historical same-date conflicts are still skipped — that guard locks the
+    # 2026-05-15 dual-source corruption mode.
+    replace_records = [
+        r for r in candidate_records
+        if r["date"] == meta["last_date"] == today_str
+    ]
+    if not new_records and not replace_records:
         return 0
 
     from google.cloud.firestore_v1 import ArrayUnion
     now = datetime.now(tz=timezone.utc).isoformat()
-    new_last = max(r["date"] for r in new_records)
+    new_last = max([r["date"] for r in new_records], default=meta["last_date"])
 
     if meta.get("storage_mode") == "chunked":
         for year, recs in _by_year(new_records).items():
@@ -145,8 +183,23 @@ def append_daily(symbol: str, df: pd.DataFrame, source: str = "finnhub") -> int:
                 yr_ref.update({"prices": ArrayUnion(recs)})
             else:
                 yr_ref.set({"year": year, "prices": recs})
+        if replace_records:
+            yr_ref = doc.collection("years").document(today_str[:4])
+            yr_snap = yr_ref.get()
+            if yr_snap.exists:
+                prices = [p for p in yr_snap.to_dict().get("prices", [])
+                          if p.get("date") != today_str]
+                prices.extend(replace_records)
+                yr_ref.update({"prices": prices})
     else:
-        doc.update({"prices": ArrayUnion(new_records)})
+        if replace_records:
+            snap = doc.get()
+            prices = [p for p in (snap.to_dict().get("prices", []) if snap.exists else [])
+                      if p.get("date") != today_str]
+            prices.extend(replace_records)
+            doc.update({"prices": prices})
+        if new_records:
+            doc.update({"prices": ArrayUnion(new_records)})
 
     doc.update({
         "last_date": new_last,
@@ -155,7 +208,10 @@ def append_daily(symbol: str, df: pd.DataFrame, source: str = "finnhub") -> int:
         "source": source,
     })
 
-    logger.info("Appended %d new days for %s", len(new_records), symbol)
+    logger.info(
+        "Appended %d new days for %s (replaced %d same-session bars)",
+        len(new_records), symbol, len(replace_records),
+    )
     return len(new_records)
 
 
@@ -242,6 +298,12 @@ def compute_returns(symbol: str) -> Optional[dict]:
     yr = closes[closes.index >= today - pd.Timedelta(days=365)]
     returns["52w_high"] = round(float(yr.max()), 2) if not yr.empty else None
     returns["52w_low"] = round(float(yr.min()), 2) if not yr.empty else None
+
+    # As-of date of the newest stored bar. Callers re-stamp their own write
+    # timestamps on every refresh, so without this downstream consumers cannot
+    # tell "returns computed just now" apart from "price history actually
+    # current" — the batch-timestamp blind spot.
+    returns["as_of"] = today.strftime("%Y-%m-%d")
 
     return returns
 
