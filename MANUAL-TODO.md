@@ -91,3 +91,10 @@ variable, never the value.
 - **Unblocks**: a real two-provider chain. Today, if OpenRouter fails the
   gateway degrades immediately.
 - **Added**: 2026-09-10
+
+### Reconcile legacy ETF history adjustment before cloud appends
+- **From**: PR #83 — ETF adjustment review.
+- **Blocked on**: inspecting stored `etf_history` provenance and approving a full-history migration if necessary.
+- **Why it cannot be code alone**: existing history may be dividend-adjusted by another provider; appending Alpaca prices without verifying or rebasing its basis corrupts returns. Production history replacement requires owner approval and a recovery copy.
+- **Unblocks**: cloud updates to legacy ETF histories. New histories use Alpaca all-adjusted bars; matching Alpaca histories can append normally. Local yfinance remains available only for legacy yfinance histories.
+- **Added**: 2026-10-12

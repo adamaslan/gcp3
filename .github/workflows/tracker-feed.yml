@@ -67,6 +67,8 @@ jobs:
         env:
           GCP_PROJECT_ID: ttb-lang1
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_API_SECRET: ${{ secrets.ALPACA_API_SECRET }}
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
           IN_CHECK_ONLY: ${{ github.event.inputs.checkOnly }}
           IN_SCHEDULE: ${{ github.event.schedule }}
