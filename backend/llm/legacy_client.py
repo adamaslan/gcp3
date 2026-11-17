@@ -30,6 +30,11 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+
+class LLMUnavailableError(RuntimeError):
+    """Raised when both free-text LLM providers fail."""
+
+
 _OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 # Ordered fallback chain of $0-priced OpenRouter models. Static rather than
 # live-refreshed like the portal's FREE_MODEL_CHAIN (nuwrrrld-portal's
@@ -148,7 +153,7 @@ async def call_llm(prompt: str) -> str:
         The model's text response.
 
     Raises:
-        RuntimeError: If OPENROUTER_API_KEY is not set, every model in the
+        LLMUnavailableError: If OPENROUTER_API_KEY is not set, every model in the
             chain fails, and Mistral fallback also fails (or MISTRAL_KEY is
             unset).
     """
@@ -163,7 +168,7 @@ async def call_llm(prompt: str) -> str:
         return result
     except Exception as mistral_exc:
         logger.error("legacy_client: Mistral fallback failed: %s", mistral_exc)
-        raise RuntimeError(
+        raise LLMUnavailableError(
             f"OpenRouter chain and Mistral fallback both failed: {mistral_exc}"
         ) from mistral_exc
 

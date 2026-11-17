@@ -20,7 +20,7 @@ _db = None
 # Capped at 256 entries; LRU eviction prevents unbounded growth from
 # rotating keys like industry_quotes:{minute_bucket}.
 _MEM_CACHE_MAX = 256
-_MEM_CACHE: dict[str, tuple[float, dict]] = {}
+_MEM_CACHE: dict[str, tuple[float, dict, float | None]] = {}
 
 
 def db():
@@ -46,17 +46,20 @@ def mem_get(key: str, max_age: float = 60.0) -> dict | None:
         Cached value or None
     """
     entry = _MEM_CACHE.get(key)
-    if entry and (time.monotonic() - entry[0]) < max_age:
+    now = time.monotonic()
+    if entry and (now - entry[0]) < max_age and (entry[2] is None or now < entry[2]):
         return entry[1]
     return None
 
 
-def mem_set(key: str, value: dict) -> None:
-    """Set in-memory cache with current timestamp. Evicts oldest entry when full."""
+def mem_set(key: str, value: dict, ttl_seconds: float | None = None) -> None:
+    """Cache a value, preserving any remaining store TTL and evicting oldest when full."""
     if key not in _MEM_CACHE and len(_MEM_CACHE) >= _MEM_CACHE_MAX:
         # FIFO eviction: dicts maintain insertion order (Python 3.7+), O(1)
         del _MEM_CACHE[next(iter(_MEM_CACHE))]
-    _MEM_CACHE[key] = (time.monotonic(), value)
+    now = time.monotonic()
+    expires = None if ttl_seconds is None else now + max(0.0, ttl_seconds)
+    _MEM_CACHE[key] = (now, value, expires)
 
 
 def get_cache(key: str) -> dict | None:
@@ -78,11 +81,12 @@ def get_cache(key: str) -> dict | None:
     if expires_at:
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
-        if expires_at > datetime.now(timezone.utc):
+        now = datetime.now(timezone.utc)
+        if expires_at > now:
             value = data.get("value")
             # Populate in-memory for next request
             if value:
-                mem_set(key, value)
+                mem_set(key, value, ttl_seconds=(expires_at - now).total_seconds())
             return value
     return None
 
@@ -141,6 +145,7 @@ def get_cache_stale_prev(prefix: str, exclude_key: str) -> tuple[dict | None, st
 
 def delete_cache(key: str) -> None:
     db().collection("gcp3_cache").document(key).delete()
+    _MEM_CACHE.pop(key, None)
 
 
 def set_cache(key: str, value: dict, ttl_hours: int = 1, ttl_seconds: int | None = None) -> None:
@@ -159,7 +164,7 @@ def set_cache(key: str, value: dict, ttl_hours: int = 1, ttl_seconds: int | None
         "updated_at": now,
     })
     # Populate in-memory layer for hot path (industry_quotes, screener, etc.)
-    mem_set(key, value)
+    mem_set(key, value, ttl_seconds=ttl_delta.total_seconds())
 
 
 def write_agent_document(collection: str, key: str, value: dict) -> None:
