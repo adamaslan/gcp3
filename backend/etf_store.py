@@ -8,11 +8,14 @@ Firestore layout:
     etf_history/{SYMBOL}          — metadata + embedded prices (≤2000 rows)
     etf_history/{SYMBOL}/years/{YYYY} — yearly chunks when >2000 rows
 """
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-import pandas as pd
+if TYPE_CHECKING:
+    import pandas as pd
 
 from firestore import db as _db
 
@@ -168,6 +171,8 @@ def load_history(symbol: str) -> Optional[pd.DataFrame]:
 
     Returns None if no data stored yet.
     """
+    import pandas as pd
+
     symbol = symbol.upper()
     doc = _db().collection(_COLLECTION).document(symbol)
     snap = doc.get()
@@ -208,6 +213,8 @@ def compute_returns(symbol: str) -> Optional[dict]:
 
     Returns dict keyed by period string (e.g. '1m': 4.2) or None.
     """
+    import pandas as pd
+
     df = load_history(symbol)
     if df is None or df.empty or "adjusted_close" not in df.columns:
         return None

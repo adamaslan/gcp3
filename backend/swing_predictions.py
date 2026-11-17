@@ -3,17 +3,15 @@
 Predicts 10 buy and 10 sell candidates for 2-week to 1-month swing trades
 based on previous momentum and technical indicators.
 """
+from __future__ import annotations
+
 import asyncio
 import logging
 from datetime import date, datetime, timedelta
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-import yfinance as yf
-import pandas as pd
-import numpy as np
-from ta.momentum import RSIIndicator, StochasticOscillator, ROCIndicator
-from ta.trend import MACD, SMAIndicator, EMAIndicator, ADXIndicator
-from ta.volatility import BollingerBands, AverageTrueRange
+if TYPE_CHECKING:
+    import pandas as pd
 
 logger = logging.getLogger(__name__)
 _YF_SEMAPHORE = asyncio.Semaphore(4)
@@ -31,6 +29,10 @@ SWING_WATCHLIST: list[str] = [
 
 def _calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """Calculate technical indicators for momentum analysis."""
+    from ta.momentum import RSIIndicator, StochasticOscillator, ROCIndicator
+    from ta.trend import MACD, ADXIndicator, EMAIndicator, SMAIndicator
+    from ta.volatility import BollingerBands, AverageTrueRange
+
     close = df["Close"]
     high = df["High"]
     low = df["Low"]
@@ -204,6 +206,9 @@ async def get_swing_predictions(
 
     async def analyze_symbol(symbol: str) -> Optional[tuple]:
         """Fetch and analyze a single symbol."""
+        import pandas as pd
+        import yfinance as yf
+
         try:
             # Run synchronous yfinance in a thread pool
             loop = asyncio.get_running_loop()

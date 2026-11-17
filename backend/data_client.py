@@ -45,7 +45,6 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 
 import httpx
-import yfinance as yf
 from google.cloud import firestore
 
 logger = logging.getLogger(__name__)
@@ -298,7 +297,19 @@ async def get_finnhub_metrics(symbols: list[str]) -> dict[str, dict]:
 
 # Cloud Run containers may not have a writable home dir for yfinance's tz/cookie
 # cache. Redirect to /tmp so cache writes never fail with PermissionError.
-yf.set_tz_cache_location("/tmp/py-yfinance")
+_yf_loaded = None
+
+
+def _yf():
+    """Import yfinance on first use (it pulls in pandas, ~0.5 s on a 1-vCPU
+    Cloud Run container) so it doesn't delay instance startup."""
+    global _yf_loaded
+    if _yf_loaded is None:
+        import yfinance
+
+        yfinance.set_tz_cache_location("/tmp/py-yfinance")
+        _yf_loaded = yfinance
+    return _yf_loaded
 
 
 def _yf_quote_sync(symbol: str) -> dict:
@@ -306,7 +317,7 @@ def _yf_quote_sync(symbol: str) -> dict:
     # "Yahoo API requires curl_cffi session" and raises YFDataException before
     # any request is sent — which silently failed every quote that fell back
     # here. yfinance supplies its own curl_cffi session with a browser UA.
-    ticker = yf.Ticker(symbol)
+    ticker = _yf().Ticker(symbol)
     hist = ticker.history(period="2d")
     if hist.empty:
         raise ValueError(f"yfinance: no data for {symbol}")
@@ -328,7 +339,7 @@ def _yf_quote_sync(symbol: str) -> dict:
 
 def _yf_bulk_sync(symbols: list[str]) -> dict[str, dict]:
     # yf.download batches all symbols in one request — most efficient approach
-    tickers = yf.download(symbols, period="2d", auto_adjust=True, progress=False, threads=True)
+    tickers = _yf().download(symbols, period="2d", auto_adjust=True, progress=False, threads=True)
     results: dict[str, dict] = {}
     if tickers.empty:
         return results
