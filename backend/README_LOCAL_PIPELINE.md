@@ -35,14 +35,14 @@ Configuration loaded:
 #### Option A: On Cloud Run (automatic auth)
 Cloud Run instances have built-in authentication. Just run:
 ```bash
-export GCP_PROJECT_ID=nuwrrrld-prod
+export GCP_PROJECT_ID=ttb-lang1
 python firebase_sync.py
 ```
 
 #### Option B: Locally with service account key
 If you have a GCP service account JSON key:
 ```bash
-export GCP_PROJECT_ID=nuwrrrld-prod
+export GCP_PROJECT_ID=ttb-lang1
 export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
 python firebase_sync.py
 ```
@@ -61,7 +61,7 @@ gcloud beta emulators firestore start
 
 # In another terminal:
 export FIRESTORE_EMULATOR_HOST=localhost:8081
-export GCP_PROJECT_ID=nuwrrrld-prod
+export GCP_PROJECT_ID=ttb-lang1
 python firebase_sync.py
 ```
 
@@ -104,8 +104,8 @@ Each document includes:
 - Run `python local_config.py` to verify it's loaded
 
 ### "GCP_PROJECT_ID not configured"
-- Set `export GCP_PROJECT_ID=nuwrrrld-prod` before running
-- Or add `GCP_PROJECT_ID=nuwrrrld-prod` to `.env`
+- Set `export GCP_PROJECT_ID=ttb-lang1` before running
+- Or add `GCP_PROJECT_ID=ttb-lang1` to `.env`
 
 ### "GOOGLE_APPLICATION_CREDENTIALS not set"
 - You're running locally without a service account key (expected for Cloud Run)
