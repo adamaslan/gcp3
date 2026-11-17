@@ -9,6 +9,7 @@ Firestore layout:
     etf_history/{SYMBOL}/years/{YYYY} — yearly chunks when >2000 rows
 """
 import logging
+import math
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -203,21 +204,43 @@ def get_metadata(symbol: str) -> Optional[dict]:
                                "last_date", "total_days", "storage_mode") if k in d}
 
 
+class InvalidHistory(ValueError):
+    """Stored history exists but cannot safely produce returns."""
+
+
 def compute_returns(symbol: str) -> Optional[dict]:
     """Calculate multi-period % returns from stored history.
 
     Returns dict keyed by period string (e.g. '1m': 4.2) or None.
     """
     df = load_history(symbol)
-    if df is None or df.empty or "adjusted_close" not in df.columns:
+    if df is None or df.empty:
         return None
+    if "adjusted_close" not in df.columns:
+        raise InvalidHistory("missing close column")
 
-    closes = df["adjusted_close"].dropna()
+    # Validate the entire stored close series before arithmetic. A column name
+    # is not proof of an adjusted-price basis; this check grants no such claim.
+    closes = pd.to_numeric(df["adjusted_close"], errors="coerce")
+    if any(not math.isfinite(float(v)) or v <= 0 for v in closes):
+        raise InvalidHistory("non-positive or non-finite close")
     if len(closes) < 2:
         return None
-
-    latest = closes.iloc[0]
+    if not isinstance(closes.index, pd.DatetimeIndex) or closes.index.hasnans:
+        raise InvalidHistory("invalid daily index")
+    # Normalize a daily index, rejecting conflicting values for the same day.
+    closes = closes.copy()
+    closes.index = pd.to_datetime([d.date() for d in closes.index])
+    if (closes.groupby(level=0).nunique() > 1).any():
+        raise InvalidHistory("conflicting same-day closes")
+    closes = closes[~closes.index.duplicated()].sort_index(ascending=False)
+    if len(closes) < 2:
+        return None
+    latest = float(closes.iloc[0])
     today = closes.index[0]
+    age = (datetime.now(tz=timezone.utc).date() - today.date()).days
+    if age < 0 or age > 7:
+        raise InvalidHistory("future or stale latest close")
     returns: dict[str, Optional[float]] = {}
 
     for period, days in _PERIOD_DAYS_MAP.items():
@@ -228,14 +251,21 @@ def compute_returns(symbol: str) -> Optional[dict]:
         if past.empty:
             returns[period] = None
         else:
-            base = past.iloc[0]
-            returns[period] = round((latest / base - 1) * 100, 2) if base else None
+            # A missing week must not masquerade as a completed session or
+            # trailing 30/365-day interval. Seven calendar days allow ordinary
+            # weekends/market holidays, not a claim of exchange-calendar proof.
+            gap = (cutoff - past.index[0]).days
+            base = float(past.iloc[0])
+            value = (latest / base - 1) * 100
+            returns[period] = round(value, 2) if gap <= 7 and math.isfinite(value) else None
 
     # Year-to-date: compare to last close of prior year
     ytd_cutoff = pd.Timestamp(today.year, 1, 1, tzinfo=today.tzinfo if today.tzinfo else None)
     ytd_past = closes[closes.index < ytd_cutoff]
+    ytd_value = (latest / float(ytd_past.iloc[0]) - 1) * 100 if not ytd_past.empty else None
     returns["ytd"] = (
-        round((latest / ytd_past.iloc[0] - 1) * 100, 2) if not ytd_past.empty else None
+        round(ytd_value, 2) if ytd_value is not None and math.isfinite(ytd_value)
+        and (ytd_cutoff - ytd_past.index[0]).days <= 7 else None
     )
 
     # 52-week high/low
