@@ -12,6 +12,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from llm import openrouter_client
+
 logger = logging.getLogger(__name__)
 
 MAX_TURNS = 4
@@ -85,7 +87,7 @@ class AgentLoop:
         "explain_signal",
     ]
 
-    def __init__(self, endpoint: str, model: str = "gemini-2.0-flash") -> None:
+    def __init__(self, endpoint: str, model: str = openrouter_client.DEFAULT_MODEL) -> None:
         self.endpoint = endpoint
         self.model = model
 
@@ -124,7 +126,11 @@ class AgentLoop:
                 break
 
             session.turns += 1
-            response_text = await self._call_llm(messages)
+            remaining = MAX_WALLCLOCK_SECONDS - session.elapsed_seconds()
+            response_text = await self._call_llm(messages, deadline_seconds=remaining)
+            if session.elapsed_seconds() >= MAX_WALLCLOCK_SECONDS:
+                session.budget_exceeded = True
+                break
 
             # Check if the model wants to call a tool
             tool_request = self._parse_tool_request(response_text)
@@ -156,13 +162,14 @@ class AgentLoop:
                 })
 
         # Budget-exceeded: one-shot fallback
-        if result is None and session.budget_exceeded:
+        if (result is None and session.budget_exceeded
+                and session.elapsed_seconds() < MAX_WALLCLOCK_SECONDS):
             logger.warning("agent_one_shot_fallback endpoint=%s ticker=%s", self.endpoint, ticker)
             one_shot_prompt = messages[1]["content"]  # original user prompt
             one_shot_text = await self._call_llm([
                 {"role": "system", "content": self.SYSTEM_PROMPT},
                 {"role": "user", "content": one_shot_prompt},
-            ])
+            ], deadline_seconds=MAX_WALLCLOCK_SECONDS - session.elapsed_seconds())
             try:
                 result = output_schema.model_validate_json(one_shot_text)
             except Exception:
@@ -180,27 +187,35 @@ class AgentLoop:
         self._log_session(session)
         return result, session
 
-    async def _call_llm(self, messages: list[dict]) -> str:
-        try:
-            import google.generativeai as genai  # type: ignore
-            history = []
-            system = ""
-            for m in messages:
-                if m["role"] == "system":
-                    system = m["content"]
-                elif m["role"] in ("user", "tool"):
-                    history.append({"role": "user", "parts": [m["content"]]})
-                else:
-                    history.append({"role": "model", "parts": [m["content"]]})
+    async def _call_llm(
+        self, messages: list[dict], *, deadline_seconds: float = MAX_WALLCLOCK_SECONDS,
+    ) -> str:
+        """Send the ReAct transcript to the LLM and return its next turn.
 
-            gemini_model = genai.GenerativeModel(
-                model_name=self.model,
-                system_instruction=system,
-            )
-            chat = gemini_model.start_chat(history=history[:-1])
-            response = await chat.send_message_async(history[-1]["parts"][0] if history else "")
-            return response.text or ""
-        except Exception as e:
+        Returns "" on any failure — the caller treats an empty string as "no
+        usable model output" and falls through to the rule-based fallback, so
+        a model outage degrades the endpoint rather than erroring it.
+
+        The chat-completions message shape is passed through directly. The
+        previous Gemini implementation had to translate roles into
+        parts/history and hoist the system prompt into system_instruction;
+        tool turns are mapped to user turns because the tool role requires
+        a tool_call_id that this loop does not provide.
+        """
+        try:
+            response = await asyncio.wait_for(openrouter_client.complete(
+                [
+                    {
+                        "role": "user" if m["role"] == "tool" else m["role"],
+                        "content": m["content"],
+                    }
+                    for m in messages
+                ],
+                temperature=0.1,
+                deadline_seconds=deadline_seconds,
+            ), timeout=max(0.0, deadline_seconds))
+            return response.text
+        except Exception as e:  # noqa: BLE001 - see the "" contract above
             logger.error("agent_llm_call_failed error=%s", e)
             return ""
 

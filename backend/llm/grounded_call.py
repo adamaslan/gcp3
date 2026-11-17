@@ -3,6 +3,13 @@
 Only /market-overview and /macro-pulse endpoints allowed.
 30-min bucketed cache with Firestore TTL.
 Citation quality gate: ≥2 citations, ≥1 within 48h, ≥2 distinct domains.
+
+Grounding now comes from OpenRouter's ":online" web-search suffix rather than
+Gemini's google_search_retrieval tool; llm/openrouter_client.py maps the
+returned `annotations` into the same {uri, title, domain, retrieved_at}
+citation shape this module's quality gate already reads. Unlike the Gemini
+free tier, ":online" search is billed per request — see the
+grounded_surcharge entries in llm/pricing.py.
 """
 from __future__ import annotations
 
@@ -12,6 +19,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+from llm import openrouter_client
 from llm.cost_logger import log_llm_call
 from llm.pricing import DEFAULT_MODEL
 
@@ -54,39 +62,6 @@ def _bucket_cache_key(endpoint: str, prompt: str) -> str:
     return f"grounded:{endpoint}:{now.date()}:{bucket}:{digest}"
 
 
-def _extract_citations(response: Any) -> list[dict]:
-    """Extract citation metadata from Gemini grounded response."""
-    citations: list[dict] = []
-    try:
-        candidates = getattr(response, "candidates", [])
-        for cand in candidates:
-            grounding_meta = getattr(cand, "grounding_metadata", None)
-            if grounding_meta is None:
-                continue
-            chunks = getattr(grounding_meta, "grounding_chunks", []) or []
-            for chunk in chunks:
-                web = getattr(chunk, "web", None)
-                if web is None:
-                    continue
-                citations.append({
-                    "uri": getattr(web, "uri", ""),
-                    "title": getattr(web, "title", ""),
-                    "domain": _domain_from_uri(getattr(web, "uri", "")),
-                    "retrieved_at": datetime.now(timezone.utc).isoformat(),
-                })
-    except Exception as e:
-        logger.warning("citation_extraction_failed error=%s", e)
-    return citations
-
-
-def _domain_from_uri(uri: str) -> str:
-    try:
-        from urllib.parse import urlparse
-        return urlparse(uri).netloc
-    except Exception:
-        return ""
-
-
 def _check_citation_quality(citations: list[dict]) -> tuple[bool, list[str]]:
     """Return (passed, reasons_if_failed)."""
     reasons: list[str] = []
@@ -95,8 +70,9 @@ def _check_citation_quality(citations: list[dict]) -> tuple[bool, list[str]]:
     domains = {c["domain"] for c in citations if c.get("domain")}
     if len(domains) < MIN_DISTINCT_DOMAINS:
         reasons.append(f"only {len(domains)} distinct domains (need ≥{MIN_DISTINCT_DOMAINS})")
-    # We trust retrieved_at as "now" since we can't parse article dates from Gemini metadata
-    # A future improvement would parse publication dates from citation titles/URIs
+    # retrieved_at is set to "now" by the client: OpenRouter's url_citation
+    # annotations carry no publication date. Parsing dates out of titles/URIs
+    # would be the way to make MIN_RECENT_CITATION_HOURS actually bite.
     return (not reasons), reasons
 
 
@@ -114,7 +90,7 @@ def generate_grounded(
         prompt: Full prompt.
         endpoint: Must be 'market-overview' or 'macro-pulse'.
         ticker: Optional ticker for cost logging.
-        model: Gemini model ID.
+        model: OpenRouter model ID (see openrouter_client.MODEL_CHAIN).
         prompt_version: Prompt version tag.
 
     Raises:
@@ -153,18 +129,15 @@ def generate_grounded(
     # Live grounded call
     t0 = time.perf_counter()
     try:
-        import google.generativeai as genai  # type: ignore
-
-        gemini_model = genai.GenerativeModel(
-            model_name=model,
-            tools=[{"google_search_retrieval": {}}],
+        response = openrouter_client.complete_sync(
+            [{"role": "user", "content": prompt}],
+            online=True,
+            temperature=0.1,
         )
-        response = gemini_model.generate_content(prompt)
-        text = response.text or ""
-        usage = getattr(response, "usage_metadata", None)
-        in_tok = getattr(usage, "prompt_token_count", 0) or 0
-        out_tok = getattr(usage, "candidates_token_count", 0) or 0
-        citations = _extract_citations(response)
+        text = response.text
+        in_tok = response.input_tokens
+        out_tok = response.output_tokens
+        citations = response.citations
         quality_passed, quality_reasons = _check_citation_quality(citations)
 
         if not quality_passed:

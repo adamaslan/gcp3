@@ -14,7 +14,9 @@ from llm.pricing import compute_cost_usd
 
 logger = logging.getLogger(__name__)
 
-# Free-tier daily budget ceiling (Gemini Flash free tier ~generous, set conservative USD cap)
+# Daily budget ceiling. The OpenRouter chain is $0-priced, so this mostly
+# guards the two things that do cost: ":online" web search (per request)
+# and the Mistral fallback (per token). Conservative USD cap.
 FREE_TIER_DAILY_BUDGET_USD = 0.50
 ALERT_THRESHOLDS = (0.50, 0.80, 0.95)
 

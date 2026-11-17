@@ -1,4 +1,4 @@
-"""Write ai_summary, daily_blog, blog_review, daily_story locally — no Gemini.
+"""Write ai_summary, daily_blog, blog_review, daily_story locally — no LLM.
 
 Crunches real data from backend modules, writes content manually,
 then pushes each to Firestore via set_cache.
